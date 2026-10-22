@@ -29,7 +29,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @TestPropertySource(properties = {"test.context=enquiry", "spring.mail.host=localhost", "spring.mail.username=",
-        "app.mail.from=staff@amsidel.com", "app.enquiry.to=enquiries@amsidel.com"})
+        "app.mail.from=staff@amsidel.com", "app.enquiry.to=enquiries@amsidel.com",
+        "app.enquiry.send-in-background=false"})
 class EnquiryTest {
 
     static class FakeMailSender extends JavaMailSenderImpl {

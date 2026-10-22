@@ -241,11 +241,13 @@ class AuthFlowTest {
     void designationsAndReportingLines() throws Exception {
         String list = mockMvc.perform(get("/api/designations").header("Authorization", auth(ownerToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(11))
+                .andExpect(jsonPath("$.length()").value(12))
                 .andExpect(jsonPath("$[0].name").value("Trainee"))
                 .andExpect(jsonPath("$[5].levelCode").value("6.1"))
                 .andExpect(jsonPath("$[6].levelCode").value("6.2"))
-                .andExpect(jsonPath("$[10].name").value("CEO"))
+                .andExpect(jsonPath("$[8].name").value("Admin"))
+                .andExpect(jsonPath("$[9].levelCode").value("8.2"))
+                .andExpect(jsonPath("$[11].name").value("CEO"))
                 .andReturn().getResponse().getContentAsString();
         List<Integer> lead = JsonPath.read(list, "$[?(@.name == 'Team Lead')].id");
         List<Integer> member = JsonPath.read(list, "$[?(@.name == 'Team Member')].id");

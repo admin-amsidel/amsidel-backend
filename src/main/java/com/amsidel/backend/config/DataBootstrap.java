@@ -93,7 +93,8 @@ public class DataBootstrap implements ApplicationRunner {
             designation(6, "6.1", "Branch Manager / Head");
             designation(6, "6.2", "Finance Manager");
             designation(7, "7", "Regional Head / Manager");
-            designation(8, "8", "HR Head / Manager");
+            designation(8, "8.1", "Admin");
+            designation(8, "8.2", "HR Head / Manager");
             designation(9, "9", "CIO");
             designation(10, "10", "CEO");
             log.info("Created the designation levels");

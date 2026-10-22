@@ -17,7 +17,7 @@ public class EnquiryController {
 
     private final EnquiryService enquiryService;
 
-    /** 200 when mailed; 503 when it could not be (the website then sends it another way); 429 when too many. */
+    /** 200 as soon as the enquiry is checked (it is mailed in the background); 503 when mail is not set up; 429 when too many. */
     @PostMapping("/enquiry")
     public Map<String, Boolean> enquiry(@Valid @RequestBody EnquiryRequest request, HttpServletRequest http) {
         enquiryService.send(request, AttendanceController.clientIp(http));

@@ -235,10 +235,12 @@ The public website's quote form, site-visit form and AMI chat post to `POST /api
 `{kind: QUOTE|SITE_VISIT|CHAT, headline?, name, phone, email?, details: [{label, value}], message?, transcript?, page?}`.
 The backend mails a designed message (Amsidel header, heading, Call / WhatsApp / Reply buttons, details table, message,
 chat transcript) to `ENQUIRY_TO` (default `info.amsidel@gmail.com`) through the same Brevo account as staff mail;
-Reply-To is the customer's email when given. Limits: a hidden bot field, 5 per 10 minutes per address and 150 a day
-(429 beyond). When mail cannot go out (503: not set up, mail server down) or the backend does not answer within 40 s
-(asleep), the website sends the enquiry through FormSubmit instead, as before; opening a form pings
-`/actuator/health` to wake the backend first.
+Reply-To is the customer's email when given. The visitor gets the answer as soon as the enquiry is checked; the mail
+goes out in the background (tried again after 30 s and 2 min if Brevo fails; an enquiry that still fails is written
+to the log in full). Limits: a hidden bot field, 5 per 10 minutes per address and 150 a day (429 beyond); 503 when
+mail is not set up. FormSubmit is no longer used. The website Worker (`amsidel-web/worker/index.js`) pings
+`/actuator/health` every 10 minutes (cron trigger in `wrangler.jsonc`) so the free Render backend does not fall
+asleep, and opening a form pings it too.
 
 ### Leave
 

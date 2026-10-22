@@ -3,6 +3,7 @@ package com.amsidel.backend.service;
 import com.amsidel.backend.dto.EnquiryRequest;
 import com.amsidel.backend.dto.EnquiryRequest.Kind;
 import com.amsidel.backend.exception.ApiException;
+import jakarta.annotation.PreDestroy;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
@@ -27,11 +28,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Website enquiries (quote form, site-visit form, AMI chat) as a designed mail to the enquiry inbox, sent through the
  * same mail server as staff mail. Reply-To is the customer when they gave an email. Open to the public, so: a hidden
- * bot field, and a limit per address and per day. When mail cannot go out the website falls back to FormSubmit.
+ * bot field, and a limit per address and per day.
+ * The visitor gets the answer as soon as the enquiry is checked; handing it to the mail server (several seconds) runs
+ * in the background, tried again after 30 seconds and 2 minutes when the mail server fails. An enquiry that still
+ * cannot be mailed is written to the log in full, so it is never lost.
  */
 @Slf4j
 @Service
@@ -42,27 +49,42 @@ public class EnquiryService {
     private static final int PER_ADDRESS = 5;
     private static final Duration PER_ADDRESS_WINDOW = Duration.ofMinutes(10);
     private static final int PER_DAY = 150;
+    private static final List<Duration> RETRIES = List.of(Duration.ofSeconds(30), Duration.ofMinutes(2));
 
     private final ObjectProvider<JavaMailSender> mailSender;
     private final MailService mailService;
     private final String to;
     private final String from;
     private final String brand;
+    private final boolean inBackground;
+    /** One mail at a time, in order; also waits between retries. */
+    private final ScheduledExecutorService outbox = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "enquiry-mail");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final Map<String, Deque<Instant>> recent = new ConcurrentHashMap<>();
     private final Deque<Instant> today = new ArrayDeque<>();
 
     public EnquiryService(ObjectProvider<JavaMailSender> mailSender, MailService mailService,
                           @Value("${app.enquiry.to:info.amsidel@gmail.com}") String to,
-                          @Value("${app.enquiry.brand:Amsidel Doors & Windows}") String brand) {
+                          @Value("${app.enquiry.brand:Amsidel Doors & Windows}") String brand,
+                          @Value("${app.enquiry.send-in-background:true}") boolean inBackground) {
         this.mailSender = mailSender;
         this.mailService = mailService;
         this.to = to;
         this.from = mailService.setup().from();
         this.brand = brand;
+        this.inBackground = inBackground;
     }
 
-    /** Sends the enquiry; 503 when mail is not set up or the mail server failed, so the website uses its fallback. */
+    @PreDestroy
+    void stop() {
+        outbox.shutdown();
+    }
+
+    /** Checks and queues the enquiry; 503 when mail is not set up, 429 when too many. */
     public void send(EnquiryRequest r, String ip) {
         if (StringUtils.hasText(r.getWebsite())) {
             log.info("Website enquiry dropped: bot field filled ({})", ip);
@@ -73,8 +95,10 @@ public class EnquiryService {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Mail is not set up on the server");
         }
         String subject = oneLine(subject(r));
+        String plain = plain(r);
+        MimeMessage message;
         try {
-            MimeMessage message = mailSender.getObject().createMimeMessage();
+            message = mailSender.getObject().createMimeMessage();
             MimeMessageHelper mail = new MimeMessageHelper(message, true, "UTF-8");
             mail.setFrom(from, brand + " website");
             mail.setTo(to);
@@ -82,12 +106,31 @@ public class EnquiryService {
                 mail.setReplyTo(r.getEmail().strip(), oneLine(r.getName()));
             }
             mail.setSubject(subject);
-            mail.setText(plain(r), html(r));
+            mail.setText(plain, html(r));
+        } catch (MessagingException | UnsupportedEncodingException e) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "The enquiry could not be prepared");
+        }
+        if (inBackground) {
+            outbox.execute(() -> deliver(message, subject, plain, 0));
+        } else {
+            deliver(message, subject, plain, RETRIES.size());
+        }
+    }
+
+    /** Hands the mail to the mail server; on failure tries again later, and finally logs the whole enquiry. */
+    private void deliver(MimeMessage message, String subject, String plain, int attempt) {
+        try {
             mailSender.getObject().send(message);
             log.info("Website enquiry '{}' mailed", subject);
-        } catch (MailException | MessagingException | UnsupportedEncodingException e) {
-            log.warn("Website enquiry '{}' could not be mailed: {}", subject, e.getMessage());
-            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "The enquiry could not be mailed");
+        } catch (MailException e) {
+            if (attempt < RETRIES.size()) {
+                Duration wait = RETRIES.get(attempt);
+                log.warn("Website enquiry '{}' could not be mailed ({}); trying again in {} s", subject, e.getMessage(),
+                        wait.toSeconds());
+                outbox.schedule(() -> deliver(message, subject, plain, attempt + 1), wait.toSeconds(), TimeUnit.SECONDS);
+            } else {
+                log.error("Website enquiry '{}' could NOT be mailed ({}). The enquiry:\n{}", subject, e.getMessage(), plain);
+            }
         }
     }
 
