@@ -32,14 +32,12 @@ public class LeaveController {
     // ---- settings ----
 
     @Checkpoint({Menus.LEAVE_MY, Menus.LEAVE_APPROVALS, Menus.LEAVE_SETTINGS})
-
     @GetMapping("/types")
     public List<LeaveType> types() {
         return settingsService.types();
     }
 
     @Checkpoint({Menus.LEAVE_SETTINGS})
-
     @PostMapping("/types")
     @ResponseStatus(HttpStatus.CREATED)
     public LeaveType createType(@Valid @RequestBody LeaveTypeRequest request) {
@@ -47,21 +45,18 @@ public class LeaveController {
     }
 
     @Checkpoint({Menus.LEAVE_SETTINGS})
-
     @PutMapping("/types/{id}")
     public LeaveType updateType(@PathVariable Long id, @Valid @RequestBody LeaveTypeRequest request) {
         return settingsService.updateType(id, request);
     }
 
     @Checkpoint({Menus.LEAVE_MY, Menus.LEAVE_APPROVALS, Menus.LEAVE_SETTINGS})
-
     @GetMapping("/restricted-holidays")
     public List<RestrictedHolidayResponse> holidays(@RequestParam(required = false) Integer year) {
         return settingsService.holidays(year != null ? year : LocalDate.now().getYear());
     }
 
     @Checkpoint({Menus.LEAVE_SETTINGS})
-
     @PostMapping("/restricted-holidays")
     @ResponseStatus(HttpStatus.CREATED)
     public RestrictedHolidayResponse addHoliday(@Valid @RequestBody RestrictedHolidayRequest request) {
@@ -69,17 +64,37 @@ public class LeaveController {
     }
 
     @Checkpoint({Menus.LEAVE_SETTINGS})
-
     @DeleteMapping("/restricted-holidays/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void removeHoliday(@PathVariable Long id) {
         settingsService.removeHoliday(id);
     }
 
+    // ---- office holidays (closed for everyone; nobody applies) ----
+
+    @Checkpoint({Menus.LEAVE_MY, Menus.LEAVE_APPROVALS, Menus.LEAVE_SETTINGS, Menus.WORKLOG_MY})
+    @GetMapping("/office-holidays")
+    public List<OfficeHolidayResponse> officeHolidays(@RequestParam(required = false) Integer year) {
+        return settingsService.officeHolidays(year != null ? year : LocalDate.now().getYear());
+    }
+
+    @Checkpoint({Menus.LEAVE_SETTINGS})
+    @PostMapping("/office-holidays")
+    @ResponseStatus(HttpStatus.CREATED)
+    public OfficeHolidayResponse addOfficeHoliday(@Valid @RequestBody RestrictedHolidayRequest request) {
+        return settingsService.addOfficeHoliday(request);
+    }
+
+    @Checkpoint({Menus.LEAVE_SETTINGS})
+    @DeleteMapping("/office-holidays/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeOfficeHoliday(@PathVariable Long id) {
+        settingsService.removeOfficeHoliday(id);
+    }
+
     // ---- my leave ----
 
     @Checkpoint({Menus.LEAVE_MY})
-
     @GetMapping("/me/balances")
     public List<LeaveBalance> myBalances(@AuthenticationPrincipal AuthUser me,
                                          @RequestParam(required = false) Integer year) {
@@ -87,7 +102,6 @@ public class LeaveController {
     }
 
     @Checkpoint({Menus.LEAVE_MY})
-
     @GetMapping("/me/requests")
     public List<LeaveRequestResponse> myRequests(@AuthenticationPrincipal AuthUser me,
                                                  @RequestParam(required = false) Integer year) {
@@ -95,7 +109,6 @@ public class LeaveController {
     }
 
     @Checkpoint({Menus.LEAVE_MY})
-
     @PostMapping("/me/requests")
     @ResponseStatus(HttpStatus.CREATED)
     public LeaveRequestResponse apply(@AuthenticationPrincipal AuthUser me,
@@ -104,14 +117,12 @@ public class LeaveController {
     }
 
     @Checkpoint({Menus.LEAVE_MY})
-
     @PostMapping("/me/requests/{id}/cancel")
     public LeaveRequestResponse cancel(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
         return leaveService.cancel(me, id);
     }
 
     @Checkpoint({Menus.LEAVE_MY})
-
     @GetMapping("/me/grants")
     public List<LeaveGrantResponse> myGrants(@AuthenticationPrincipal AuthUser me,
                                              @RequestParam(required = false) Integer year) {
@@ -121,7 +132,6 @@ public class LeaveController {
     // ---- approvers ----
 
     @Checkpoint({Menus.LEAVE_APPROVALS})
-
     @GetMapping("/requests")
     public List<LeaveRequestResponse> requests(@AuthenticationPrincipal AuthUser me,
                                                @RequestParam(required = false) LeaveStatus status,
@@ -130,7 +140,6 @@ public class LeaveController {
     }
 
     @Checkpoint({Menus.LEAVE_APPROVALS})
-
     @PostMapping("/requests/{id}/approve")
     public LeaveRequestResponse approve(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
                                         @Valid @RequestBody(required = false) LeaveDecisionRequest request) {
@@ -138,7 +147,6 @@ public class LeaveController {
     }
 
     @Checkpoint({Menus.LEAVE_APPROVALS})
-
     @PostMapping("/requests/{id}/reject")
     public LeaveRequestResponse reject(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
                                        @Valid @RequestBody LeaveDecisionRequest request) {
@@ -146,14 +154,12 @@ public class LeaveController {
     }
 
     @Checkpoint({Menus.LEAVE_APPROVALS})
-
     @GetMapping("/team")
     public List<TeamMember> team(@AuthenticationPrincipal AuthUser me) {
         return leaveService.team(me);
     }
 
     @Checkpoint({Menus.LEAVE_APPROVALS})
-
     @GetMapping("/balances")
     public List<LeaveBalance> balances(@AuthenticationPrincipal AuthUser me, @RequestParam Long employeeId,
                                        @RequestParam(required = false) Integer year) {
@@ -161,7 +167,6 @@ public class LeaveController {
     }
 
     @Checkpoint({Menus.LEAVE_APPROVALS})
-
     @GetMapping("/grants")
     public List<LeaveGrantResponse> grants(@AuthenticationPrincipal AuthUser me, @RequestParam Long employeeId,
                                            @RequestParam(required = false) Integer year) {
@@ -169,7 +174,6 @@ public class LeaveController {
     }
 
     @Checkpoint({Menus.LEAVE_APPROVALS})
-
     @PostMapping("/grants")
     @ResponseStatus(HttpStatus.CREATED)
     public LeaveGrantResponse grant(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody LeaveGrantRequest request) {

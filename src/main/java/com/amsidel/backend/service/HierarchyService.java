@@ -30,12 +30,14 @@ public class HierarchyService {
 
     @Transactional(readOnly = true)
     public ReportingLine line(AuthUser me, Long employeeId) {
-        Employee person = find(employeeId);
-        if (!canSee(me, person)) {
+        // 3 queries in all (the line, its people, the direct reports), however long the line is
+        List<Employee> up = lineOf(employeeId);
+        Employee person = up.getFirst();
+        if (!canSee(me, person, up)) {
             throw ApiException.forbidden("You can only see your own reporting line and those of your team");
         }
         List<OrgNode> chain = new ArrayList<>();
-        for (Employee e : chainUp(person)) {
+        for (Employee e : up) {
             chain.add(OrgNode.from(e));
         }
         Collections.reverse(chain); // top first, the person last
@@ -70,7 +72,7 @@ public class HierarchyService {
                 .orElseThrow(() -> new ResourceNotFoundException("No photo for employee " + employeeId));
     }
 
-    private boolean canSee(AuthUser me, Employee person) {
+    private boolean canSee(AuthUser me, Employee person, List<Employee> up) {
         if (me.id().equals(person.getId()) || me.isOwner()) {
             return true;
         }
@@ -79,7 +81,7 @@ public class HierarchyService {
             return true;
         }
         // anyone directly or indirectly below me
-        return chainUp(person).stream().skip(1).anyMatch(up -> up.getId().equals(me.id()));
+        return up.stream().skip(1).anyMatch(e -> e.getId().equals(me.id()));
     }
 
     /** The person, their manager, their manager's manager ... up to the top (stops if data ever loops). */
@@ -92,8 +94,20 @@ public class HierarchyService {
         return chain;
     }
 
-    private Employee find(Long id) {
-        return employeeRepository.findWithBrandById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Employee not found: " + id));
+    /** The person, their manager, their manager's manager ... up to the top, loaded together. */
+    private List<Employee> lineOf(Long id) {
+        List<Long> ids = employeeRepository.lineIds(id);
+        if (ids.isEmpty()) {
+            throw new ResourceNotFoundException("Employee not found: " + id);
+        }
+        Map<Long, Employee> byId = new HashMap<>();
+        employeeRepository.withDetails(ids).forEach(e -> byId.put(e.getId(), e));
+        List<Employee> chain = new ArrayList<>();
+        Set<Long> seen = new HashSet<>();
+        for (Employee e = byId.get(id); e != null && seen.add(e.getId());
+             e = e.getReportsTo() == null ? null : byId.get(e.getReportsTo().getId())) {
+            chain.add(e);
+        }
+        return chain;
     }
 }

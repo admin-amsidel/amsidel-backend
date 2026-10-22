@@ -8,6 +8,7 @@ import lombok.Data;
 import java.time.LocalDate;
 
 @Data
+/** A holiday date: used for both restricted holidays and office holidays. */
 public class RestrictedHolidayRequest {
 
     @NotNull

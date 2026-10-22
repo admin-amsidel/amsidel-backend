@@ -19,9 +19,14 @@ public record WorkLogMonth(
         WorkTarget target,
         boolean editable,
         List<WorkLogEntry> entries,
-        List<LeaveSpan> leave) {
+        List<LeaveSpan> leave,
+        /** Office holidays in the range: no hours expected. */
+        List<Holiday> holidays) {
 
     /** Leave covering fromDate..toDate (Sundays inside a span are weekly offs, not leave). */
+    public record Holiday(LocalDate date, String name) {
+    }
+
     public record LeaveSpan(LocalDate fromDate, LocalDate toDate, boolean halfDay, String typeCode, String typeName,
                             String status) {
     }

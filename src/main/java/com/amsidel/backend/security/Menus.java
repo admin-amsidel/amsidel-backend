@@ -22,6 +22,9 @@ public final class Menus {
     public static final String DESIGNATIONS = "DESIGNATIONS";
     public static final String STAFF_MAIL = "STAFF_MAIL";
     public static final String MENU_ACCESS = "MENU_ACCESS";
+    public static final String PERF_MY = "PERF_MY";
+    public static final String PERF_TEAM = "PERF_TEAM";
+    public static final String PERF_CYCLES = "PERF_CYCLES";
 
     /** One menu; parent null for a top-level menu, path null for a menu that only holds sub-menus. */
     public record Def(String code, String name, String description, int checkpoint, String parent, String path, String icon) {
@@ -49,9 +52,25 @@ public final class Menus {
 
             new Def(STAFF_MAIL, "Staff mail", "Personal mail and WhatsApp messages to employees", 5000, null, "/portal/mail", "pi-envelope"),
 
+            new Def("PERFORMANCE", "Performance", "Yearly performance: skills, goals, ratings and achievements", 6000, null, null, "pi-chart-line"),
+            new Def(PERF_MY, "My performance", "Own skills, intro, goals, self-rating and achievements", 6001, "PERFORMANCE", "/portal/performance", "pi-star"),
+            new Def(PERF_TEAM, "Team performance", "Set goals, rate and give achievements to the people below you", 6002, "PERFORMANCE", "/portal/performance/team", "pi-users"),
+            new Def(PERF_CYCLES, "Review cycles", "Open and close the yearly review periods", 6003, "PERFORMANCE", "/portal/performance/cycles", "pi-calendar-clock"),
+
             new Def("ADMIN", "Administration", "Portal set-up", 9000, null, null, "pi-shield"),
             new Def(MENU_ACCESS, "Menu access", "Which user types and designations see which menus; changing it needs the Admin user type", 9001, "ADMIN", "/portal/admin/menu-access", "pi-lock")
     );
+
+    /** Given to anyone with people reporting to them, whatever their user type or menu access. */
+    public static final List<String> FOR_TEAM_LEADS = List.of(PERF_TEAM);
+
+    /**
+     * User types that get a menu when it first appears in a database that already has menu access set up
+     * (a new install gets the full defaults in MenuBootstrap instead). Admins and owners already have "*".
+     */
+    public static final java.util.Map<String, List<String>> NEW_MENU_ROLES = java.util.Map.of(
+            PERF_MY, List.of("EMPLOYEE", "MANAGER"),
+            PERF_TEAM, List.of("MANAGER"));
 
     private Menus() {
     }

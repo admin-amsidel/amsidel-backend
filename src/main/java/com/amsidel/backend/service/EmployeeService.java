@@ -12,6 +12,7 @@ import com.amsidel.backend.repository.BrandRepository;
 import com.amsidel.backend.repository.DesignationRepository;
 import com.amsidel.backend.repository.EmployeeRepository;
 import com.amsidel.backend.security.AuthUser;
+import com.amsidel.backend.security.SignedInCache;
 import com.amsidel.backend.validation.PinPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -41,6 +42,7 @@ public class EmployeeService {
     private final BrandRepository brandRepository;
     private final DesignationRepository designationRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SignedInCache signedIn;
 
     @Transactional(readOnly = true)
     public List<EmployeeResponse> list(AuthUser me, Long brandId) {
@@ -74,7 +76,9 @@ public class EmployeeService {
         employee.setMustChangePassword(true);
         employee.setPasswordChangedAt(Instant.now());
         apply(employee, request);
-        return EmployeeResponse.from(employeeRepository.save(employee));
+        EmployeeResponse saved = EmployeeResponse.from(employeeRepository.save(employee));
+        teamsChanged();
+        return saved;
     }
 
     @Transactional
@@ -91,7 +95,22 @@ public class EmployeeService {
             }
         }
         apply(employee, request);
+        teamsChanged();
         return EmployeeResponse.from(employee);
+    }
+
+    /** Who reports to whom may have changed: managers' "leads a team" is worked out again (after the commit). */
+    private void teamsChanged() {
+        signedIn.evictAll();
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            signedIn.evictAll();
+                        }
+                    });
+        }
     }
 
     /** Sets a temporary PIN, unlocks the account and signs the person out everywhere. */

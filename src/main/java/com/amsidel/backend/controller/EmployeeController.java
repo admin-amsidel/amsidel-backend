@@ -33,7 +33,6 @@ public class EmployeeController {
     private final PhotoService photoService;
 
     @Checkpoint({Menus.EMP_LIST, Menus.TASKS, Menus.STAFF_MAIL, Menus.MENU_ACCESS})
-
     @GetMapping
     public List<EmployeeResponse> list(@AuthenticationPrincipal AuthUser me,
                                        @RequestParam(required = false) Long brandId) {

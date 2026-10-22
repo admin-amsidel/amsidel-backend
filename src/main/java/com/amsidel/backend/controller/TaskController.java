@@ -26,7 +26,6 @@ public class TaskController {
     private final TaskService taskService;
 
     @Checkpoint({Menus.WORKLOG_MY})
-
     @GetMapping("/mine")
     public List<MyTask> mine(@AuthenticationPrincipal AuthUser me) {
         return taskService.mine(me);

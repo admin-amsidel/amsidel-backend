@@ -39,7 +39,6 @@ public class AttendanceController {
     private final AttendanceService attendanceService;
 
     @Checkpoint({Menus.ATT_CHECKIN})
-
     @GetMapping("/today")
     public AttendanceToday today(@AuthenticationPrincipal AuthUser me) {
         return attendanceService.today(me);
@@ -97,7 +96,6 @@ public class AttendanceController {
     }
 
     @Checkpoint({Menus.ATT_CHECKIN, Menus.ATT_TEAM})
-
     @GetMapping("/{id}/photo")
     public ResponseEntity<byte[]> photo(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
         return ResponseEntity.ok()

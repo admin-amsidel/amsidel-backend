@@ -165,6 +165,41 @@ class LeaveFlowTest {
     }
 
     @Test
+    void officeHolidaysAreNotCountedAsLeave() throws Exception {
+        String[] emp = person("EMPLOYEE");
+        String christmas = "{\"date\":\"2027-12-25\",\"name\":\"Christmas\"}";
+        mockMvc.perform(post("/api/leave/office-holidays").header("Authorization", auth(emp[1]))
+                        .contentType(MediaType.APPLICATION_JSON).content(christmas))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/leave/office-holidays").header("Authorization", auth(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content(christmas))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/leave/office-holidays").header("Authorization", auth(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content(christmas))
+                .andExpect(status().isConflict());
+        mockMvc.perform(get("/api/leave/office-holidays?year=2027").header("Authorization", auth(emp[1])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].name", hasItem("Christmas")));
+
+        // Fri 24 to Mon 27 Dec: Christmas (Sat 25) and Sunday 26 are not leave days
+        apply(emp[1], "CL", "2027-12-24", "2027-12-27", false)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.days").value(2.0));
+        apply(emp[1], "SL", "2027-12-25", "2027-12-25", false)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("The chosen dates are all weekly offs or office holidays; no leave is needed"));
+        apply(emp[1], "SL", "2027-12-25", "2027-12-25", true)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("2027-12-25 is an office holiday; no leave is needed"));
+
+        // the work log calendar gets it too
+        mockMvc.perform(get("/api/worklog?from=2027-12-01&to=2027-12-31").header("Authorization", auth(emp[1])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.holidays[0].date").value("2027-12-25"))
+                .andExpect(jsonPath("$.holidays[0].name").value("Christmas"));
+    }
+
+    @Test
     void leaveWithoutPayNeedsNoBalance() throws Exception {
         String[] emp = person("EMPLOYEE");
         apply(emp[1], "LWP", "2027-05-03", "2027-05-29", false)

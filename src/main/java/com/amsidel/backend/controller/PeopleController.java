@@ -32,7 +32,6 @@ public class PeopleController {
     }
 
     @Checkpoint({Menus.ORG_CHART})
-
     @GetMapping("/org-chart")
     public List<OrgNode> orgChart(@AuthenticationPrincipal AuthUser me) {
         return hierarchyService.orgChart(me);

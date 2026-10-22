@@ -10,7 +10,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
  * Clears {@link SignedInCache} whenever an employee row is changed or removed: once when the change is written and
- * again after it is committed, so a request running in between cannot keep the old values.
+ * again after it is committed, so a request running in between cannot keep the old values. (A new reporting line
+ * also changes whether the manager leads a team: EmployeeService clears everyone's entry for that.)
  */
 @Component
 @RequiredArgsConstructor

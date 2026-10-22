@@ -47,12 +47,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> handleTooLarge(MaxUploadSizeExceededException ex) {
-        return build(HttpStatus.CONTENT_TOO_LARGE, "Photo must be 2 MB or smaller", null);
+        return build(HttpStatus.CONTENT_TOO_LARGE, "That file is too large (10 MB at most; photos 2 MB)", null);
     }
 
     @ExceptionHandler(MissingServletRequestPartException.class)
     public ResponseEntity<Map<String, Object>> handleMissingPart(MissingServletRequestPartException ex) {
-        return build(HttpStatus.BAD_REQUEST, "Choose a photo to upload", null);
+        return build(HttpStatus.BAD_REQUEST, "Choose a file to upload", null);
     }
 
     /** Two requests saving the same user ID or employee number at the same moment. */

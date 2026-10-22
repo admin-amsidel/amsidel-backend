@@ -26,7 +26,6 @@ public class DesignationController {
     }
 
     @Checkpoint({Menus.DESIGNATIONS})
-
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Designation create(@Valid @RequestBody DesignationRequest request) {
@@ -34,7 +33,6 @@ public class DesignationController {
     }
 
     @Checkpoint({Menus.DESIGNATIONS})
-
     @PutMapping("/{id}")
     public Designation update(@PathVariable Long id, @Valid @RequestBody DesignationRequest request) {
         return designationService.update(id, request);

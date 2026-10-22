@@ -161,6 +161,47 @@ People see their own days; those above them in the reporting line, and owners/ad
 | GET | `/api/attendance/employees/{id}?from=&to=` | the person and those above them |
 | GET | `/api/attendance/{id}/photo` (image/jpeg) | the person and those above them |
 
+### Performance reviews
+
+Yearly reviews in **review cycles** (`review_cycles`: name, from/to date, whole group or one brand, closed = read-only).
+In a cycle each person has a review (`reviews`: self intro) with:
+
+- **Skills** (`review_skills`): name, Technical / Non-technical, self level 1-5; the manager validates with a level
+  1-5 and a note (renaming the skill clears the validation). A manager can also add a skill for someone below them
+  with their level and note (`added_by`); the person then gives their own level (0 until then). Each side removes
+  only the skills it added.
+- **Goals** (`goals`, `goal_tasks`), set by the manager: weightage % (a person's goals add up to at most 100), dates
+  inside the cycle, and sub-tasks with their own dates and weightage (exactly 100 per goal). Progress: sub-task % done
+  (the person or the manager moves it); goal % = weighted sub-tasks (or the goal's own % without sub-tasks); overall %
+  = weighted goals. From the goal's end date the person rates it 1-5 (comment optional, can change until the manager
+  rates); then the manager rates with written feedback. A rated goal no longer changes, except that an **owner, or an
+  admin over the person's brand, can edit any goal**: rated, 100% done, past its end date, even in a closed cycle (not
+  their own). The edit keeps the ratings, comments and progress (`GoalView.canEdit`). Ratings and skill levels go
+  in **half stars**, 0.5 to 5 (e.g. 3.5; 4.3 is refused).
+- **Achievements** (`achievements`): issued by a manager to someone below them, or added by the person (self-reported).
+
+"Manager" = anyone above the person in the reporting line, or an owner/admin in scope, who also has the Team
+performance menu. **Anyone with people reporting to them gets Team performance automatically**, whatever their user
+type or menu access (`Menus.FOR_TEAM_LEADS`). Menus: My performance 6001 (employees and managers), Team performance 6002 (managers), Review
+cycles 6003 (admins).
+
+| Method | Path | Menu |
+|---|---|---|
+| GET | `/api/performance/cycles` | any performance menu |
+| POST, PUT | `/api/performance/cycles`, `/api/performance/cycles/{id}` | Review cycles |
+| GET | `/api/performance/cycles/{id}/me` (review: rights, intro, skills, goals, achievements, totals) | My performance |
+| PUT | `/api/performance/cycles/{id}/me/intro`; POST `.../me/skills`; PUT, DELETE `/api/performance/skills/{id}` | My performance |
+| PUT | `/api/performance/goals/{id}/self-rating` `{rating, comment}` | My performance |
+| GET | `/api/performance/cycles/{id}/team`, `/api/performance/cycles/{id}/employees/{employeeId}` | Team performance |
+| POST | `/api/performance/cycles/{id}/employees/{employeeId}/goals`; PUT, DELETE `/api/performance/goals/{id}` | Team performance |
+| PUT | `/api/performance/goals/{id}/manager-rating` `{rating, comment}`; `/api/performance/skills/{id}/validation` | Team performance |
+| POST | `/api/performance/cycles/{id}/employees/{employeeId}/skills` `{name, category, managerLevel, note}` | Team performance |
+| PUT | `/api/performance/goals/{id}/progress`, `/api/performance/goals/{id}/tasks/{taskId}/progress` `{progress}` | the person or their manager |
+| POST, DELETE | `/api/performance/achievements` `{employeeId?, title, category, achievedOn, details}`, `.../{id}` | the person (own) or their manager |
+
+New menus reach the user types in `Menus.NEW_MENU_ROLES` the first time they appear in a database that already has
+menu access set up.
+
 ### Staff mail
 
 One message, sent to each chosen employee as their own mail at their **office email** ("Dear Anu," or
@@ -171,7 +212,16 @@ office email. Brand admins can mail only their own brand's people.
 | Method | Path | Who |
 |---|---|---|
 | GET | `/api/mail/setup` (`ready`, `from`, `fromName`) | owner, admin |
-| POST | `/api/mail/send` `{employeeId, subject, greeting?, body}` → `{sent, error, email, at}` (200 even when it failed) | owner, admin |
+| POST | `/api/mail/send` `{employeeId, subject, greeting?, body, cc?, bcc?, attachments?, images?}` → `{sent, error, email, at}` (200 even when it failed) | owner, admin |
+| POST, DELETE | `/api/mail/files` (multipart `file`) → `{id, name, size, contentType, image, inline}`, `/api/mail/files/{id}` | owner, admin |
+
+**CC / BCC** (optional, at most 10 each) are copied on every person's mail. **Attachments**: pictures (JPG, PNG, GIF,
+WebP), PDF and Word (.doc, .docx), judged by the file's first bytes; 10 MB each, 14 MB in all per mail. They are
+uploaded once to `/api/mail/files`, held **in memory only** for the uploader for 4 hours (`MailFileStore`, nothing
+in the database; a restart drops them and the portal asks to attach again), and every `/send` lists their ids.
+**Pictures in the message** (JPG, PNG, GIF): `images: [{fileId, caption}]`; `[[image 1]]` in the text marks where
+the first goes (unmarked ones come after the text), shown with the caption under it. Pictures and attachments go by
+email only, not WhatsApp. Brevo counts every CC/BCC copy towards the daily limit.
 
 Mail is sent through **Brevo** (`smtp-relay.brevo.com:587`, login `bf6436001@smtp-brevo.com`; free plan about
 300 mails a day). Give the Brevo **SMTP key** as `MAIL_PASSWORD`; until then `/api/mail/setup` says not ready and the
@@ -179,9 +229,23 @@ portal shows mail as not set up. `MAIL_FROM` (default `info.amsidel@gmail.com`) 
 (Senders & Domains); an `@amsidel.com` address on a verified domain reaches inboxes best. `MAIL_HOST`, `MAIL_PORT`,
 `MAIL_USERNAME` and `MAIL_FROM_NAME` switch to another provider without code changes.
 
+### Website enquiries
+
+The public website's quote form, site-visit form and AMI chat post to `POST /api/public/enquiry` (no sign-in)
+`{kind: QUOTE|SITE_VISIT|CHAT, headline?, name, phone, email?, details: [{label, value}], message?, transcript?, page?}`.
+The backend mails a designed message (Amsidel header, heading, Call / WhatsApp / Reply buttons, details table, message,
+chat transcript) to `ENQUIRY_TO` (default `info.amsidel@gmail.com`) through the same Brevo account as staff mail;
+Reply-To is the customer's email when given. Limits: a hidden bot field, 5 per 10 minutes per address and 150 a day
+(429 beyond). When mail cannot go out (503: not set up, mail server down) or the backend does not answer within 40 s
+(asleep), the website sends the enquiry through FormSubmit instead, as before; opening a form pings
+`/actuator/health` to wake the backend first.
+
 ### Leave
 
-Leave year = January to December; Sundays are not counted (`app.leave.weekly-offs`). Standard types are created on
+Leave year = January to December; Sundays (`app.leave.weekly-offs`) and **office holidays** are not counted.
+Office holidays (`office_holidays`: date, name, whole group or one brand) are days the office is closed for everyone:
+nobody applies for them, leave across them skips them, and the work log expects no hours (they come with
+`GET /api/worklog` as `holidays`). Restricted holidays are different: optional days taken as RH leave. Standard types are created on
 first start: CL 10, SL 10, EL 10, RH 5 (listed dates only) a year; CO and PL granted per person; LWP no limit.
 A manager decides for employees of their brand, an admin for managers and employees, an owner for everyone;
 nobody for themselves, and an owner's own leave is approved on submission.
@@ -191,6 +255,8 @@ nobody for themselves, and an owner's own leave is approved on submission.
 | GET | `/api/leave/types`, `/api/leave/restricted-holidays?year=` | signed in |
 | POST, PUT | `/api/leave/types`, `/api/leave/types/{id}` | owner, admin |
 | POST, DELETE | `/api/leave/restricted-holidays`, `/api/leave/restricted-holidays/{id}` | owner, admin |
+| GET | `/api/leave/office-holidays?year=` | My leave, Approvals, Leave settings or My work log menu |
+| POST, DELETE | `/api/leave/office-holidays` `{date, name, brandId?}`, `/api/leave/office-holidays/{id}` | Leave settings menu |
 | GET | `/api/leave/me/balances?year=`, `/api/leave/me/requests?year=`, `/api/leave/me/grants?year=` | signed in |
 | POST | `/api/leave/me/requests` `{leaveTypeId, fromDate, toDate, halfDay, reason}` | signed in |
 | POST | `/api/leave/me/requests/{id}/cancel` | the requester (pending, or approved and not started) |

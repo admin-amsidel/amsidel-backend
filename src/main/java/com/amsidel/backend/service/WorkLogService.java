@@ -40,17 +40,20 @@ public class WorkLogService {
     private final LeaveRequestRepository leaveRepository;
     private final TaskService taskService;
     private final TeamAccess access;
+    private final OfficeHolidays officeHolidays;
     private final ZoneId zone;
 
     public WorkLogService(WorkLogRepository logRepository, WorkHourRuleRepository ruleRepository,
                           EmployeeRepository employeeRepository, LeaveRequestRepository leaveRepository,
-                          TaskService taskService, TeamAccess access, @Value("${app.leave.zone}") ZoneId zone) {
+                          TaskService taskService, TeamAccess access, OfficeHolidays officeHolidays,
+                          @Value("${app.leave.zone}") ZoneId zone) {
         this.logRepository = logRepository;
         this.ruleRepository = ruleRepository;
         this.employeeRepository = employeeRepository;
         this.leaveRepository = leaveRepository;
         this.taskService = taskService;
         this.access = access;
+        this.officeHolidays = officeHolidays;
         this.zone = zone;
     }
 
@@ -71,8 +74,12 @@ public class WorkLogService {
                 .map(r -> new WorkLogMonth.LeaveSpan(r.getFromDate(), r.getToDate(), r.isHalfDay(),
                         r.getLeaveType().getCode(), r.getLeaveType().getName(), r.getStatus().name()))
                 .toList();
+        List<WorkLogMonth.Holiday> holidays = officeHolidays
+                .forBrand(person.getBrand() == null ? null : person.getBrand().getId(), from, to).entrySet().stream()
+                .map(h -> new WorkLogMonth.Holiday(h.getKey(), h.getValue()))
+                .toList();
         return new WorkLogMonth(person.getId(), person.getName(), person.getEmpNumber(), person.getJoinedDate(), from, to, today(),
-                target(person), person.getId().equals(me.id()), entries, leave);
+                target(person), person.getId().equals(me.id()), entries, leave, holidays);
     }
 
     /** People whose work log I may look at (not me): everyone below me, plus my scope as owner or admin. */

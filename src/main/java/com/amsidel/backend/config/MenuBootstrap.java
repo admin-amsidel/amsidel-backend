@@ -37,23 +37,32 @@ public class MenuBootstrap implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         transactions.executeWithoutResult(status -> {
-            syncMenus();
-            if (accessRepository.count() == 0) {
+            boolean firstStart = accessRepository.count() == 0;
+            Set<String> added = syncMenus();
+            if (firstStart) {
                 defaults();
+            } else {
+                grantNewMenus(added);
             }
         });
         menuAccessService.reload();
     }
 
-    private void syncMenus() {
+    /** Returns the codes of menus that were not in the table before. */
+    private Set<String> syncMenus() {
         Map<String, MenuItem> existing = menuRepository.findAll().stream()
                 .collect(Collectors.toMap(MenuItem::getCode, m -> m));
+        Set<String> added = new java.util.HashSet<>();
         Set<String> known = Menus.ALL.stream().map(Menus.Def::code).collect(Collectors.toSet());
         existing.values().stream().filter(m -> !known.contains(m.getCode())).forEach(menuRepository::delete);
         menuRepository.flush();
         int order = 0;
         for (Menus.Def d : Menus.ALL) {
-            MenuItem m = existing.getOrDefault(d.code(), new MenuItem());
+            MenuItem m = existing.get(d.code());
+            if (m == null) {
+                m = new MenuItem();
+                added.add(d.code());
+            }
             m.setCode(d.code());
             m.setName(d.name());
             m.setDescription(d.description());
@@ -64,13 +73,26 @@ public class MenuBootstrap implements ApplicationRunner {
             m.setSortOrder(order += 10);
             menuRepository.save(m);
         }
+        return added;
+    }
+
+    /** A menu new to this database goes to the user types listed in Menus.NEW_MENU_ROLES. */
+    private void grantNewMenus(Set<String> added) {
+        for (String code : added) {
+            Menus.ALL.stream().filter(d -> d.code().equals(code)).findFirst().ifPresent(d -> {
+                for (String role : Menus.NEW_MENU_ROLES.getOrDefault(code, List.of())) {
+                    accessRepository.save(MenuAccess.of(AccessSubject.ROLE, role, String.valueOf(d.checkpoint())));
+                    log.info("New menu {} given to {}", d.name(), role);
+                }
+            });
+        }
     }
 
     private void defaults() {
         grant("OWNER", List.of(MenuAccess.ALL));
         grant("ADMIN", List.of(MenuAccess.ALL));
-        grant("MANAGER", List.of("1001", "1002", "2001", "2002", "3001"));
-        grant("EMPLOYEE", List.of("1001", "2001", "3001"));
+        grant("MANAGER", List.of("1001", "1002", "2001", "2002", "3001", "6001", "6002"));
+        grant("EMPLOYEE", List.of("1001", "2001", "3001", "6001"));
         log.info("Created the default menu access for each user type");
     }
 

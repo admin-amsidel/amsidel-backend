@@ -14,6 +14,7 @@ import com.amsidel.backend.repository.EmployeeRepository;
 import com.amsidel.backend.repository.MenuAccessRepository;
 import com.amsidel.backend.repository.MenuItemRepository;
 import com.amsidel.backend.security.AuthUser;
+import com.amsidel.backend.security.Menus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,8 +27,9 @@ import java.util.function.Predicate;
 /**
  * Which menus each person may open, from the menus and menu_access tables. A person with rows of their own gets
  * exactly those; anyone else gets everything given to their user type (role) plus everything given to their
- * designation. A menu's checkpoint also gives its sub-menus; "*" gives all. Owners always have everything; someone
- * with nothing at all is told no permission was granted. Both tables are small and kept in memory, so checking access costs no database
+ * designation. A menu's checkpoint also gives its sub-menus; "*" gives all. Anyone with people reporting to them
+ * also gets the reporting-line team menus (Menus.FOR_TEAM_LEADS). Owners always have everything; someone with
+ * nothing at all is told no permission was granted. Both tables are small and kept in memory, so checking access costs no database
  * round trip; saving through this service refreshes the copy. (With more than one server running, the others
  * pick up a change when they restart.)
  */
@@ -73,6 +75,10 @@ public class MenuAccessService {
             if (menu != null) {
                 addWithChildren(s, menu, codes);
             }
+        }
+        if (me.leadsTeam()) {
+            // whoever has people reporting to them sets their goals and rates them, whatever their user type
+            codes.addAll(Menus.FOR_TEAM_LEADS);
         }
         return codes;
     }

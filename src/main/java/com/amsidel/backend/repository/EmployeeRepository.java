@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,10 +29,24 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
             + " where e.reportsTo.id = :id and e.active = true order by d.levelNumber desc nulls last, e.name")
     List<Employee> directReports(@Param("id") Long id);
 
+    /** Ids of the person and everyone above them, in one round trip (UNION stops if the data ever loops). */
+    @Query(value = "with recursive up(id, reports_to_id) as ("
+            + " select id, reports_to_id from employees where id = :id"
+            + " union select e.id, e.reports_to_id from employees e join up on e.id = up.reports_to_id"
+            + ") select id from up", nativeQuery = true)
+    List<Long> lineIds(@Param("id") Long id);
+
+    /** These people with their brand and designation, for charts. */
+    @Query("select e from Employee e left join fetch e.brand left join fetch e.designation where e.id in :ids")
+    List<Employee> withDetails(@Param("ids") Collection<Long> ids);
+
     boolean existsByUserId(String userId);
 
     boolean existsByEmpNumberIgnoreCase(String empNumber);
 
     /** Highest employee number with this prefix, used to generate the next one. */
     Optional<Employee> findTopByEmpNumberStartingWithOrderByEmpNumberDesc(String prefix);
+
+    /** Does anyone active report to this person? */
+    boolean existsByReportsTo_IdAndActiveTrue(Long employeeId);
 }

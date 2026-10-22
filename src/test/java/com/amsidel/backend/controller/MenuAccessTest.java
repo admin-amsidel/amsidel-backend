@@ -17,6 +17,7 @@ import java.util.List;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -57,7 +58,7 @@ class MenuAccessTest {
         String eby = signIn("ma.eby");
         access(eby).andExpect(status().isOk())
                 .andExpect(jsonPath("$.all").value(false))
-                .andExpect(jsonPath("$.codes", containsInAnyOrder("ATT_CHECKIN", "LEAVE_MY", "WORKLOG_MY")))
+                .andExpect(jsonPath("$.codes", containsInAnyOrder("ATT_CHECKIN", "LEAVE_MY", "WORKLOG_MY", "PERF_MY")))
                 .andExpect(jsonPath("$.menus[0].code").value("ATTENDANCE"))
                 .andExpect(jsonPath("$.menus[0].children[*].code", containsInAnyOrder("ATT_CHECKIN")));
         // the API follows the menus, not just the sidebar
@@ -136,7 +137,7 @@ class MenuAccessTest {
 
         // removing her own setting brings back her user type's menus
         save(owner, "EMPLOYEE", uma, "[]").andExpect(status().isOk());
-        access(umaToken).andExpect(jsonPath("$.codes", containsInAnyOrder("ATT_CHECKIN", "LEAVE_MY", "WORKLOG_MY")));
+        access(umaToken).andExpect(jsonPath("$.codes", containsInAnyOrder("ATT_CHECKIN", "LEAVE_MY", "WORKLOG_MY", "PERF_MY")));
         // owners cannot be given less
         save(owner, "EMPLOYEE", JsonPath.read(body(mockMvc.perform(get("/api/auth/me").header("Authorization", auth(owner)))), "$.id").toString(),
                 "[\"1001\"]").andExpect(status().isBadRequest());
@@ -152,9 +153,32 @@ class MenuAccessTest {
                     .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.startsWith("No permission granted")));
             mockMvc.perform(get("/api/attendance/today").header("Authorization", auth(nina))).andExpect(status().isForbidden());
         } finally {
-            save(owner, "ROLE", "EMPLOYEE", "[\"1001\",\"2001\",\"3001\"]").andExpect(status().isOk());
+            save(owner, "ROLE", "EMPLOYEE", "[\"1001\",\"2001\",\"3001\",\"6001\"]").andExpect(status().isOk());
         }
         access(nina).andExpect(status().isOk());
+    }
+
+    @Autowired
+    private com.amsidel.backend.config.MenuBootstrap menuBootstrap;
+
+    @Autowired
+    private com.amsidel.backend.repository.MenuItemRepository menuItems;
+
+    @Autowired
+    private com.amsidel.backend.repository.MenuAccessRepository menuAccessRows;
+
+    @Test
+    void aNewMenuReachesTheUserTypesOfAnExistingSetUp() throws Exception {
+        // as if this database was set up before the Performance menus existed
+        menuAccessRows.findAll().stream().filter(a -> a.getCheckpoint().startsWith("600")).forEach(menuAccessRows::delete);
+        menuItems.findAll().stream().filter(m -> m.getCheckpoint() >= 6000 && m.getCheckpoint() < 7000).forEach(menuItems::delete);
+        menuBootstrap.run(null);
+
+        create("Neil New", "ma.neil", "EMPLOYEE", null);
+        access(signIn("ma.neil")).andExpect(jsonPath("$.codes", hasItem("PERF_MY")))
+                .andExpect(jsonPath("$.codes", not(hasItem("PERF_TEAM"))));
+        mockMvc.perform(get("/api/menu-access").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$[?(@.subjectKey == 'MANAGER')].checkpoints[*]").value(hasItems("6001", "6002")));
     }
 
     @Test
@@ -167,7 +191,7 @@ class MenuAccessTest {
         save(owner, "ROLE", "NOBODY", "[\"1001\"]").andExpect(status().isBadRequest());
         // "*" with numbers keeps just "*"
         save(owner, "ROLE", "MANAGER", "[\"*\",\"1001\"]").andExpect(jsonPath("$.checkpoints", containsInAnyOrder("*")));
-        save(owner, "ROLE", "MANAGER", "[\"1001\",\"1002\",\"2001\",\"2002\",\"3001\"]").andExpect(status().isOk());
+        save(owner, "ROLE", "MANAGER", "[\"1001\",\"1002\",\"2001\",\"2002\",\"3001\",\"6001\",\"6002\"]").andExpect(status().isOk());
 
         mockMvc.perform(get("/api/menu-access/menus").header("Authorization", auth(owner)))
                 .andExpect(jsonPath("$[?(@.code == 'ATTENDANCE')].checkpoint").value(hasItem(1000)))

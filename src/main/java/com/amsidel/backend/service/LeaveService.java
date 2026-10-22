@@ -38,6 +38,7 @@ public class LeaveService {
     private final LeaveRequestRepository requestRepository;
     private final LeaveGrantRepository grantRepository;
     private final RestrictedHolidayRepository holidayRepository;
+    private final OfficeHolidays officeHolidays;
     private final EmployeeRepository employeeRepository;
     private final Set<DayOfWeek> weeklyOffs;
     private final ZoneId zone;
@@ -45,7 +46,7 @@ public class LeaveService {
     public LeaveService(LeaveTypeRepository typeRepository,
                         LeaveRequestRepository requestRepository,
                         LeaveGrantRepository grantRepository,
-                        RestrictedHolidayRepository holidayRepository,
+                        RestrictedHolidayRepository holidayRepository, OfficeHolidays officeHolidays,
                         EmployeeRepository employeeRepository,
                         @Value("${app.leave.weekly-offs}") List<DayOfWeek> weeklyOffs,
                         @Value("${app.leave.zone}") ZoneId zone) {
@@ -53,6 +54,7 @@ public class LeaveService {
         this.requestRepository = requestRepository;
         this.grantRepository = grantRepository;
         this.holidayRepository = holidayRepository;
+        this.officeHolidays = officeHolidays;
         this.employeeRepository = employeeRepository;
         this.weeklyOffs = EnumSet.copyOf(weeklyOffs);
         this.zone = zone;
@@ -106,9 +108,12 @@ public class LeaveService {
             checkRestrictedDate(employee, from, to);
         }
 
-        BigDecimal days = halfDay ? HALF : workingDays(from, to);
+        if (halfDay && isOfficeHoliday(employee, from)) {
+            throw ApiException.badRequest(from + " is an office holiday; no leave is needed");
+        }
+        BigDecimal days = halfDay ? HALF : workingDays(employee, from, to);
         if (days.signum() == 0) {
-            throw ApiException.badRequest("The chosen dates are all weekly offs; no leave is needed");
+            throw ApiException.badRequest("The chosen dates are all weekly offs or office holidays; no leave is needed");
         }
         if (requestRepository.countOverlapping(employee.getId(), ACTIVE, from, to) > 0) {
             throw ApiException.conflict("You already have leave on some of these dates");
@@ -293,10 +298,21 @@ public class LeaveService {
         }
     }
 
-    /** Days from..to, both included, without weekly offs. */
-    private BigDecimal workingDays(LocalDate from, LocalDate to) {
-        long count = from.datesUntil(to.plusDays(1)).filter(d -> !weeklyOffs.contains(d.getDayOfWeek())).count();
+    /** Days from..to, both included, without weekly offs and the person's office holidays. */
+    private BigDecimal workingDays(Employee employee, LocalDate from, LocalDate to) {
+        Set<LocalDate> closed = officeHolidays.forBrand(brandIdOf(employee), from, to).keySet();
+        long count = from.datesUntil(to.plusDays(1))
+                .filter(d -> !weeklyOffs.contains(d.getDayOfWeek()) && !closed.contains(d))
+                .count();
         return BigDecimal.valueOf(count).setScale(1);
+    }
+
+    private boolean isOfficeHoliday(Employee employee, LocalDate day) {
+        return !officeHolidays.forBrand(brandIdOf(employee), day, day).isEmpty();
+    }
+
+    private static Long brandIdOf(Employee employee) {
+        return employee.getBrand() == null ? null : employee.getBrand().getId();
     }
 
     private List<LeaveBalance> balances(Employee employee, int year) {

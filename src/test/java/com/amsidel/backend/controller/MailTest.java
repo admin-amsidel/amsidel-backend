@@ -2,7 +2,9 @@ package com.amsidel.backend.controller;
 
 import com.jayway.jsonpath.JsonPath;
 import jakarta.mail.Address;
+import jakarta.mail.Message;
 import jakarta.mail.Multipart;
+import jakarta.mail.Part;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +16,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.test.context.ActiveProfiles;
@@ -27,6 +30,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -91,6 +95,7 @@ class MailTest {
         ravi = create("Ravi Kumar", "ml.ravi", "ravi@amsidel.com", dw);
         noEmail = create("No Mail", "ml.none", null, dw);
         bounce = create("Bounce Back", "ml.bounce", "bounce@amsidel.com", dw);
+        create("Mail Admin", "ml.admin", null, dw, "ADMIN");
         employee = token(changePin(token(login("ml.anu", "ab@123")), "ab@123", "cd@456"));
     }
 
@@ -119,6 +124,57 @@ class MailTest {
     }
 
     @Test
+    void ccBccAttachmentsAndPicturesInTheMessage() throws Exception {
+        String pdf = fileId(upload(owner, "Leave policy.pdf", "%PDF-1.7 test".getBytes()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.contentType").value("application/pdf"))
+                .andExpect(jsonPath("$.image").value(false)));
+        String png = fileId(upload(owner, "office.png", PNG).andExpect(status().isOk())
+                .andExpect(jsonPath("$.inline").value(true)));
+        String json = """
+                {"employeeId":%s,"subject":"Office move","greeting":"","body":"We are moving.\\n[[image 1]]\\nSee the policy.",
+                 "cc":["hr@amsidel.com","HR@amsidel.com"],"bcc":["boss@amsidel.com"],
+                 "attachments":["%s"],"images":[{"fileId":"%s","caption":"The new office <Kochi>"}]}
+                """.formatted(anu, pdf, png);
+        mockMvc.perform(post("/api/mail/send").header("Authorization", auth(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.sent").value(true));
+
+        MimeMessage m = mail.sent.getFirst();
+        assertThat(m.getRecipients(Message.RecipientType.TO)).extracting(Address::toString).containsExactly("anu@amsidel.com");
+        assertThat(m.getRecipients(Message.RecipientType.CC)).extracting(Address::toString).containsExactly("hr@amsidel.com");
+        assertThat(m.getRecipients(Message.RecipientType.BCC)).extracting(Address::toString).containsExactly("boss@amsidel.com");
+        String all = text(m);
+        assertThat(all).contains("src=\"cid:picture1\"").contains("The new office &lt;Kochi&gt;")
+                .contains("[Picture: The new office <Kochi>]").doesNotContain("[[image 1]]");
+        List<String> names = new ArrayList<>();
+        parts(m.getContent(), names);
+        assertThat(names).contains("Leave policy.pdf");
+    }
+
+    @Test
+    void onlyPicturesPdfAndWordAndOnlyYourOwnFiles() throws Exception {
+        upload(owner, "virus.exe", "MZ...".getBytes()).andExpect(status().isBadRequest());
+        upload(owner, "fake.pdf", "not a pdf".getBytes()).andExpect(status().isBadRequest());
+        upload(owner, "letter.docx", new byte[]{'P', 'K', 3, 4, 0, 0}).andExpect(status().isOk())
+                .andExpect(jsonPath("$.contentType").value(org.hamcrest.Matchers.containsString("wordprocessingml")));
+        String pdf = fileId(upload(owner, "a.pdf", "%PDF-1.7 x".getBytes()));
+        // another sender cannot use it, and a removed file is gone
+        String admin = token(changePin(token(login("ml.admin", "ab@123")), "ab@123", "cd@456"));
+        String body = "{\"employeeId\":%s,\"subject\":\"Hi\",\"body\":\"Text\",\"attachments\":[\"%s\"]}";
+        mockMvc.perform(post("/api/mail/send").header("Authorization", auth(admin)).contentType(MediaType.APPLICATION_JSON)
+                .content(body.formatted(ravi, pdf))).andExpect(status().isBadRequest());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/mail/files/" + pdf)
+                .header("Authorization", auth(owner))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/mail/send").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(body.formatted(ravi, pdf))).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.startsWith("An attached file is no longer")));
+        mockMvc.perform(post("/api/mail/send").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"employeeId\":%s,\"subject\":\"Hi\",\"body\":\"Text\",\"cc\":[\"not-an-address\"]}".formatted(ravi)))
+                .andExpect(status().isBadRequest());
+        assertThat(mail.sent).isEmpty();
+    }
+
+    @Test
     void problemsComeBackPerPerson() throws Exception {
         send(owner, noEmail, "Hello", "", "Text").andExpect(status().isOk())
                 .andExpect(jsonPath("$.sent").value(false))
@@ -136,6 +192,32 @@ class MailTest {
         mockMvc.perform(get("/api/mail/setup").header("Authorization", auth(owner)))
                 .andExpect(jsonPath("$.ready").value(true))
                 .andExpect(jsonPath("$.from").value("staff@amsidel.com"));
+    }
+
+    /** A 1x1 PNG. */
+    private static final byte[] PNG = java.util.Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+
+    private ResultActions upload(String token, String name, byte[] bytes) throws Exception {
+        return mockMvc.perform(multipart("/api/mail/files").file(new MockMultipartFile("file", name, "application/octet-stream", bytes))
+                .header("Authorization", auth(token)));
+    }
+
+    private static String fileId(ResultActions result) throws Exception {
+        return JsonPath.read(body(result), "$.id");
+    }
+
+    /** File names of the attachments. */
+    private static void parts(Object content, List<String> names) throws Exception {
+        if (content instanceof Multipart multipart) {
+            for (int i = 0; i < multipart.getCount(); i++) {
+                var part = multipart.getBodyPart(i);
+                if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())) {
+                    names.add(part.getFileName());
+                }
+                parts(part.getContent(), names);
+            }
+        }
     }
 
     private static String text(MimeMessage message) throws Exception {
@@ -163,10 +245,14 @@ class MailTest {
     }
 
     private String create(String name, String userId, String email, long brand) throws Exception {
+        return create(name, userId, email, brand, "EMPLOYEE");
+    }
+
+    private String create(String name, String userId, String email, long brand, String role) throws Exception {
         String json = """
-                {"name":"%s","userId":"%s","password":"ab@123","role":"EMPLOYEE","brandId":%d,
+                {"name":"%s","userId":"%s","password":"ab@123","role":"%s","brandId":%d,
                  "companyEmail":%s,"phone":"+91 98470 00000","joinedDate":"2026-01-01"}
-                """.formatted(name, userId, brand, email == null ? "null" : "\"" + email + "\"");
+                """.formatted(name, userId, role, brand, email == null ? "null" : "\"" + email + "\"");
         return idOf(mockMvc.perform(post("/api/employees").header("Authorization", auth(owner))
                 .contentType(MediaType.APPLICATION_JSON).content(json)).andExpect(status().isCreated()));
     }

@@ -38,14 +38,12 @@ public class WorkLogController {
     }
 
     @Checkpoint({Menus.WORKLOG_MY})
-
     @GetMapping("/team")
     public List<TeamMember> team(@AuthenticationPrincipal AuthUser me) {
         return workLogService.team(me);
     }
 
     @Checkpoint({Menus.WORKLOG_MY})
-
     @PostMapping("/entries")
     @ResponseStatus(HttpStatus.CREATED)
     public WorkLogEntry add(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody WorkLogRequest request) {
@@ -53,7 +51,6 @@ public class WorkLogController {
     }
 
     @Checkpoint({Menus.WORKLOG_MY})
-
     @PutMapping("/entries/{id}")
     public WorkLogEntry update(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
                                @Valid @RequestBody WorkLogRequest request) {
@@ -61,7 +58,6 @@ public class WorkLogController {
     }
 
     @Checkpoint({Menus.WORKLOG_MY})
-
     @DeleteMapping("/entries/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
@@ -69,21 +65,18 @@ public class WorkLogController {
     }
 
     @Checkpoint({Menus.WORKLOG_MY, Menus.WORK_RULES})
-
     @GetMapping("/rules")
     public List<WorkHourRule> rules() {
         return workLogService.rules();
     }
 
     @Checkpoint({Menus.WORK_RULES})
-
     @PutMapping("/rules")
     public List<WorkHourRule> saveRules(@Valid @RequestBody List<@Valid WorkHourRuleRequest> rules) {
         return workLogService.saveRules(rules);
     }
 
     @Checkpoint({Menus.WORKLOG_MY})
-
     @PutMapping("/targets/{employeeId}")
     public WorkTarget setTarget(@AuthenticationPrincipal AuthUser me, @PathVariable Long employeeId,
                                 @Valid @RequestBody WorkTargetRequest request) {
