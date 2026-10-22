@@ -1,5 +1,5 @@
 # ---- Build stage: compiles the jar ----
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
 # .mvn/ is not copied, so the build uses Maven Central (no corporate mirror)
 COPY pom.xml .
@@ -8,7 +8,7 @@ COPY src ./src
 RUN mvn -q package -DskipTests
 
 # ---- Run stage: small image with just the JRE + jar ----
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080

@@ -1,31 +1,25 @@
 package com.amsidel.backend.config;
 
-import com.amsidel.backend.controller.ProductController;
-import com.amsidel.backend.service.ProductService;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.data.jpa.mapping.JpaMetamodelMappingContext;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(ProductController.class)
+/** Runs with Spring Security on, since it applies CORS before checking tokens. */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
 class CorsConfigTest {
 
     @Autowired
     private MockMvc mockMvc;
-
-    @MockBean
-    private ProductService productService;
-
-    // Required because @EnableJpaAuditing sits on the main application class
-    @MockBean
-    private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
     @ParameterizedTest
     @ValueSource(strings = {
@@ -35,9 +29,10 @@ class CorsConfigTest {
             "http://localhost:4200"
     })
     void allowsKnownOrigins(String origin) throws Exception {
-        mockMvc.perform(options("/api/products")
+        mockMvc.perform(options("/api/auth/login")
                         .header("Origin", origin)
-                        .header("Access-Control-Request-Method", "POST"))
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "authorization,content-type"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", origin));
     }

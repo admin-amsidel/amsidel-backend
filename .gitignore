@@ -7,3 +7,9 @@ target/
 .settings/
 *.log
 .env
+
+# local secrets (mail key)
+secrets.properties
+
+# check-in photos (app.attendance.photo-dir)
+data/
