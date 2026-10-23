@@ -52,6 +52,27 @@ public class BrandController {
         return brandService.deleteLogo(id);
     }
 
+    /** The UPI payment QR printed on invoices: PNG or JPEG with a readable upi://pay QR code, up to 2 MB. */
+    @PostMapping("/{id}/upi-qr")
+    public Brand uploadUpiQr(@PathVariable Long id, @RequestParam("file") MultipartFile file) {
+        return brandService.saveUpiQr(id, file);
+    }
+
+    @DeleteMapping("/{id}/upi-qr")
+    public Brand deleteUpiQr(@PathVariable Long id) {
+        return brandService.deleteUpiQr(id);
+    }
+
+    /** Signed-in people only (unlike the logo). */
+    @GetMapping("/{id}/upi-qr")
+    public ResponseEntity<byte[]> upiQr(@PathVariable Long id) {
+        var qr = brandService.upiQr(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(qr.getContentType()))
+                .cacheControl(CacheControl.noCache().cachePrivate())
+                .body(qr.getContent());
+    }
+
     /** No sign-in needed: a logo is public (payslips, the website). Cached; the portal adds ?v=<logoUpdatedAt>. */
     @GetMapping("/{id}/logo")
     public ResponseEntity<byte[]> logo(@PathVariable Long id) {

@@ -70,7 +70,7 @@ public class PayslipPdf {
         }
         doc.add(spaced(summary(p), 14, 0));
         doc.add(spaced(para("Net pay = gross earnings - deductions + reimbursements. System-generated statement from the "
-                + "Amsidel Staff Portal; no signature is needed.", regular, 7, MUTED), 12, 0));
+                + "Amsidel Company Portal; no signature is needed.", regular, 7, MUTED), 12, 0));
         doc.close();
         return out.toByteArray();
     }

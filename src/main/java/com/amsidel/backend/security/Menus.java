@@ -30,6 +30,19 @@ public final class Menus {
     public static final String PAY_COMPONENTS = "PAY_COMPONENTS";
     public static final String PAYSLIPS = "PAYSLIPS";
     public static final String MY_PAY = "MY_PAY";
+    // the product portal (paths under /portal/products)
+    public static final String PROD_HOME = "PROD_HOME";
+    public static final String PROD_ITEMS = "PROD_ITEMS";
+    public static final String PROD_TYPES = "PROD_TYPES";
+    public static final String PROD_SUPPLIERS = "PROD_SUPPLIERS";
+    public static final String PROD_PURCHASES = "PROD_PURCHASES";
+    public static final String PROD_CUSTOMERS = "PROD_CUSTOMERS";
+    public static final String PROD_QUOTES = "PROD_QUOTES";
+    public static final String PROD_INVOICES = "PROD_INVOICES";
+    public static final String PROD_REPORTS = "PROD_REPORTS";
+    /** Any page of the product portal. */
+    public static final String[] PRODUCT_PORTAL = {PROD_HOME, PROD_ITEMS, PROD_TYPES, PROD_SUPPLIERS, PROD_PURCHASES,
+            PROD_CUSTOMERS, PROD_QUOTES, PROD_INVOICES, PROD_REPORTS};
 
     /** One menu; parent null for a top-level menu, path null for a menu that only holds sub-menus. */
     public record Def(String code, String name, String description, int checkpoint, String parent, String path, String icon) {
@@ -71,7 +84,21 @@ public final class Menus {
 
             new Def("ADMIN", "Administration", "Portal set-up", 9000, null, null, "pi-shield"),
             new Def(BRANDS, "Brands", "The group's brands: details, logo, owners and GST number; changing them needs the Owner user type", 9002, "ADMIN", "/portal/admin/brands", "pi-building"),
-            new Def(MENU_ACCESS, "Menu access", "Which user types and designations see which menus; changing it needs the Admin user type", 9001, "ADMIN", "/portal/admin/menu-access", "pi-lock")
+            new Def(MENU_ACCESS, "Menu access", "Which user types and designations see which menus; changing it needs the Admin user type", 9001, "ADMIN", "/portal/admin/menu-access", "pi-lock"),
+
+            // ---- product portal ----
+            new Def(PROD_HOME, "Overview", "Product portal: sales, purchases, stock and money owed at a glance", 11000, null, "/portal/products", "pi-chart-bar"),
+            new Def("PROD_CATALOG", "Products & stock", "Product types, items, prices and stock", 11100, null, null, "pi-box"),
+            new Def(PROD_ITEMS, "Items & stock", "Items with their prices; stock in, out and on hand", 11101, "PROD_CATALOG", "/portal/products/items", "pi-box"),
+            new Def(PROD_TYPES, "Product types", "The types of product each brand sells", 11102, "PROD_CATALOG", "/portal/products/types", "pi-tags"),
+            new Def("PROD_BUYING", "Purchasing", "Suppliers, purchase bills and supplier payments", 11200, null, null, "pi-truck"),
+            new Def(PROD_SUPPLIERS, "Suppliers", "Supplier details, bank details and what is owed to them", 11201, "PROD_BUYING", "/portal/products/suppliers", "pi-building"),
+            new Def(PROD_PURCHASES, "Purchase bills", "Goods bought: bills, stock received and payments to suppliers", 11202, "PROD_BUYING", "/portal/products/purchases", "pi-download"),
+            new Def("PROD_SELLING", "Sales", "Customers, quotations, invoices and customer payments", 11300, null, null, "pi-shopping-cart"),
+            new Def(PROD_CUSTOMERS, "Customers", "Customer details and their quotations, invoices and payments", 11301, "PROD_SELLING", "/portal/products/customers", "pi-users"),
+            new Def(PROD_QUOTES, "Quotations", "Quotations to customers (PDF), made into invoices", 11302, "PROD_SELLING", "/portal/products/quotations", "pi-file-edit"),
+            new Def(PROD_INVOICES, "Invoices", "Final bills (PDF), stock out and customer payments", 11303, "PROD_SELLING", "/portal/products/invoices", "pi-receipt"),
+            new Def(PROD_REPORTS, "Reports", "Sales, purchases, stock and payments by customer, bill, supplier, product and item; supplier spend charts", 11400, null, "/portal/products/reports", "pi-chart-line")
     );
 
     /** Given to anyone with people reporting to them, whatever their user type or menu access. */

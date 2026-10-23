@@ -75,6 +75,13 @@ public class Brand {
     /** When the logo was last uploaded; null = no logo. */
     private Instant logoUpdatedAt;
 
+    /** When the UPI payment QR (printed on invoices) was uploaded; null = none (one is made from upiId). */
+    private Instant upiQrUpdatedAt;
+
+    /** The UPI ID the uploaded QR pays to, read from it. */
+    @Column(length = 100)
+    private String upiQrPayee;
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;

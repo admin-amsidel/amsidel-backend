@@ -348,7 +348,7 @@ public class ExportService {
                 : people.size() + " people";
         String by = people.stream().filter(e -> e.getId().equals(me.id())).map(Employee::getName).findFirst()
                 .orElseGet(() -> employeeRepository.findById(me.id()).map(Employee::getName).orElse(me.userId()));
-        return who + " · exported by " + by + " on " + STAMP.format(LocalDateTime.now(zone)) + " · Amsidel Staff Portal";
+        return who + " · exported by " + by + " on " + STAMP.format(LocalDateTime.now(zone)) + " · Amsidel Company Portal";
     }
 
     private static String fileName(String what, List<Employee> people, boolean all, LocalDate from, LocalDate to) {

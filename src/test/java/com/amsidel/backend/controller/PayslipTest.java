@@ -218,7 +218,7 @@ class PayslipTest {
                 .andExpect(jsonPath("$.bankAccountNumber").value("50200011122233"))
                 .andExpect(jsonPath("$.ifscCode").value("HDFC0004321"))
                 .andExpect(jsonPath("$.upiId").value("amsidel.home@okhdfc"))
-                .andExpect(jsonPath("$.contactNumber").value("+91 484 2400 400"))
+                .andExpect(jsonPath("$.contactNumber").value("+91 48424 00400"))
                 .andExpect(jsonPath("$.email").value("home@amsidel.com"));
         json(put("/api/brands/" + brand), owner, details.replace("Home@Amsidel.com", "not an email")).andExpect(status().isBadRequest());
         json(put("/api/brands/" + brand), owner, details.replace("hdfc0004321", "HDFC123")).andExpect(status().isBadRequest());
@@ -254,7 +254,7 @@ class PayslipTest {
                 .andExpect(jsonPath("$.company.address").value("Kakkanad, Kochi, Kerala 682030"))
                 .andExpect(jsonPath("$.company.gstNumber").value("32ABCDE1234F1Z5"))
                 .andExpect(jsonPath("$.company.logoUpdatedAt").isNotEmpty())
-                .andExpect(jsonPath("$.company.phone").value("+91 484 2400 400"))
+                .andExpect(jsonPath("$.company.phone").value("+91 48424 00400"))
                 .andExpect(jsonPath("$.company.email").value("home@amsidel.com"));
         byte[] pdf = mockMvc.perform(get("/api/payroll/payslips/" + slip + "/pdf").header("Authorization", auth(owner)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();

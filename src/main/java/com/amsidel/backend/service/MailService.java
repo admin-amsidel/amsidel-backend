@@ -326,7 +326,7 @@ public class MailService {
                 <div>%s</div>
                 <div style="margin:28px 0 0;padding-top:14px;border-top:1px solid #e3ecf7;color:%s">%s</div>
                 </td></tr>
-                <tr><td style="padding:12px 24px;background:#f5f9fe;border-top:1px solid #dbe7f5;font-size:12px;color:%s">Sent from the Amsidel Staff Portal</td></tr>
+                <tr><td style="padding:12px 24px;background:#f5f9fe;border-top:1px solid #dbe7f5;font-size:12px;color:%s">Sent from the Amsidel Company Portal</td></tr>
                 </table></body></html>
                 """.formatted(INK, BLUE, INK, escape(greeting), rich(place(escape(text), pictures, MailService::pictureHtml, "")),
                 MUTED, rich(escape(signature)), MUTED);

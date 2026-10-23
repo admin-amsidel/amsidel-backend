@@ -56,6 +56,12 @@
             <artifactId>poi-ooxml</artifactId>
             <version>5.4.1</version>
         </dependency>
+        <!-- UPI QR codes on invoices: reading an uploaded QR and making one with the amount (ZXing, Apache 2.0) -->
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+            <version>3.5.3</version>
+        </dependency>
         <!-- Login: Spring Security + signed JWT access tokens (Nimbus, HS256) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -173,14 +173,14 @@ public class EmployeeService {
         employee.setReportsTo(resolveReportsTo(request.getReportsToId(), employee));
         employee.setName(request.getName().trim());
         employee.setAddress(trimToNull(request.getAddress()));
-        employee.setPhone(trimToNull(request.getPhone()));
+        employee.setPhone(Phones.normalize(request.getPhone(), "Phone"));
         employee.setPhotoPath(trimToNull(request.getPhotoPath()));
         employee.setJoinedDate(request.getJoinedDate());
         employee.setDob(request.getDob());
         employee.setBloodGroup(trimToNull(request.getBloodGroup()));
         employee.setPersonalEmail(lowerOrNull(request.getPersonalEmail()));
         employee.setCompanyEmail(lowerOrNull(request.getCompanyEmail()));
-        employee.setEmergencyContact(trimToNull(request.getEmergencyContact()));
+        employee.setEmergencyContact(Phones.normalize(request.getEmergencyContact(), "Emergency contact"));
         if (request.getActive() != null) {
             employee.setActive(request.getActive());
         }

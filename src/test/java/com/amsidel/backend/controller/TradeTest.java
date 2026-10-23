@@ -1,0 +1,277 @@
+package com.amsidel.backend.controller;
+
+import com.jayway.jsonpath.JsonPath;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+/**
+ * The product portal: a supplier and an item with opening stock; a purchase bill received into stock; a customer,
+ * a quotation made into an invoice, issued (stock out), paid, refunded and cancelled (stock back); reports, PDF and
+ * Excel; who may see what.
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@TestPropertySource(properties = "test.context=trade")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class TradeTest {
+
+    private static final LocalDate TODAY = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    private String owner;
+    private long dw;
+    private int upvc;
+    private int seq;
+
+    @BeforeAll
+    void setUp() throws Exception {
+        owner = token(changePin(token(login("owner", "Ams@2026")), "Ams@2026", "Own#2026"));
+        List<Integer> brandIds = JsonPath.read(body(mockMvc.perform(get("/api/brands").header("Authorization", auth(owner)))),
+                "$[?(@.code == 'DW')].id");
+        dw = brandIds.getFirst();
+        // the Doors & Windows product types are there from the start
+        List<Integer> types = JsonPath.read(body(mockMvc.perform(get("/api/trade/types").param("brandId", String.valueOf(dw))
+                .header("Authorization", auth(owner)))), "$[?(@.code == 'UPVC')].id");
+        upvc = types.getFirst();
+    }
+
+    @Test
+    void buyStockSellPayRefundAndCancel() throws Exception {
+        // a supplier (code made for it) and an item with opening stock
+        String supplier = idOf(json(post("/api/trade/suppliers"), owner, """
+                {"brandId":%d,"name":"Fenesta Kochi","phone":"+91 98470 11111","gstNumber":"32abcde1234f1z5",
+                 "bankAccount":"50100012345662","ifsc":"hdfc0001234","upi":"fenesta@okhdfc","contactPerson":"Ravi"}
+                """.formatted(dw)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code", matchesPattern("DWS-\\d{3}")))
+                .andExpect(jsonPath("$.gstNumber").value("32ABCDE1234F1Z5")));
+        String item = idOf(json(post("/api/trade/items"), owner, """
+                {"brandId":%d,"typeId":%d,"supplierId":%s,"code":"upvc-sw-01","name":"uPVC sliding window",
+                 "sizes":"6 * 4, 8x7","supplierPrice":1000,"mrp":3200,"showroomPrice":2800,"minSellPrice":2200,
+                 "reorderLevel":3,"openingStock":5}
+                """.formatted(dw, upvc, supplier)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("UPVC-SW-01"))
+                .andExpect(jsonPath("$.sizes").value("6x4, 8x7"))
+                .andExpect(jsonPath("$.onHand").value(5.0)));
+
+        // bought: 10 at 1200 + 18% GST; received into stock at the new price
+        String bill = idOf(json(post("/api/trade/purchases"), owner, """
+                {"brandId":%d,"supplierId":%s,"supplierBillNo":"FN/889","billDate":"%s","gstRate":18,
+                 "lines":[{"itemId":%s,"quantity":10,"rate":1200}]}
+                """.formatted(dw, supplier, TODAY, item)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.number", matchesPattern("DWPUR-\\d{6}-\\d{3}")))
+                .andExpect(jsonPath("$.totals.taxable").value(12000.0))
+                .andExpect(jsonPath("$.totals.cgst").value(1080.0))
+                .andExpect(jsonPath("$.totals.total").value(14160.0)));
+        mockMvc.perform(post("/api/trade/purchases/" + bill + "/receive").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.status").value("RECEIVED"));
+        mockMvc.perform(get("/api/trade/items/" + item).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.item.onHand").value(15.0))
+                .andExpect(jsonPath("$.item.supplierPrice").value(1200.0))
+                .andExpect(jsonPath("$.moves[0].kind").value("PURCHASE"))
+                .andExpect(jsonPath("$.moves[0].balanceAfter").value(15.0));
+        json(post("/api/trade/purchases/" + bill + "/payments"), owner,
+                "{\"paidOn\":\"%s\",\"amount\":10000,\"mode\":\"BANK\",\"transactionId\":\"UTR778\"}".formatted(TODAY))
+                .andExpect(jsonPath("$.payStatus").value("PARTLY_PAID")).andExpect(jsonPath("$.totals.due").value(4160.0));
+
+        // a customer: the first phone number is unique in the brand
+        String customer = idOf(json(post("/api/trade/customers"), owner, """
+                {"brandId":%d,"name":"Kumar Residence","phone":"9847022222","address":"Kakkanad, Kochi"}
+                """.formatted(dw)).andExpect(status().isCreated()).andExpect(jsonPath("$.code", matchesPattern("DWC-\\d{4}"))));
+        json(post("/api/trade/customers"), owner, "{\"brandId\":%d,\"name\":\"Someone\",\"phone\":\"9847022222\"}".formatted(dw))
+                .andExpect(status().isConflict());
+
+        // quotation: 3 windows at 2500 and installation; 500 off; 18% GST
+        String quote = idOf(json(post("/api/trade/sales"), owner, """
+                {"kind":"QUOTATION","brandId":%d,"customerId":%s,"docDate":"%s","validUntil":"%s","gstRate":18,"discount":500,
+                 "lines":[{"itemId":%s,"name":"uPVC sliding window","size":"6x4","quantity":3,"rate":2500},
+                          {"name":"Installation","quantity":1,"rate":1000}],"terms":"50%% advance"}
+                """.formatted(dw, customer, TODAY, TODAY.plusDays(15), item)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.number", matchesPattern("DWQTN-\\d{6}-\\d{3}")))
+                .andExpect(jsonPath("$.totals.subtotal").value(8500.0))
+                .andExpect(jsonPath("$.totals.taxable").value(8000.0))
+                .andExpect(jsonPath("$.totals.gstAmount").value(1440.0))
+                .andExpect(jsonPath("$.totals.total").value(9440.0))
+                .andExpect(jsonPath("$.lines[0].unitCost").value(1200.0)));
+        mockMvc.perform(get("/api/trade/sales/" + quote + "/pdf").header("Authorization", auth(owner)))
+                .andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF));
+
+        // made into an invoice: a draft, paid in advance, then issued (number, stock out)
+        String invoice = idOf(mockMvc.perform(post("/api/trade/sales/" + quote + "/invoice").header("Authorization", auth(owner)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.number").value(nullValue())));
+        mockMvc.perform(get("/api/trade/sales/" + quote).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.status").value("ACCEPTED")).andExpect(jsonPath("$.invoiceId").value(Integer.parseInt(invoice)));
+        pay(invoice, "PAYMENT", "2000").andExpect(jsonPath("$.totals.paid").value(2000.0));
+        mockMvc.perform(post("/api/trade/sales/" + invoice + "/issue").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.status").value("ISSUED"))
+                .andExpect(jsonPath("$.number", matchesPattern("DWSLD-\\d{6}-\\d{3}")))
+                .andExpect(jsonPath("$.payStatus").value("PARTLY_PAID"));
+        mockMvc.perform(get("/api/trade/items/" + item).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.item.onHand").value(12.0)).andExpect(jsonPath("$.item.totalOut").value(3.0));
+        pay(invoice, "PAYMENT", "7441").andExpect(status().isBadRequest());
+        pay(invoice, "PAYMENT", "7440").andExpect(jsonPath("$.payStatus").value("PAID"));
+
+        // reports while it is issued
+        mockMvc.perform(get("/api/trade/reports/sales").header("Authorization", auth(owner)).param("brandId", String.valueOf(dw))
+                        .param("from", TODAY.toString()).param("to", TODAY.toString()))
+                .andExpect(jsonPath("$.totals.invoices").value(1))
+                .andExpect(jsonPath("$.totals.total").value(9440.0))
+                .andExpect(jsonPath("$.byCustomer[0].label").value(startsWith("Kumar Residence")))
+                .andExpect(jsonPath("$.byItem[0].amount").value(7500.0))
+                .andExpect(jsonPath("$.byItem[0].cost").value(3600.0));
+        mockMvc.perform(get("/api/trade/reports/purchases").header("Authorization", auth(owner)).param("brandId", String.valueOf(dw))
+                        .param("from", TODAY.toString()).param("to", TODAY.toString()))
+                .andExpect(jsonPath("$.bySupplier[0].label").value(startsWith("Fenesta Kochi")))
+                .andExpect(jsonPath("$.bySupplier[0].amount").value(12000.0))
+                .andExpect(jsonPath("$.totals.due").value(4160.0));
+        mockMvc.perform(get("/api/trade/reports/owed").header("Authorization", auth(owner)).param("brandId", String.valueOf(dw)))
+                .andExpect(jsonPath("$.payable").value(4160.0));
+        byte[] xlsx = mockMvc.perform(get("/api/trade/reports/sales/excel").header("Authorization", auth(owner))
+                        .param("brandId", String.valueOf(dw)).param("from", TODAY.toString()).param("to", TODAY.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertThat(XlsxRead.sheets(xlsx)).contains("Invoices", "Lines", "By customer", "By product type", "By item");
+        mockMvc.perform(get("/api/trade/overview").header("Authorization", auth(owner)).param("brandId", String.valueOf(dw)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.salesThisMonth").value(greaterThanOrEqualTo(9440.0)));
+        mockMvc.perform(get("/api/trade/customers/" + customer).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.balance.billed").value(9440.0)).andExpect(jsonPath("$.balance.due").value(0.0))
+                .andExpect(jsonPath("$.invoices").value(1)).andExpect(jsonPath("$.quotations").value(1));
+
+        // an issued invoice is not changed; cancelling needs the money refunded first, then stock comes back
+        json(put("/api/trade/sales/" + invoice), owner, """
+                {"kind":"INVOICE","brandId":%d,"customerId":%s,"docDate":"%s","gstRate":0,"lines":[{"name":"x","quantity":1,"rate":1}]}
+                """.formatted(dw, customer, TODAY)).andExpect(status().isConflict());
+        json(post("/api/trade/sales/" + invoice + "/cancel"), owner, "{\"reason\":\"Order changed\"}").andExpect(status().isConflict());
+        pay(invoice, "REFUND", "9440").andExpect(jsonPath("$.totals.paid").value(0.0));
+        json(post("/api/trade/sales/" + invoice + "/cancel"), owner, "{\"reason\":\"Order changed\"}")
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+        mockMvc.perform(get("/api/trade/items/" + item).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.item.onHand").value(15.0)).andExpect(jsonPath("$.moves[0].kind").value("SALE_CANCEL"));
+
+        // not enough stock: the invoice is not issued
+        String big = idOf(json(post("/api/trade/sales"), owner, """
+                {"kind":"INVOICE","brandId":%d,"customerId":%s,"docDate":"%s","gstRate":18,
+                 "lines":[{"itemId":%s,"name":"uPVC sliding window","quantity":100,"rate":2500}]}
+                """.formatted(dw, customer, TODAY, item)).andExpect(status().isCreated()));
+        mockMvc.perform(post("/api/trade/sales/" + big + "/issue").header("Authorization", auth(owner)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error", startsWith("Only 15 piece of UPVC-SW-01")));
+        mockMvc.perform(delete("/api/trade/sales/" + big).header("Authorization", auth(owner))).andExpect(status().isNoContent());
+
+        // a payment recorded by mistake is voided, not deleted
+        String bview = body(mockMvc.perform(get("/api/trade/purchases/" + bill).header("Authorization", auth(owner))));
+        Integer paymentId = JsonPath.read(bview, "$.payments[0].id");
+        json(post("/api/trade/payments/" + paymentId + "/void"), owner, "{\"reason\":\"Wrong bill\"}")
+                .andExpect(jsonPath("$.totals.paid").value(0.0)).andExpect(jsonPath("$.payments[0].voided").value(true));
+    }
+
+    @Test
+    void dwHasTheShopsUpiQrOnItsInvoices() throws Exception {
+        mockMvc.perform(get("/api/brands").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$[?(@.code == 'DW')].upiQrPayee").value(hasItem("8943504808@axl")))
+                .andExpect(jsonPath("$[?(@.code == 'DW')].upiId").value(hasItem("8943504808@axl")));
+        mockMvc.perform(get("/api/brands/" + dw + "/upi-qr").header("Authorization", auth(owner)))
+                .andExpect(status().isOk()).andExpect(content().contentType(MediaType.IMAGE_PNG));
+        // not public, unlike the logo
+        mockMvc.perform(get("/api/brands/" + dw + "/upi-qr")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void stockByHandAndWhoMaySeeWhat() throws Exception {
+        String item = idOf(json(post("/api/trade/items"), owner, """
+                {"brandId":%d,"typeId":%d,"code":"UPVC-DOOR-9","name":"uPVC door","supplierPrice":5000,"mrp":9000,
+                 "showroomPrice":8000,"minSellPrice":7000}
+                """.formatted(dw, upvc)).andExpect(status().isCreated()));
+        json(post("/api/trade/items/" + item + "/stock"), owner,
+                "{\"kind\":\"ADJUST_IN\",\"quantity\":4,\"movedOn\":\"%s\",\"note\":\"Counted\"}".formatted(TODAY))
+                .andExpect(jsonPath("$.item.onHand").value(4.0));
+        json(post("/api/trade/items/" + item + "/stock"), owner,
+                "{\"kind\":\"ADJUST_OUT\",\"quantity\":5,\"movedOn\":\"%s\",\"note\":\"Damaged\"}".formatted(TODAY))
+                .andExpect(status().isConflict());
+        json(post("/api/trade/items/" + item + "/stock"), owner,
+                "{\"kind\":\"SALE\",\"quantity\":1,\"movedOn\":\"%s\",\"note\":\"x\"}".formatted(TODAY))
+                .andExpect(status().isBadRequest());
+        json(post("/api/trade/items"), owner, """
+                {"brandId":%d,"typeId":%d,"code":"upvc-door-9","name":"Copy","supplierPrice":1,"mrp":2,"showroomPrice":2,"minSellPrice":1}
+                """.formatted(dw, upvc)).andExpect(status().isConflict());
+
+        // an employee has no product menus by default
+        String employee = employee("EMPLOYEE");
+        mockMvc.perform(get("/api/trade/items").header("Authorization", auth(employee))).andExpect(status().isForbidden());
+        // a brand admin works with their own brand only
+        String admin = employee("ADMIN");
+        mockMvc.perform(get("/api/trade/brands").header("Authorization", auth(admin)))
+                .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].code").value("DW"));
+        mockMvc.perform(get("/api/trade/items").header("Authorization", auth(admin)))
+                .andExpect(jsonPath("$[*].code", hasItem("UPVC-DOOR-9")));
+        // the website's public catalogue stays apart from these prices
+        mockMvc.perform(get("/api/trade/items")).andExpect(status().isUnauthorized());
+    }
+
+    // ---- helpers ----
+
+    private ResultActions pay(String docId, String kind, String amount) throws Exception {
+        return json(post("/api/trade/sales/" + docId + "/payments"), owner,
+                "{\"paidOn\":\"%s\",\"amount\":%s,\"kind\":\"%s\",\"mode\":\"UPI\",\"transactionId\":\"T%s\"}".formatted(TODAY, amount, kind, amount));
+    }
+
+    /** A new person of DW with this user type; returns their token. */
+    private String employee(String role) throws Exception {
+        String userId = "tr.p" + (++seq);
+        mockMvc.perform(post("/api/employees").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Trade %d\",\"userId\":\"%s\",\"password\":\"ab@123\",\"role\":\"%s\",\"brandId\":%d,\"phone\":\"+91 98470 00000\",\"joinedDate\":\"2026-01-05\"}"
+                        .formatted(seq, userId, role, dw))).andExpect(status().isCreated());
+        return token(changePin(token(login(userId, "ab@123")), "ab@123", "cd@456"));
+    }
+
+    private ResultActions json(MockHttpServletRequestBuilder request, String token, String body) throws Exception {
+        return mockMvc.perform(request.header("Authorization", auth(token)).contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    private ResultActions login(String userId, String pin) throws Exception {
+        return mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userId\":\"%s\",\"password\":\"%s\"}".formatted(userId, pin)));
+    }
+
+    private ResultActions changePin(String token, String current, String next) throws Exception {
+        return mockMvc.perform(post("/api/auth/change-password").header("Authorization", auth(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"currentPassword\":\"%s\",\"newPassword\":\"%s\"}".formatted(current, next)));
+    }
+
+    private static String idOf(ResultActions result) throws Exception {
+        return String.valueOf((Object) JsonPath.read(body(result), "$.id"));
+    }
+
+    private static String body(ResultActions result) throws Exception {
+        return result.andReturn().getResponse().getContentAsString();
+    }
+
+    private static String token(ResultActions result) throws Exception {
+        return JsonPath.read(body(result), "$.token");
+    }
+
+    private static String auth(String token) {
+        return "asd " + token;
+    }
+}
