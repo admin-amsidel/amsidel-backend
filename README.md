@@ -229,6 +229,65 @@ portal shows mail as not set up. `MAIL_FROM` (default `info.amsidel@gmail.com`) 
 (Senders & Domains); an `@amsidel.com` address on a verified domain reaches inboxes best. `MAIL_HOST`, `MAIL_PORT`,
 `MAIL_USERNAME` and `MAIL_FROM_NAME` switch to another provider without code changes.
 
+### Payroll (yearly salary set-up)
+
+Each employee's salary for a **financial year** (April to March; `fy` = the year it starts, 2025 = FY 2025-26): the
+monthly amount of each **pay component** (`pay_components`: earnings, deductions, reimbursements; the standard payslip
+lines are created on first start). `salary_structures` (one per employee per year, with `effective_from`) and
+`salary_lines` (monthly amount per component). Net pay = earnings - deductions + reimbursements; yearly package =
+monthly x 12; paid in the year = monthly x the months from `effective_from` to March (a September joiner: 7). This is
+the set-up only; payslips are not generated.
+
+Menus: Payroll 7000 > Salaries 7001, Pay components 7002; owners and admins have them, and the **HR Head / Manager**
+designation (level code 8.2) is given them when the menus first appear. Owners and people without a brand see
+everyone; others see their own brand's people. Nobody changes their own salary, except an owner.
+
+| Method | Path | Menu |
+|---|---|---|
+| GET | `/api/payroll/components` | Salaries or Pay components |
+| POST, PUT, DELETE | `/api/payroll/components`, `/api/payroll/components/{id}` (delete only when unused; otherwise make it inactive) | Pay components |
+| GET | `/api/payroll/salaries?fy=` (everyone with totals; this year when fy is left out) | Salaries |
+| GET, PUT, DELETE | `/api/payroll/salaries/{employeeId}?fy=` PUT `{effectiveFrom, notes, lines: [{componentId, monthly}]}` | Salaries |
+
+### Monthly payslips and My pay
+
+**Payroll > Monthly payslips** (menu 7003; owners, admins, HR Head / Manager): pick a month, **make drafts** for
+everyone with a salary that month (`payslips`, `payslip_lines`: a copy of the salary's lines, so later salary changes
+do not alter a payslip). Earnings are paid for the paid days (days employed from the salary's start, minus LOP days,
+over the days in the month, to the rupee: a 9 September start pays 22 of 30); deductions and reimbursements are the
+salary's amounts. Any amount, the LOP days and the pay date can be changed while it is a **DRAFT**; **Save & publish**
+finalises it (bulk publish too). Then payroll records the **salary credit** for each published payslip: the date,
+how (BANK / UPI / CASH) and an optional reference (UTR / transaction no.), one by one or in bulk. **The employee sees a
+payslip only once it is published and credited.** A credited payslip cannot go back to draft until the credit is
+undone; a published one is locked until moved back to draft; only drafts can be deleted. YTD per line = this payslip + the person's published payslips of the financial year up to it.
+
+**My pay** (menu 8000, every user type): the financial year at a glance (expected gross for the year from the salary,
+earned so far, taxes paid = pay components marked as tax, i.e. Income Tax and Professional Tax, balance to come),
+month by month, the published payslips (view, **PDF**), and the salary structure monthly and yearly. Drafts never show.
+
+The payslip (screen and PDF; OpenPDF with DejaVu Sans for the rupee sign) is the portal's own blue
+"salary statement" design: a band with the employee's **brand** (logo, name, address, GSTIN), the employee's details
+as a grid, earnings / deductions / reimbursements with rate, this month and year to date, and a summary with the net
+pay and the amount in words (Indian numbering). People without a brand, or a brand without an address, fall back to
+`PAYSLIP_COMPANY_NAME` / `PAYSLIP_COMPANY_ADDRESS`; a brand without a logo shows the group logo.
+
+**Brands** (Administration > Brands, menu 9002; owners change them, admins see them): name, code, address, launched
+date, owners (comma separated), GST number (GSTIN, checked), category (Food, Home Appliances, Building Materials,
+Electronics, IT Solutions, Medical, Hospitality... or any text) and logo (`brand_logos`, PNG or JPEG up to 1 MB;
+`POST/DELETE /api/brands/{id}/logo`, `GET /api/brands/{id}/logo` is public). PAN, bank account number,
+IFSC code and UPI ID are kept on the employee but only read and changed through payroll (the salary page), never the general employee API.
+
+| Method | Path | Menu |
+|---|---|---|
+| GET | `/api/payroll/payslips?year=&month=` | Monthly payslips |
+| POST | `/api/payroll/payslips/generate` `{year, month, employeeIds?}`, `/api/payroll/payslips/publish` `{ids}` | Monthly payslips |
+| GET, PUT, DELETE | `/api/payroll/payslips/{id}` PUT `{payDate, lopDays, lines: [{id, amount}], publish}` | Monthly payslips |
+| POST | `/api/payroll/payslips/{id}/recalculate`, `/api/payroll/payslips/{id}/unpublish` | Monthly payslips |
+| PUT, DELETE | `/api/payroll/payslips/{id}/payment` PUT `{paidOn, mode: BANK/UPI/CASH, reference?}` (record or undo the credit) | Monthly payslips |
+| POST | `/api/payroll/payslips/payments` `{ids, paidOn, mode}` (credit many) | Monthly payslips |
+| GET | `/api/payroll/payslips/{id}/pdf` | Monthly payslips |
+| GET | `/api/my-pay?fy=`, `/api/my-pay/payslips/{id}`, `/api/my-pay/payslips/{id}/pdf` (own, published only) | My pay |
+
 ### Website enquiries
 
 The public website's quote form, site-visit form and AMI chat post to `POST /api/public/enquiry` (no sign-in)

@@ -137,7 +137,7 @@ class MenuAccessTest {
 
         // removing her own setting brings back her user type's menus
         save(owner, "EMPLOYEE", uma, "[]").andExpect(status().isOk());
-        access(umaToken).andExpect(jsonPath("$.codes", containsInAnyOrder("ATT_CHECKIN", "LEAVE_MY", "WORKLOG_MY", "PERF_MY")));
+        access(umaToken).andExpect(jsonPath("$.codes", containsInAnyOrder("ATT_CHECKIN", "LEAVE_MY", "WORKLOG_MY", "PERF_MY", "MY_PAY")));
         // owners cannot be given less
         save(owner, "EMPLOYEE", JsonPath.read(body(mockMvc.perform(get("/api/auth/me").header("Authorization", auth(owner)))), "$.id").toString(),
                 "[\"1001\"]").andExpect(status().isBadRequest());

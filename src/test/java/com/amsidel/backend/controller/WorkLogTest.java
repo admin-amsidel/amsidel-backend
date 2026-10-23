@@ -86,6 +86,37 @@ class WorkLogTest {
     }
 
     @Test
+    void workLogExportsToExcel() throws Exception {
+        task(owner, "MSC-301", "Export check", "OPEN", traineeId).andExpect(status().isCreated());
+        LocalDate day = TODAY.minusDays(40);
+        log(trainee, day, "MSC-301", "4", "Glass order follow-up").andExpect(status().isCreated());
+
+        byte[] file = mockMvc.perform(get("/api/worklog/export").header("Authorization", auth(lead))
+                        .param("employeeId", traineeId).param("from", day.toString()).param("to", day.plusDays(6).toString()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        org.assertj.core.api.Assertions.assertThat(XlsxRead.sheets(file)).containsExactly("Summary", "Daily", "Entries");
+        String shown = day.format(java.time.format.DateTimeFormatter.ofPattern("dd-MMM-yyyy", java.util.Locale.ENGLISH));
+        List<String> entry = XlsxRead.rowWith(file, "Entries", "Tom Trainee", shown, "MSC-301");
+        org.assertj.core.api.Assertions.assertThat(entry).contains("Export check", "4.00", "Glass order follow-up");
+        List<String> daily = XlsxRead.rowWith(file, "Daily", "Tom Trainee", shown);
+        org.assertj.core.api.Assertions.assertThat(daily.get(4)).isEqualTo("4.00");
+        org.assertj.core.api.Assertions.assertThat(XlsxRead.rows(file, "Daily").stream().filter(r -> r.contains("Tom Trainee")).count())
+                .isEqualTo(7);
+        org.assertj.core.api.Assertions.assertThat(XlsxRead.rowWith(file, "Summary", "Tom Trainee").get(9)).isEqualTo("4.00");
+
+        mockMvc.perform(get("/api/worklog/export").header("Authorization", auth(other)).param("employeeId", traineeId)
+                        .param("from", day.toString()).param("to", day.toString()))
+                .andExpect(status().isForbidden());
+        // the team: the lead and the trainee, not the unrelated colleague
+        byte[] team = mockMvc.perform(get("/api/worklog/export").header("Authorization", auth(lead)).param("all", "true")
+                        .param("from", day.toString()).param("to", day.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        org.assertj.core.api.Assertions.assertThat(XlsxRead.rows(team, "Summary").stream().map(r -> r.size() > 1 ? r.get(1) : ""))
+                .contains("Lakshmi Lead", "Tom Trainee").doesNotContain("Olivia Other");
+    }
+
+    @Test
     void impossibleHoursAreRefused() throws Exception {
         log(trainee, TODAY.plusDays(1), "MSC-1", "1", "Tomorrow").andExpect(status().isBadRequest());
         log(trainee, TODAY.minusDays(10), "MSC-1", "0.3", "Odd").andExpect(status().isBadRequest());

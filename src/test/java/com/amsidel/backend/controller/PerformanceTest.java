@@ -221,23 +221,23 @@ class PerformanceTest {
     }
 
     @Test
-    void achievementsAreIssuedOrSelfReported() throws Exception {
+    void achievementsAreGivenByTheManager() throws Exception {
         String[] emp = employee();
         String issued = idOf(json(post("/api/performance/achievements"), lead, """
                 {"employeeId":%s,"title":"Team Champ","category":"Team Champ","achievedOn":"%s","details":"Most sites closed"}"""
                 .formatted(emp[0], TODAY)).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.issuedBy").value("Lakshmi Lead"))
                 .andExpect(jsonPath("$.selfReported").value(false)));
-        String own = idOf(json(post("/api/performance/achievements"), emp[1], """
+        // people do not add their own
+        json(post("/api/performance/achievements"), emp[1], """
                 {"title":"Certified installer","achievedOn":"%s"}""".formatted(TODAY.minusDays(3)))
-                .andExpect(jsonPath("$.selfReported").value(true)));
+                .andExpect(status().isForbidden());
         json(post("/api/performance/achievements"), other, """
                 {"employeeId":%s,"title":"Fake","achievedOn":"%s"}""".formatted(emp[0], TODAY)).andExpect(status().isForbidden());
 
         mockMvc.perform(get("/api/performance/cycles/" + cycle + "/me").header("Authorization", auth(emp[1])))
-                .andExpect(jsonPath("$.achievements[*].title", contains("Team Champ", "Certified installer")));
+                .andExpect(jsonPath("$.achievements[*].title", contains("Team Champ")));
         mockMvc.perform(delete("/api/performance/achievements/" + issued).header("Authorization", auth(emp[1]))).andExpect(status().isForbidden());
-        mockMvc.perform(delete("/api/performance/achievements/" + own).header("Authorization", auth(emp[1]))).andExpect(status().isNoContent());
         mockMvc.perform(delete("/api/performance/achievements/" + issued).header("Authorization", auth(lead))).andExpect(status().isNoContent());
     }
 

@@ -1,5 +1,8 @@
 package com.amsidel.backend.controller;
 
+import com.amsidel.backend.service.ExportService;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ContentDisposition;
 import com.amsidel.backend.dto.AttendanceDay;
 import com.amsidel.backend.dto.AttendanceDaySummary;
 import com.amsidel.backend.dto.AttendanceRecord;
@@ -37,6 +40,7 @@ import java.util.List;
 public class AttendanceController {
 
     private final AttendanceService attendanceService;
+    private final ExportService exportService;
 
     @Checkpoint({Menus.ATT_CHECKIN})
     @GetMapping("/today")
@@ -93,6 +97,29 @@ public class AttendanceController {
                                                @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                                @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return attendanceService.days(me, employeeId, from, to);
+    }
+
+    /**
+     * Excel file of from..to (up to a year): mine, one person's (employeeId) or mine and my team's (all=true).
+     * Summary, every day with its status, and each check-in / check-out.
+     */
+    @Checkpoint({Menus.ATT_CHECKIN, Menus.ATT_TEAM})
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> export(@AuthenticationPrincipal AuthUser me,
+                                         @RequestParam(required = false) Long employeeId,
+                                         @RequestParam(defaultValue = "false") boolean all,
+                                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return excel(exportService.attendance(me, employeeId, all, from, to));
+    }
+
+    /** An Excel download, not cached. */
+    static ResponseEntity<byte[]> excel(ExportService.Export file) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file.fileName()).build().toString())
+                .cacheControl(CacheControl.noStore())
+                .body(file.bytes());
     }
 
     @Checkpoint({Menus.ATT_CHECKIN, Menus.ATT_TEAM})

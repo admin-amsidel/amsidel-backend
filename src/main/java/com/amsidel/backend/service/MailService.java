@@ -19,6 +19,7 @@ import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.HtmlUtils;
 
@@ -37,8 +38,9 @@ import java.util.regex.Pattern;
 /**
  * Personal mail from owners and admins to employees' office addresses: the same text for everyone, but each
  * person gets their own mail addressed to them ("Dear Anu," or "Dear All,"), with optional CC/BCC, attachments and
- * pictures inside the message (see MailFileStore). Nothing is stored; each send returns whether it went out, and
- * the portal shows that on screen.
+ * pictures inside the message (see MailFileStore), placed left, centre or right in three sizes. The text may have
+ * **bold** words and "# " heading lines, and ends with the sender's own signature. Nothing about the mail is stored;
+ * each send returns whether it went out, and the portal shows that on screen.
  * No database connection is held while talking to the mail server.
  */
 @Slf4j
@@ -50,6 +52,14 @@ public class MailService {
     private static final Pattern PICTURE = Pattern.compile("\\[\\[image (\\d{1,2})]]");
     /** Inside the mail's 640px card with 24px padding. */
     private static final int PICTURE_WIDTH = 592;
+    /** **bold** (not across lines, no space just inside the stars). */
+    private static final Pattern BOLD = Pattern.compile("\\*\\*(?=\\S)(.+?)(?<=\\S)\\*\\*");
+    /** A heading line: "# Office timings". */
+    private static final Pattern HEADING = Pattern.compile("^#{1,3}\\s+(.+)$");
+    // the light blue look
+    private static final String BLUE = "#1d5fa3";
+    private static final String INK = "#1f2a37";
+    private static final String MUTED = "#5b6b7d";
 
     private final ObjectProvider<JavaMailSender> mailSender;
     private final EmployeeService employeeService;
@@ -82,6 +92,41 @@ public class MailService {
         return new MailSetup(ready(), from, fromName);
     }
 
+    /** My sign-off: saved = false when it is the standard one. */
+    public record SignatureView(String signature, boolean saved, String standard) {
+    }
+
+    @Transactional(readOnly = true)
+    public SignatureView signature(AuthUser me) {
+        Employee e = employeeRepository.findWithBrandById(me.id()).orElse(null);
+        String standard = standardSignature(e);
+        String saved = e == null ? null : e.getMailSignature();
+        return new SignatureView(StringUtils.hasText(saved) ? saved : standard, StringUtils.hasText(saved), standard);
+    }
+
+    @Transactional
+    public SignatureView saveSignature(AuthUser me, String signature) {
+        Employee e = employeeRepository.findById(me.id()).orElseThrow(() -> ApiException.badRequest("Sign in again"));
+        String text = signature == null ? "" : signature.replace("\r\n", "\n").strip();
+        e.setMailSignature(text.isEmpty() || text.equals(standardSignature(employeeRepository.findWithBrandById(me.id()).orElse(null)))
+                ? null : text);
+        employeeRepository.save(e);
+        return signature(me);
+    }
+
+    /** Regards, the name in bold, the designation and the brand. */
+    private String standardSignature(Employee e) {
+        if (e == null) {
+            return "Regards,\n**" + fromName + "**";
+        }
+        StringBuilder s = new StringBuilder("Regards,\n**").append(e.getName().trim()).append("**");
+        if (e.getDesignation() != null) {
+            s.append("\n").append(e.getDesignation().getName());
+        }
+        s.append("\n").append(e.getBrand() == null ? fromName : e.getBrand().getName());
+        return s.toString();
+    }
+
     /** Sends one personal mail; problems with this one person come back as a failed result, not an error. */
     public MailResult send(AuthUser me, MailSendRequest request) {
         Employee to = employeeService.findVisible(me, request.getEmployeeId());
@@ -109,8 +154,10 @@ public class MailService {
         String subject = fill(request.getSubject(), name).trim();
         String greeting = StringUtils.hasText(request.getGreeting()) ? fill(request.getGreeting(), name).trim() : name;
         String text = fill(request.getBody(), name).strip();
-        String signedBy = sender == null ? fromName : sender.getName();
-        String company = sender == null || sender.getBrand() == null ? fromName : sender.getBrand().getName();
+        String signature = StringUtils.hasText(request.getSignature()) ? request.getSignature().strip()
+                : sender != null && StringUtils.hasText(sender.getMailSignature()) ? sender.getMailSignature()
+                : standardSignature(sender);
+        signature = fill(signature, name);
         try {
             MimeMessage message = mailSender.getObject().createMimeMessage();
             MimeMessageHelper mail = new MimeMessageHelper(message, true, "UTF-8");
@@ -126,7 +173,7 @@ public class MailService {
                 mail.setReplyTo(sender.getCompanyEmail().trim());
             }
             mail.setSubject(subject);
-            mail.setText(plain(greeting, text, signedBy, company, pictures), html(greeting, text, signedBy, company, pictures));
+            mail.setText(plain(greeting, text, signature, pictures), html(greeting, text, signature, pictures));
             // after setText: the pictures belong to the HTML part
             for (Picture p : pictures) {
                 mail.addInline(p.cid(), new ByteArrayResource(p.file().bytes()), p.file().contentType());
@@ -152,7 +199,7 @@ public class MailService {
     }
 
     /** A picture inside the message: at [[image n]] in the text, or after the text when not marked. */
-    private record Picture(int number, MailFileStore.Stored file, String caption) {
+    private record Picture(int number, MailFileStore.Stored file, String caption, String align, int maxWidth) {
         String cid() {
             return "picture" + number;
         }
@@ -166,8 +213,11 @@ public class MailService {
             if (!f.inlineable()) {
                 throw ApiException.badRequest(f.name() + ": only JPG, PNG and GIF pictures can go inside the message; attach it instead");
             }
-            String caption = list.get(i).getCaption() == null ? "" : list.get(i).getCaption().strip();
-            out.add(new Picture(i + 1, f, caption));
+            MailSendRequest.Picture in = list.get(i);
+            String caption = in.getCaption() == null ? "" : in.getCaption().strip();
+            String align = in.getAlign() == null ? "center" : in.getAlign().toLowerCase(Locale.ROOT);
+            int max = "SMALL".equals(in.getSize()) ? 200 : "MEDIUM".equals(in.getSize()) ? 360 : PICTURE_WIDTH;
+            out.add(new Picture(i + 1, f, caption, align, max));
         }
         return out;
     }
@@ -193,9 +243,42 @@ public class MailService {
         return out;
     }
 
-    private static String plain(String greeting, String text, String signedBy, String company, List<Picture> pictures) {
+    private static String plain(String greeting, String text, String signature, List<Picture> pictures) {
         String body = place(text, pictures, p -> "[Picture" + (p.caption().isEmpty() ? "" : ": " + p.caption()) + "]", "\n\n");
-        return "Dear " + greeting + ",\n\n" + body + "\n\nRegards,\n" + signedBy + "\n" + company + "\n";
+        return "Dear " + greeting + ",\n\n" + plainText(body) + "\n\n" + plainText(signature) + "\n";
+    }
+
+    /** Without the marks: **bold** -> bold, "# Heading" -> HEADING. */
+    static String plainText(String text) {
+        StringBuilder out = new StringBuilder();
+        for (String line : text.replace("\r\n", "\n").split("\n", -1)) {
+            Matcher h = HEADING.matcher(line);
+            String l = h.matches() ? h.group(1).toUpperCase(Locale.ROOT) : line;
+            out.append(BOLD.matcher(l).replaceAll("$1")).append('\n');
+        }
+        return out.substring(0, out.length() - 1);
+    }
+
+    /** Escaped text with **bold** as bold and "# " lines as headings; other line breaks stay. */
+    static String rich(String escaped) {
+        String[] lines = escaped.split("\n", -1);
+        StringBuilder out = new StringBuilder();
+        boolean block = true;
+        for (String line : lines) {
+            Matcher h = HEADING.matcher(line);
+            if (h.matches()) {
+                out.append("<div style=\"margin:18px 0 6px;font-size:18px;line-height:1.35;font-weight:700;color:").append(BLUE)
+                        .append("\">").append(BOLD.matcher(h.group(1)).replaceAll("$1")).append("</div>");
+                block = true;
+                continue;
+            }
+            if (!block) {
+                out.append("<br>");
+            }
+            out.append(BOLD.matcher(line).replaceAll("<b>$1</b>"));
+            block = line.startsWith("<div");
+        }
+        return out.toString();
     }
 
     /** Each [[image n]] replaced by the picture; pictures not marked go after the text (unknown numbers drop out). */
@@ -221,31 +304,32 @@ public class MailService {
         return out.toString();
     }
 
-    /** A block of its own, on one line (line breaks in the text become <br>). */
+    /** A block of its own, on one line: left, centre or right, at most its size's width, its description under it. */
     private static String pictureHtml(Picture p) {
-        int width = Math.min(PICTURE_WIDTH, p.file().width());
+        int width = Math.min(p.maxWidth(), p.file().width());
         String alt = p.caption().isEmpty() ? "Picture " + p.number() : p.caption();
         String caption = p.caption().isEmpty() ? ""
-                : "<div style=\"margin-top:6px;font-size:13px;line-height:1.4;color:#6f6a60\">" + escape(p.caption()) + "</div>";
-        return "<div style=\"margin:16px 0;text-align:center\"><img src=\"cid:" + p.cid() + "\" width=\"" + width
-                + "\" alt=\"" + escape(alt) + "\" style=\"display:block;margin:0 auto;max-width:100%;height:auto;border:0;border-radius:6px\">"
-                + caption + "</div>";
+                : "<div style=\"margin-top:6px;font-size:13px;line-height:1.4;color:" + MUTED + "\">" + escape(p.caption()) + "</div>";
+        return "<div align=\"" + p.align() + "\" style=\"margin:16px 0;text-align:" + p.align() + "\"><img src=\"cid:" + p.cid()
+                + "\" width=\"" + width + "\" alt=\"" + escape(alt)
+                + "\" style=\"display:inline-block;max-width:100%;height:auto;border:0;border-radius:6px\">" + caption + "</div>";
     }
 
-    private static String html(String greeting, String text, String signedBy, String company, List<Picture> pictures) {
+    /** Light blue: a pale blue page, a white card with a blue band on top, dark grey text. */
+    private static String html(String greeting, String text, String signature, List<Picture> pictures) {
         return """
-                <!doctype html><html><body style="margin:0;padding:24px;background:#f6f3ee;font-family:Arial,Helvetica,sans-serif;color:#2b2925">
-                <table role="presentation" width="100%%" style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:8px;border-collapse:collapse">
-                <tr><td style="background:#1c1b19;color:#ffffff;padding:16px 24px;font-size:14px;letter-spacing:3px">AMSIDEL</td></tr>
-                <tr><td style="padding:24px;font-size:15px;line-height:1.6">
+                <!doctype html><html><body style="margin:0;padding:24px 12px;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:%s">
+                <table role="presentation" width="100%%" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #d6e4f5;border-radius:10px;border-collapse:separate;overflow:hidden">
+                <tr><td style="background:#e3eefa;border-bottom:3px solid #2f74c0;color:%s;padding:16px 24px;font-size:14px;font-weight:700;letter-spacing:4px">AMSIDEL</td></tr>
+                <tr><td style="padding:24px;font-size:15px;line-height:1.6;color:%s">
                 <p style="margin:0 0 16px">Dear %s,</p>
                 <div>%s</div>
-                <p style="margin:24px 0 0">Regards,<br><b>%s</b><br><span style="color:#6f6a60">%s</span></p>
+                <div style="margin:28px 0 0;padding-top:14px;border-top:1px solid #e3ecf7;color:%s">%s</div>
                 </td></tr>
-                <tr><td style="padding:12px 24px;border-top:1px solid #ece7de;font-size:12px;color:#8a8478">Sent from the Amsidel Staff Portal</td></tr>
+                <tr><td style="padding:12px 24px;background:#f5f9fe;border-top:1px solid #dbe7f5;font-size:12px;color:%s">Sent from the Amsidel Staff Portal</td></tr>
                 </table></body></html>
-                """.formatted(escape(greeting), place(escape(text), pictures, MailService::pictureHtml, "").replace("\n", "<br>"),
-                escape(signedBy), escape(company));
+                """.formatted(INK, BLUE, INK, escape(greeting), rich(place(escape(text), pictures, MailService::pictureHtml, "")),
+                MUTED, rich(escape(signature)), MUTED);
     }
 
     private static String escape(String s) {

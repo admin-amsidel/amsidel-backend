@@ -30,6 +30,19 @@ public class MailController {
         return mailService.setup();
     }
 
+    /** My sign-off for staff mail: the saved one, or the standard one (saved = false). */
+    @GetMapping("/signature")
+    public MailService.SignatureView signature(@AuthenticationPrincipal AuthUser me) {
+        return mailService.signature(me);
+    }
+
+    /** Saves my sign-off; empty goes back to the standard one. */
+    @PutMapping("/signature")
+    public MailService.SignatureView saveSignature(@AuthenticationPrincipal AuthUser me,
+                                                   @Valid @RequestBody MailSendRequest.Signature body) {
+        return mailService.saveSignature(me, body.getSignature());
+    }
+
     /** One personal mail to one employee; 200 with sent=false when this person's mail could not go out. */
     @PostMapping("/send")
     public MailResult send(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody MailSendRequest request) {

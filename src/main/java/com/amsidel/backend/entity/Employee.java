@@ -89,6 +89,26 @@ public class Employee {
     @Column(length = 20)
     private String emergencyContact;
 
+    /** PAN, shown on payslips; read and changed only through payroll (not in the general employee API). */
+    @Column(length = 10)
+    private String panNumber;
+
+    /** Salary bank account number, shown on payslips; payroll only, like panNumber. */
+    @Column(length = 30)
+    private String bankAccountNumber;
+
+    /** IFSC of the salary account's branch, e.g. HDFC0001234; payroll only, like panNumber. */
+    @Column(length = 11)
+    private String ifscCode;
+
+    /** UPI ID for salary by UPI, e.g. anu@okhdfcbank; payroll only, like panNumber. */
+    @Column(length = 80)
+    private String upiId;
+
+    /** The person's own sign-off for staff mail (**bold** allowed); null = Regards, name, designation, brand. */
+    @Column(length = 1000)
+    private String mailSignature;
+
     /** This person's own minimum working hours, set by an owner, admin or their manager; null = their level's rule. */
     @Column(precision = 4, scale = 2)
     private BigDecimal minDailyHours;

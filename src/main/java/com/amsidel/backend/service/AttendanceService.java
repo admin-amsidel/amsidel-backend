@@ -174,6 +174,11 @@ public class AttendanceService {
         if (!access.canView(me, person)) {
             throw ApiException.forbidden("You can only see your own attendance and that of people below you");
         }
+        return daysOf(person, start, end);
+    }
+
+    /** The person's days start..end, newest first; the caller checks who may see them (the export). */
+    List<AttendanceDaySummary> daysOf(Employee person, LocalDate start, LocalDate end) {
         Map<LocalDate, List<AttendanceRecord>> byDay = new LinkedHashMap<>();
         for (Attendance a : attendanceRepository.forEmployee(person.getId(), start, end)) {
             byDay.computeIfAbsent(a.getWorkDate(), d -> new ArrayList<>()).add(AttendanceRecord.from(a));

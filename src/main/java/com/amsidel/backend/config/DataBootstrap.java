@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +34,7 @@ import java.time.LocalDate;
  */
 @Slf4j
 @Component
+@Order(1) // before MenuBootstrap, which gives some menus to designations made here
 @RequiredArgsConstructor
 public class DataBootstrap implements ApplicationRunner {
 

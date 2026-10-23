@@ -30,6 +30,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -149,6 +150,41 @@ class MailTest {
         List<String> names = new ArrayList<>();
         parts(m.getContent(), names);
         assertThat(names).contains("Leave policy.pdf");
+    }
+
+    @Test
+    void boldHeadingsPicturePlacesAndMySignature() throws Exception {
+        // the standard signature until one is saved
+        mockMvc.perform(get("/api/mail/signature").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.saved").value(false))
+                .andExpect(jsonPath("$.signature").value(org.hamcrest.Matchers.startsWith("Regards,\n**")));
+        mockMvc.perform(put("/api/mail/signature").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"signature\":\"Warm regards,\\n**The Owner**\\nAmsidel Group\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.saved").value(true));
+
+        String png = fileId(upload(owner, "office.png", PNG).andExpect(status().isOk()));
+        String json = """
+                {"employeeId":%s,"subject":"Timings","greeting":"","body":"# New **office** timings\\nWe open at **9 am** sharp.\\n[[image 1]]",
+                 "images":[{"fileId":"%s","caption":"Front desk","align":"RIGHT","size":"SMALL"}]}
+                """.formatted(anu, png);
+        mockMvc.perform(post("/api/mail/send").header("Authorization", auth(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.sent").value(true));
+        String all = text(mail.sent.getFirst());
+        assertThat(all).contains("font-weight:700;color:#1d5fa3\">New office timings</div>")
+                .contains("We open at <b>9 am</b> sharp.")
+                .contains("align=\"right\" style=\"margin:16px 0;text-align:right\"")
+                .contains("<b>The Owner</b>").contains("Warm regards,")
+                .contains("background:#eef4fb")
+                // the plain text part has no marks
+                .contains("NEW OFFICE TIMINGS").contains("We open at 9 am sharp.").doesNotContain("**");
+
+        // a bad position is refused; an empty signature goes back to the standard one
+        mockMvc.perform(post("/api/mail/send").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.replace("RIGHT", "MIDDLE"))).andExpect(status().isBadRequest());
+        mockMvc.perform(put("/api/mail/signature").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"signature\":\"  \"}"))
+                .andExpect(jsonPath("$.saved").value(false));
     }
 
     @Test

@@ -27,7 +27,10 @@ public class MailSendRequest {
     @Size(max = 100)
     private String greeting;
 
-    /** [[image 1]], [[image 2]] ... mark where the pictures go; pictures not marked come after the text. */
+    /**
+     * [[image 1]], [[image 2]] ... mark where the pictures go; pictures not marked come after the text.
+     * **words** are bold and a line starting with "# " is a heading.
+     */
     @NotBlank
     @Size(max = 20000)
     private String body;
@@ -39,6 +42,10 @@ public class MailSendRequest {
     /** Hidden copies on every person's mail; optional. */
     @Size(max = 10, message = "At most 10 BCC addresses")
     private List<@NotBlank @Email(message = "Check the BCC addresses") String> bcc;
+
+    /** The sign-off after the message (**bold** allowed); empty = the sender's saved signature or the standard one. */
+    @Size(max = 1000, message = "The signature can be at most 1000 characters")
+    private String signature;
 
     /** Files from POST /api/mail/files, attached to the mail. */
     @Size(max = 10, message = "At most 10 attachments")
@@ -56,5 +63,20 @@ public class MailSendRequest {
         /** Shown under the picture; optional. */
         @Size(max = 300)
         private String caption;
+
+        /** LEFT, CENTER (default) or RIGHT. */
+        @jakarta.validation.constraints.Pattern(regexp = "LEFT|CENTER|RIGHT", message = "Picture position: LEFT, CENTER or RIGHT")
+        private String align;
+
+        /** SMALL (200px), MEDIUM (360px) or LARGE (the full width, default). */
+        @jakarta.validation.constraints.Pattern(regexp = "SMALL|MEDIUM|LARGE", message = "Picture size: SMALL, MEDIUM or LARGE")
+        private String size;
+    }
+
+    /** Saving my staff mail signature. */
+    @Data
+    public static class Signature {
+        @Size(max = 1000, message = "The signature can be at most 1000 characters")
+        private String signature;
     }
 }

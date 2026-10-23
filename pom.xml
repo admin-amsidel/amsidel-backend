@@ -44,6 +44,18 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
+        <!-- payslip PDFs (OpenPDF, LGPL/MPL); the DejaVu Sans font for the rupee sign is in resources/payslip/fonts -->
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>2.2.2</version>
+        </dependency>
+        <!-- attendance and work log exports as Excel files (Apache POI, Apache 2.0) -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.4.1</version>
+        </dependency>
         <!-- Login: Spring Security + signed JWT access tokens (Nimbus, HS256) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

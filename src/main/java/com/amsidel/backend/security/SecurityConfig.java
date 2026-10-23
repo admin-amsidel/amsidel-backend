@@ -53,6 +53,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                         .requestMatchers("/api/products/**").hasAnyRole("OWNER", "ADMIN")
                         // brands: everyone reads them; only owners change them
+                        .requestMatchers(HttpMethod.GET, "/api/brands/*/logo").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/brands/**").hasAnyRole(EVERY_ROLE)
                         .requestMatchers("/api/brands/**").hasRole("OWNER")
                         // whatever the menu access says, only owners and admins change employee records (roles,

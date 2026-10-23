@@ -22,9 +22,14 @@ public final class Menus {
     public static final String DESIGNATIONS = "DESIGNATIONS";
     public static final String STAFF_MAIL = "STAFF_MAIL";
     public static final String MENU_ACCESS = "MENU_ACCESS";
+    public static final String BRANDS = "BRANDS";
     public static final String PERF_MY = "PERF_MY";
     public static final String PERF_TEAM = "PERF_TEAM";
     public static final String PERF_CYCLES = "PERF_CYCLES";
+    public static final String PAYROLL_SALARIES = "PAYROLL_SALARIES";
+    public static final String PAY_COMPONENTS = "PAY_COMPONENTS";
+    public static final String PAYSLIPS = "PAYSLIPS";
+    public static final String MY_PAY = "MY_PAY";
 
     /** One menu; parent null for a top-level menu, path null for a menu that only holds sub-menus. */
     public record Def(String code, String name, String description, int checkpoint, String parent, String path, String icon) {
@@ -57,7 +62,15 @@ public final class Menus {
             new Def(PERF_TEAM, "Team performance", "Set goals, rate and give achievements to the people below you", 6002, "PERFORMANCE", "/portal/performance/team", "pi-users"),
             new Def(PERF_CYCLES, "Review cycles", "Open and close the yearly review periods", 6003, "PERFORMANCE", "/portal/performance/cycles", "pi-calendar-clock"),
 
+            new Def("PAYROLL", "Payroll", "Salaries, monthly payslips and your own pay", 7000, null, null, "pi-wallet"),
+            new Def(PAYROLL_SALARIES, "Salaries", "Each employee's salary for the financial year: monthly and yearly", 7001, "PAYROLL", "/portal/payroll", "pi-indian-rupee"),
+            new Def(PAY_COMPONENTS, "Pay components", "Earnings, deductions and reimbursements used in salaries", 7002, "PAYROLL", "/portal/payroll/components", "pi-list"),
+            new Def(PAYSLIPS, "Monthly payslips", "Make, check and publish each month's payslips", 7003, "PAYROLL", "/portal/payroll/payslips", "pi-file"),
+            // checkpoint 8000 kept from when it was a menu of its own, so existing access stays as it is
+            new Def(MY_PAY, "My pay", "Own salary, payslips (PDF) and pay for the year", 8000, "PAYROLL", "/portal/my-pay", "pi-money-bill"),
+
             new Def("ADMIN", "Administration", "Portal set-up", 9000, null, null, "pi-shield"),
+            new Def(BRANDS, "Brands", "The group's brands: details, logo, owners and GST number; changing them needs the Owner user type", 9002, "ADMIN", "/portal/admin/brands", "pi-building"),
             new Def(MENU_ACCESS, "Menu access", "Which user types and designations see which menus; changing it needs the Admin user type", 9001, "ADMIN", "/portal/admin/menu-access", "pi-lock")
     );
 
@@ -70,7 +83,18 @@ public final class Menus {
      */
     public static final java.util.Map<String, List<String>> NEW_MENU_ROLES = java.util.Map.of(
             PERF_MY, List.of("EMPLOYEE", "MANAGER"),
-            PERF_TEAM, List.of("MANAGER"));
+            PERF_TEAM, List.of("MANAGER"),
+            MY_PAY, List.of("EMPLOYEE", "MANAGER"));
+
+    /**
+     * Designations (by level code) that get a menu when it first appears, e.g. HR Head / Manager for payroll.
+     * Only used if that designation exists; more are given under Administration > Menu access.
+     */
+    public static final java.util.Map<String, List<String>> NEW_MENU_DESIGNATIONS = java.util.Map.of(
+            "PAYROLL", List.of("8.2"),
+            PAYROLL_SALARIES, List.of("8.2"),
+            PAY_COMPONENTS, List.of("8.2"),
+            PAYSLIPS, List.of("8.2"));
 
     private Menus() {
     }

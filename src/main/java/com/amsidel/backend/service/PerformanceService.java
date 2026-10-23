@@ -321,15 +321,16 @@ public class PerformanceService {
 
     // ---- achievements ----
 
-    /** Issued by a manager to someone below them, or added by a person for themselves (self-reported). */
+    /** Given by a manager to someone below them; people do not add their own (older self-reported ones stay). */
     @Transactional
     public AchievementView addAchievement(AuthUser me, PerformanceRequests.AchievementBody body) {
         boolean self = body.getEmployeeId() == null || body.getEmployeeId().equals(me.id());
-        Employee person = person(self ? me.id() : body.getEmployeeId());
-        if (!self) {
-            if (!menuAccess.can(me, Menus.PERF_TEAM) || !access.canView(me, person)) {
-                throw ApiException.forbidden("You can only give achievements to people below you");
-            }
+        if (self) {
+            throw ApiException.forbidden("Achievements are given by your manager; you cannot add your own");
+        }
+        Employee person = person(body.getEmployeeId());
+        if (!menuAccess.can(me, Menus.PERF_TEAM) || !access.canView(me, person)) {
+            throw ApiException.forbidden("You can only give achievements to people below you");
         }
         Achievement a = new Achievement();
         a.setEmployee(person);

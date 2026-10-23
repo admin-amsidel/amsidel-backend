@@ -1,11 +1,13 @@
 package com.amsidel.backend.controller;
 
+import com.amsidel.backend.dto.BankDetails;
 import com.amsidel.backend.dto.EmployeeRequest;
 import com.amsidel.backend.dto.EmployeeResponse;
 import com.amsidel.backend.dto.ResetPasswordRequest;
 import com.amsidel.backend.security.AuthUser;
 import com.amsidel.backend.security.Checkpoint;
 import com.amsidel.backend.security.Menus;
+import com.amsidel.backend.service.BankDetailsService;
 import com.amsidel.backend.service.EmployeeService;
 import com.amsidel.backend.service.PhotoService;
 import jakarta.validation.Valid;
@@ -31,6 +33,7 @@ public class EmployeeController {
 
     private final EmployeeService employeeService;
     private final PhotoService photoService;
+    private final BankDetailsService bankDetailsService;
 
     @Checkpoint({Menus.EMP_LIST, Menus.TASKS, Menus.STAFF_MAIL, Menus.MENU_ACCESS})
     @GetMapping
@@ -54,6 +57,20 @@ public class EmployeeController {
     public EmployeeResponse update(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
                                    @Valid @RequestBody EmployeeRequest request) {
         return employeeService.update(me, id, request);
+    }
+
+    /** PAN and salary account: owners and admins who manage the person, and payroll. */
+    @Checkpoint({Menus.EMP_LIST, Menus.PAYROLL_SALARIES})
+    @GetMapping("/{id}/bank-details")
+    public BankDetails.View bankDetails(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        return bankDetailsService.get(me, id);
+    }
+
+    /** Owners and admins who manage the person (SecurityConfig: changes to /api/employees need Owner or Admin). */
+    @PutMapping("/{id}/bank-details")
+    public BankDetails.View saveBankDetails(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                            @Valid @RequestBody BankDetails.Request body) {
+        return bankDetailsService.save(me, id, body);
     }
 
     @GetMapping("/{id}/photo")

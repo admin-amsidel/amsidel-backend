@@ -3,6 +3,7 @@ package com.amsidel.backend.config;
 import com.amsidel.backend.entity.AccessSubject;
 import com.amsidel.backend.entity.MenuAccess;
 import com.amsidel.backend.entity.MenuItem;
+import com.amsidel.backend.repository.DesignationRepository;
 import com.amsidel.backend.repository.MenuAccessRepository;
 import com.amsidel.backend.repository.MenuItemRepository;
 import com.amsidel.backend.security.Menus;
@@ -32,6 +33,7 @@ public class MenuBootstrap implements ApplicationRunner {
     private final MenuItemRepository menuRepository;
     private final MenuAccessRepository accessRepository;
     private final MenuAccessService menuAccessService;
+    private final DesignationRepository designationRepository;
     private final TransactionTemplate transactions;
 
     @Override
@@ -84,6 +86,17 @@ public class MenuBootstrap implements ApplicationRunner {
                     accessRepository.save(MenuAccess.of(AccessSubject.ROLE, role, String.valueOf(d.checkpoint())));
                     log.info("New menu {} given to {}", d.name(), role);
                 }
+                grantDesignations(d);
+            });
+        }
+    }
+
+    /** Gives the menu to the designations listed in Menus.NEW_MENU_DESIGNATIONS that exist here (key = designation id). */
+    private void grantDesignations(Menus.Def d) {
+        for (String levelCode : Menus.NEW_MENU_DESIGNATIONS.getOrDefault(d.code(), List.of())) {
+            designationRepository.findAll().stream().filter(x -> levelCode.equals(x.getLevelCode())).findFirst().ifPresent(x -> {
+                accessRepository.save(MenuAccess.of(AccessSubject.DESIGNATION, String.valueOf(x.getId()), String.valueOf(d.checkpoint())));
+                log.info("New menu {} given to {}", d.name(), x.getName());
             });
         }
     }
@@ -91,8 +104,9 @@ public class MenuBootstrap implements ApplicationRunner {
     private void defaults() {
         grant("OWNER", List.of(MenuAccess.ALL));
         grant("ADMIN", List.of(MenuAccess.ALL));
-        grant("MANAGER", List.of("1001", "1002", "2001", "2002", "3001", "6001", "6002"));
-        grant("EMPLOYEE", List.of("1001", "2001", "3001", "6001"));
+        grant("MANAGER", List.of("1001", "1002", "2001", "2002", "3001", "6001", "6002", "8000"));
+        grant("EMPLOYEE", List.of("1001", "2001", "3001", "6001", "8000"));
+        Menus.ALL.forEach(this::grantDesignations);
         log.info("Created the default menu access for each user type");
     }
 

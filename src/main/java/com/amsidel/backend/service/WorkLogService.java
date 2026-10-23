@@ -68,6 +68,11 @@ public class WorkLogService {
         if (!canView(me, person)) {
             throw ApiException.forbidden("You can only see your own work log and those of people below you");
         }
+        return monthOf(me, person, from, to);
+    }
+
+    /** The calendar data for any range; the caller checks who may see it (the export). */
+    WorkLogMonth monthOf(AuthUser me, Employee person, LocalDate from, LocalDate to) {
         List<WorkLogEntry> entries = logRepository.forEmployee(person.getId(), from, to).stream()
                 .map(WorkLogEntry::from).toList();
         List<WorkLogMonth.LeaveSpan> leave = leaveRepository.overlapping(person.getId(), SHOWN_LEAVE, from, to).stream()

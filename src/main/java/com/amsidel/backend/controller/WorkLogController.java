@@ -1,5 +1,11 @@
 package com.amsidel.backend.controller;
 
+import com.amsidel.backend.service.ExportService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
 import com.amsidel.backend.dto.*;
 import com.amsidel.backend.entity.WorkHourRule;
 import com.amsidel.backend.security.AuthUser;
@@ -26,6 +32,7 @@ import java.util.List;
 public class WorkLogController {
 
     private final WorkLogService workLogService;
+    private final ExportService exportService;
 
     /** Calendar data for me, or for employeeId. */
     @Checkpoint({Menus.WORKLOG_MY})
@@ -35,6 +42,17 @@ public class WorkLogController {
                               @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                               @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return workLogService.month(me, employeeId, from, to);
+    }
+
+    /** Excel file of from..to (up to a year): mine, one person's (employeeId) or mine and my team's (all=true). */
+    @Checkpoint({Menus.WORKLOG_MY})
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> export(@AuthenticationPrincipal AuthUser me,
+                                         @RequestParam(required = false) Long employeeId,
+                                         @RequestParam(defaultValue = "false") boolean all,
+                                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return AttendanceController.excel(exportService.workLog(me, employeeId, all, from, to));
     }
 
     @Checkpoint({Menus.WORKLOG_MY})

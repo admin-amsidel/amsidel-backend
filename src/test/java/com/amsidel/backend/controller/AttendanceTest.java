@@ -38,6 +38,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -240,6 +241,43 @@ class AttendanceTest {
         // employees do not have the Team attendance menu (default menu access)
         mockMvc.perform(get("/api/attendance/day").header("Authorization", auth(other)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void attendanceExportsToExcel() throws Exception {
+        String leadId = create("Export Lead", "at.xlead", "MANAGER", null);
+        String xlead = signIn("at.xlead");
+        create("Esha Export", "at.esha", "EMPLOYEE", leadId);
+        String esha = signIn("at.esha");
+        checkIn(esha, photo("png"), "OFFICE", "10", "76", "15").andExpect(status().isCreated());
+
+        // the lead: themselves and their team, the last week
+        byte[] file = mockMvc.perform(get("/api/attendance/export").header("Authorization", auth(xlead))
+                        .param("all", "true").param("from", TODAY.minusDays(6).toString()).param("to", TODAY.toString()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("Attendance_Team_")))
+                .andReturn().getResponse().getContentAsByteArray();
+        assertThat(XlsxRead.sheets(file)).containsExactly("Summary", "Daily", "Entries");
+        List<String> summary = XlsxRead.rowWith(file, "Summary", "Esha Export");
+        assertThat(summary.get(5)).isEqualTo("1"); // present days
+        assertThat(XlsxRead.rowWith(file, "Summary", "Export Lead").get(5)).isEqualTo("0");
+        String today = TODAY.format(java.time.format.DateTimeFormatter.ofPattern("dd-MMM-yyyy", java.util.Locale.ENGLISH));
+        assertThat(XlsxRead.rowWith(file, "Daily", "Esha Export", today)).contains("Present (not checked out)", "Office");
+        assertThat(XlsxRead.rows(file, "Daily").stream().filter(r -> r.contains("Esha Export")).count()).isEqualTo(7);
+        assertThat(XlsxRead.rowWith(file, "Entries", "Esha Export", today)).contains("Office", "10.00000, 76.00000");
+
+        // one person, by someone above them; not by anyone else, and at most a year
+        mockMvc.perform(get("/api/attendance/export").header("Authorization", auth(other)).param("employeeId", raviId)
+                        .param("from", TODAY.toString()).param("to", TODAY.toString()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/attendance/export").header("Authorization", auth(lead)).param("employeeId", raviId)
+                        .param("from", TODAY.minusDays(400).toString()).param("to", TODAY.toString()))
+                .andExpect(status().isBadRequest());
+        byte[] mine = mockMvc.perform(get("/api/attendance/export").header("Authorization", auth(esha))
+                        .param("from", TODAY.minusDays(300).toString()).param("to", TODAY.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertThat(XlsxRead.rows(mine, "Summary").stream().filter(r -> r.contains("Esha Export")).count()).isEqualTo(1);
     }
 
     // ---- helpers ----
