@@ -23,6 +23,7 @@ public final class Menus {
     public static final String STAFF_MAIL = "STAFF_MAIL";
     public static final String MENU_ACCESS = "MENU_ACCESS";
     public static final String BRANDS = "BRANDS";
+    public static final String NEWS = "NEWS";
     public static final String PERF_MY = "PERF_MY";
     public static final String PERF_TEAM = "PERF_TEAM";
     public static final String PERF_CYCLES = "PERF_CYCLES";
@@ -40,9 +41,12 @@ public final class Menus {
     public static final String PROD_QUOTES = "PROD_QUOTES";
     public static final String PROD_INVOICES = "PROD_INVOICES";
     public static final String PROD_REPORTS = "PROD_REPORTS";
+    public static final String PROD_PROJECTS = "PROD_PROJECTS";
+    public static final String PROD_LEDGER = "PROD_LEDGER";
+    public static final String PROD_RECONCILE = "PROD_RECONCILE";
     /** Any page of the product portal. */
     public static final String[] PRODUCT_PORTAL = {PROD_HOME, PROD_ITEMS, PROD_TYPES, PROD_SUPPLIERS, PROD_PURCHASES,
-            PROD_CUSTOMERS, PROD_QUOTES, PROD_INVOICES, PROD_REPORTS};
+            PROD_CUSTOMERS, PROD_QUOTES, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE};
 
     /** One menu; parent null for a top-level menu, path null for a menu that only holds sub-menus. */
     public record Def(String code, String name, String description, int checkpoint, String parent, String path, String icon) {
@@ -83,6 +87,7 @@ public final class Menus {
             new Def(MY_PAY, "My pay", "Own salary, payslips (PDF) and pay for the year", 8000, "PAYROLL", "/portal/my-pay", "pi-money-bill"),
 
             new Def("ADMIN", "Administration", "Portal set-up", 9000, null, null, "pi-shield"),
+            new Def(NEWS, "News & announcements", "Add, change and remove the news on the dashboard (and the offers on the website): discounts, promotions, birthdays, important notices", 9003, "ADMIN", "/portal/admin/news", "pi-megaphone"),
             new Def(BRANDS, "Brands", "The group's brands: details, logo, owners and GST number; changing them needs the Owner user type", 9002, "ADMIN", "/portal/admin/brands", "pi-building"),
             new Def(MENU_ACCESS, "Menu access", "Which user types and designations see which menus; changing it needs the Admin user type", 9001, "ADMIN", "/portal/admin/menu-access", "pi-lock"),
 
@@ -98,6 +103,10 @@ public final class Menus {
             new Def(PROD_CUSTOMERS, "Customers", "Customer details and their quotations, invoices and payments", 11301, "PROD_SELLING", "/portal/products/customers", "pi-users"),
             new Def(PROD_QUOTES, "Quotations", "Quotations to customers (PDF), made into invoices", 11302, "PROD_SELLING", "/portal/products/quotations", "pi-file-edit"),
             new Def(PROD_INVOICES, "Invoices", "Final bills (PDF), stock out and customer payments", 11303, "PROD_SELLING", "/portal/products/invoices", "pi-receipt"),
+            new Def(PROD_PROJECTS, "Projects", "Customer projects: team, tasks, quotations, invoices and payments in one place", 11500, null, "/portal/products/projects", "pi-briefcase"),
+            new Def("PROD_ACCOUNTS", "Accounts", "Other income and expenses, bank statements and the P&L reconciler", 11600, null, null, "pi-wallet"),
+            new Def(PROD_LEDGER, "Income & expenses", "Investment, loans, capital and other income; transport, fixing, discounts and other expenses, by bill and project", 11601, "PROD_ACCOUNTS", "/portal/products/ledger", "pi-arrow-right-arrow-left"),
+            new Def(PROD_RECONCILE, "P&L reconciler", "Profit and loss by week, month or year; bank statements tallied with the portal; invoices paid short", 11602, "PROD_ACCOUNTS", "/portal/products/reconciler", "pi-calculator"),
             new Def(PROD_REPORTS, "Reports", "Sales, purchases, stock and payments by customer, bill, supplier, product and item; supplier spend charts", 11400, null, "/portal/products/reports", "pi-chart-line")
     );
 

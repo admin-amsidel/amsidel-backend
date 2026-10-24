@@ -31,7 +31,8 @@ import java.util.List;
 @RequestMapping("/api/trade")
 @RequiredArgsConstructor
 @Checkpoint({Menus.PROD_HOME, Menus.PROD_ITEMS, Menus.PROD_TYPES, Menus.PROD_SUPPLIERS, Menus.PROD_PURCHASES,
-        Menus.PROD_CUSTOMERS, Menus.PROD_QUOTES, Menus.PROD_INVOICES, Menus.PROD_REPORTS})
+        Menus.PROD_CUSTOMERS, Menus.PROD_QUOTES, Menus.PROD_INVOICES, Menus.PROD_REPORTS, Menus.PROD_PROJECTS,
+        Menus.PROD_LEDGER, Menus.PROD_RECONCILE})
 public class TradeController {
 
     private final TradeAccess access;
@@ -44,6 +45,10 @@ public class TradeController {
     private final BrandLogoRepository logos;
     private final com.amsidel.backend.repository.BrandUpiQrRepository upiQrs;
     private final TradePaymentRepository paymentRepository;
+    private final TradeHistoryLog historyLog;
+    private final ProjectService projects;
+    @org.springframework.beans.factory.annotation.Value("${app.leave.zone}")
+    private java.time.ZoneId zone;
 
     // ---- brands ----
 
@@ -291,6 +296,99 @@ public class TradeController {
         TradePayment p = paymentRepository.findFull(id).orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + id));
         return p.getParty() == TradeParty.CUSTOMER ? sales.voidPayment(me, p, body.getReason())
                 : purchases.voidPayment(me, p, body.getReason());
+    }
+
+    // ---- projects ----
+
+    @GetMapping("/projects")
+    public List<ProjectRow> projectList(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Long brandId) {
+        return projects.list(me, brandId);
+    }
+
+    @GetMapping("/projects/{id}")
+    public ProjectView project(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        return projects.get(me, id);
+    }
+
+    /** Staff who can own or work on a project of the brand. */
+    @GetMapping("/people")
+    public List<PersonRef> people(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Long brandId) {
+        return projects.people(me, brandId);
+    }
+
+    @PostMapping("/projects")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProjectView addProject(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody ProjectBody body) {
+        return projects.create(me, body);
+    }
+
+    @PutMapping("/projects/{id}")
+    public ProjectView saveProject(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody ProjectBody body) {
+        return projects.update(me, id, body);
+    }
+
+    @PostMapping("/projects/{id}/status")
+    public ProjectView projectStatus(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody ProjectStatusBody body) {
+        return projects.setStatus(me, id, body.getStatus(), body.getNote());
+    }
+
+    @PostMapping("/projects/{id}/settle")
+    public ProjectView settleProject(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @RequestBody(required = false) CommentBody body) {
+        return projects.settle(me, id, body == null ? null : body.getText());
+    }
+
+    @PostMapping("/projects/{id}/reopen")
+    public ProjectView reopenProject(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @RequestBody(required = false) CommentBody body) {
+        return projects.reopen(me, id, body == null ? null : body.getText());
+    }
+
+    @DeleteMapping("/projects/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteProject(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        projects.delete(me, id);
+    }
+
+    @PostMapping("/projects/{id}/comments")
+    public ProjectView commentProject(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody CommentBody body) {
+        return projects.comment(me, id, body.getText());
+    }
+
+    @PostMapping("/projects/{id}/tasks")
+    public ProjectView addTask(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody TaskBody body) {
+        return projects.addTask(me, id, body);
+    }
+
+    @PutMapping("/project-tasks/{taskId}")
+    public ProjectView saveTask(@AuthenticationPrincipal AuthUser me, @PathVariable Long taskId, @Valid @RequestBody TaskBody body) {
+        return projects.updateTask(me, taskId, body);
+    }
+
+    @PostMapping("/project-tasks/{taskId}/status")
+    public ProjectView taskStatus(@AuthenticationPrincipal AuthUser me, @PathVariable Long taskId, @Valid @RequestBody ProjectStatusBody body) {
+        return projects.setTaskStatus(me, taskId, body.getStatus(), body.getNote());
+    }
+
+    @DeleteMapping("/project-tasks/{taskId}")
+    public ProjectView deleteTask(@AuthenticationPrincipal AuthUser me, @PathVariable Long taskId) {
+        return projects.deleteTask(me, taskId);
+    }
+
+    // ---- history ----
+
+    /** One record's history (QUOTATION, INVOICE, PURCHASE, ITEM, CUSTOMER, SUPPLIER, PRODUCT_TYPE), newest first. */
+    @GetMapping("/history/{type}/{id}")
+    public List<HistoryView> history(@AuthenticationPrincipal AuthUser me, @PathVariable com.amsidel.backend.entity.TradeSubject type,
+                                     @PathVariable Long id) {
+        return historyLog.forRecord(me, type, id);
+    }
+
+    /** Who did what in the product portal, from..to: the Activity report. */
+    @GetMapping("/history")
+    public List<HistoryView> activity(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Long brandId,
+                                      @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                      @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        access.require(me, "You cannot see the activity report", com.amsidel.backend.security.Menus.PROD_REPORTS);
+        return historyLog.activity(me, brandId, from, to, zone);
     }
 
     // ---- overview and reports ----

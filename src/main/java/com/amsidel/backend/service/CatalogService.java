@@ -37,6 +37,7 @@ public class CatalogService {
     private final StockMoveRepository moveRepository;
     private final StockLedger ledger;
     private final TradeAccess access;
+    private final TradeHistoryLog history;
 
     // ---- types ----
 
@@ -66,18 +67,28 @@ public class CatalogService {
         if (taken) {
             throw ApiException.conflict("The code " + code + " is already used by another product type");
         }
+        TradeHistoryLog.Changes changes = new TradeHistoryLog.Changes()
+                .add("Code", t.getCode(), code).add("Name", t.getName(), body.getName().strip())
+                .add("Description", t.getDescription(), blank(body.getDescription()))
+                .add("In use", id == null ? null : t.isActive(), body.getActive() == null || body.getActive());
         t.setCode(code);
         t.setName(body.getName().strip());
         t.setDescription(blank(body.getDescription()));
         t.setSortOrder(body.getSortOrder());
         t.setActive(body.getActive() == null || body.getActive());
-        typeRepository.save(t);
+        t.setUpdatedBy(access.me(me));
+        typeRepository.saveAndFlush(t);
+        if (id == null) {
+            history.record(me, t.getBrand(), TradeSubject.PRODUCT_TYPE, t.getId(), t.getCode() + " · " + t.getName(), "CREATED", null);
+        } else if (!changes.isEmpty()) {
+            history.record(me, t.getBrand(), TradeSubject.PRODUCT_TYPE, t.getId(), t.getCode() + " · " + t.getName(), "UPDATED", changes.toString());
+        }
         return view(t, 0);
     }
 
     private static TypeView view(ProductType t, long items) {
         return new TypeView(t.getId(), BrandRef.of(t.getBrand()), t.getCode(), t.getName(), t.getDescription(),
-                t.getSortOrder(), t.isActive(), items);
+                t.getSortOrder(), t.isActive(), items, t.getUpdatedBy() == null ? null : t.getUpdatedBy().getName(), t.getUpdatedAt());
     }
 
     // ---- items ----
@@ -91,7 +102,7 @@ public class CatalogService {
     public ItemDetail item(AuthUser me, Long id) {
         ProductItem i = full(me, id);
         List<MoveView> moves = moveRepository.forItem(id).stream().map(CatalogService::move).toList();
-        return new ItemDetail(view(i), moves);
+        return new ItemDetail(view(i), moves, history.of(List.of(TradeSubject.ITEM), id));
     }
 
     @Transactional
@@ -120,6 +131,25 @@ public class CatalogService {
         if (body.getMinSellPrice().compareTo(body.getMrp()) > 0 && body.getMrp().signum() > 0) {
             throw ApiException.badRequest("The minimum selling price is more than the MRP");
         }
+        TradeHistoryLog.Changes changes = new TradeHistoryLog.Changes();
+        if (id != null) {
+            changes.add("Type", i.getType().getName(), type.getName())
+                    .add("Supplier", i.getSupplier() == null ? null : i.getSupplier().getName(), supplier == null ? null : supplier.getName())
+                    .add("Code", i.getCode(), code).add("Name", i.getName(), body.getName().strip())
+                    .add("Supplier's code", i.getSupplierItemCode(), blank(body.getSupplierItemCode()))
+                    .add("Sizes", i.getSizes(), sizes(body.getSizes()))
+                    .add("Unit", i.getUnit(), StringUtils.hasText(body.getUnit()) ? body.getUnit().strip() : "piece")
+                    .add("HSN", i.getHsnCode(), blank(body.getHsnCode()))
+                    .add("Supplier price", i.getSupplierPrice(), money(body.getSupplierPrice()))
+                    .add("MRP", i.getMrp(), money(body.getMrp()))
+                    .add("Showroom price", i.getShowroomPrice(), money(body.getShowroomPrice()))
+                    .add("Minimum price", i.getMinSellPrice(), money(body.getMinSellPrice()))
+                    .add("Track stock", i.isTrackStock(), body.getTrackStock() == null || body.getTrackStock())
+                    .add("Re-order level", i.getReorderLevel() == null ? null : StockLedger.plain(i.getReorderLevel()),
+                            body.getReorderLevel() == null ? null : StockLedger.plain(body.getReorderLevel()))
+                    .add("Sold now", i.isActive(), body.getActive() == null || body.getActive())
+                    .add("Details", i.getDetails(), blank(body.getDetails()));
+        }
         i.setType(type);
         i.setSupplier(supplier);
         i.setCode(code);
@@ -136,7 +166,17 @@ public class CatalogService {
         i.setTrackStock(body.getTrackStock() == null || body.getTrackStock());
         i.setReorderLevel(body.getReorderLevel() == null ? null : body.getReorderLevel().setScale(2, RoundingMode.HALF_UP));
         i.setActive(body.getActive() == null || body.getActive());
+        i.setUpdatedBy(access.me(me));
         itemRepository.saveAndFlush(i);
+        String label = i.getCode() + " · " + i.getName();
+        if (id == null) {
+            history.record(me, i.getBrand(), TradeSubject.ITEM, i.getId(), label, "CREATED",
+                    "Supplier price " + PayslipPdf.rupees(i.getSupplierPrice()) + ", showroom " + PayslipPdf.rupees(i.getShowroomPrice())
+                            + (body.getOpeningStock() != null && body.getOpeningStock().signum() > 0
+                            ? ", opening stock " + StockLedger.plain(body.getOpeningStock()) + " " + i.getUnit() : ""));
+        } else if (!changes.isEmpty()) {
+            history.record(me, i.getBrand(), TradeSubject.ITEM, i.getId(), label, "UPDATED", changes.toString());
+        }
         if (id == null && body.getOpeningStock() != null && body.getOpeningStock().signum() > 0) {
             ledger.move(i.getId(), StockMoveKind.OPENING, body.getOpeningStock(), access.today(), null, null, null,
                     "Opening stock", access.me(me), false);
@@ -157,7 +197,10 @@ public class CatalogService {
             case ADJUST_OUT -> body.getQuantity().negate();
             default -> throw ApiException.badRequest("Purchases and sales change stock through their bills");
         };
-        ledger.move(i.getId(), body.getKind(), q, body.getMovedOn(), null, null, null, body.getNote().strip(), access.me(me), false);
+        StockMove m = ledger.move(i.getId(), body.getKind(), q, body.getMovedOn(), null, null, null, body.getNote().strip(), access.me(me), false);
+        history.record(me, i.getBrand(), TradeSubject.ITEM, i.getId(), i.getCode() + " · " + i.getName(), "STOCK",
+                (q.signum() > 0 ? "+" : "") + StockLedger.plain(q) + " " + i.getUnit() + " (" + body.getKind().name().toLowerCase().replace('_', ' ')
+                        + "), now " + StockLedger.plain(m.getBalanceAfter()) + ": " + body.getNote().strip());
         return item(me, id);
     }
 
@@ -177,7 +220,8 @@ public class CatalogService {
                 i.getSupplier() == null ? null : i.getSupplier().getId(), i.getSupplier() == null ? null : i.getSupplier().getName(),
                 i.getCode(), i.getName(), i.getSupplierItemCode(), i.getDetails(), i.getSizes(), i.getUnit(), i.getHsnCode(),
                 i.getSupplierPrice(), i.getMrp(), i.getShowroomPrice(), i.getMinSellPrice(), i.isTrackStock(), i.getReorderLevel(),
-                i.getTotalIn(), i.getTotalOut(), i.getOnHand(), value, low, i.isActive());
+                i.getTotalIn(), i.getTotalOut(), i.getOnHand(), value, low, i.isActive(),
+                i.getUpdatedBy() == null ? null : i.getUpdatedBy().getName(), i.getUpdatedAt());
     }
 
     private static MoveView move(StockMove m) {

@@ -34,8 +34,128 @@ public final class TradeDtos {
         }
     }
 
-    /** What is owed: billed (or bought), paid, still due. */
+    /** What is owed: billed (or bought), paid, still due (after any discount written off). */
     public record Balance(BigDecimal billed, BigDecimal paid, BigDecimal due) {
+    }
+
+    /** One step in a record's history: when, what, what changed, by whom. */
+    public record HistoryView(Long id, Instant at, TradeSubject subjectType, Long subjectId, String subjectLabel, String action,
+                              String details, String byName, String brandCode) {
+    }
+
+    // ---- projects ----
+
+    public record PersonRef(Long id, String name, String designation) {
+        public static PersonRef of(Employee e) {
+            return e == null ? null : new PersonRef(e.getId(), e.getName(), e.getDesignation() == null ? null : e.getDesignation().getName());
+        }
+    }
+
+    @Data
+    public static class ProjectBody {
+        private Long brandId;
+
+        @NotBlank(message = "Give the project a name")
+        @Size(max = 150)
+        private String name;
+
+        @NotNull(message = "Choose the customer")
+        private Long customerId;
+
+        @Size(max = 4000)
+        private String description;
+
+        private Long ownerId;
+
+        @Size(max = 50, message = "At most 50 people on a project")
+        private List<Long> memberIds;
+
+        private LocalDate startDate;
+
+        private LocalDate endDate;
+
+        @DecimalMin("0")
+        @Digits(integer = 12, fraction = 2, message = "Use at most 12 digits and 2 decimals")
+        private BigDecimal estimatedAmount;
+
+        @DecimalMin("0")
+        @Digits(integer = 12, fraction = 2, message = "Use at most 12 digits and 2 decimals")
+        private BigDecimal finalAmount;
+
+        private ProjectStatus status;
+
+        @Size(max = 2000)
+        private String remarks;
+    }
+
+    @Data
+    public static class TaskBody {
+        @NotBlank(message = "Give the task a title")
+        @Size(max = 200)
+        private String title;
+
+        @Size(max = 2000)
+        private String description;
+
+        private ProjectStatus status;
+
+        @NotNull(message = "Give the registered date")
+        private LocalDate regDate;
+
+        private LocalDate startDate;
+
+        private LocalDate endDate;
+
+        private Long assigneeId;
+
+        /** A quotation or invoice of the same project. */
+        private Long billId;
+
+        @Size(max = 1000)
+        private String remarks;
+    }
+
+    @Data
+    public static class ProjectStatusBody {
+        @NotNull
+        private ProjectStatus status;
+
+        /** Why, for the history; optional. */
+        @Size(max = 500)
+        private String note;
+    }
+
+    @Data
+    public static class CommentBody {
+        @NotBlank(message = "Write the comment")
+        @Size(max = 1000)
+        private String text;
+    }
+
+    /**
+     * A project's money: estimated at the start, finalized (agreed), quoted, billed (issued invoices), paid (payments
+     * less refunds on its invoices); toPay = finalized, else billed, else estimated; due = toPay - paid.
+     */
+    public record ProjectMoney(BigDecimal estimated, BigDecimal finalAmount, BigDecimal quoted, BigDecimal billed, BigDecimal paid,
+                               BigDecimal toPay, BigDecimal due, int quotations, int invoices, BigDecimal writtenOff) {
+    }
+
+    public record TaskView(Long id, String title, String description, ProjectStatus status, LocalDate regDate, LocalDate startDate,
+                           LocalDate endDate, PersonRef assignee, Long billId, String billNumber, SalesDocKind billKind, String remarks,
+                           String createdByName, Instant createdAt, String updatedByName, Instant updatedAt, List<HistoryView> history) {
+    }
+
+    public record ProjectRow(Long id, String code, String name, String brandCode, Long customerId, String customerName,
+                             String customerPhone, ProjectStatus status, boolean settled, String ownerName, LocalDate startDate,
+                             LocalDate endDate, ProjectMoney money, int tasks, int tasksDone, String createdByName, Instant updatedAt) {
+    }
+
+    public record ProjectView(Long id, String code, String name, BrandRef brand, PartyRef customer, String description,
+                              ProjectStatus status, boolean settled, Instant settledAt, String settledByName, PersonRef owner,
+                              List<PersonRef> members, LocalDate startDate, LocalDate endDate, String remarks, ProjectMoney money,
+                              List<SalesRow> bills, List<PaymentView> payments, List<TaskView> tasks, List<HistoryView> history,
+                              String createdByName, Instant createdAt, String updatedByName, Instant updatedAt, Instant completedAt,
+                              boolean editable, boolean admin) {
     }
 
     // ---- product types ----
@@ -62,7 +182,7 @@ public final class TradeDtos {
     }
 
     public record TypeView(Long id, BrandRef brand, String code, String name, String description, int sortOrder,
-                           boolean active, long itemCount) {
+                           boolean active, long itemCount, String updatedByName, Instant updatedAt) {
     }
 
     // ---- suppliers ----
@@ -127,7 +247,7 @@ public final class TradeDtos {
     public record SupplierView(Long id, BrandRef brand, String code, String name, String contactPerson, String phone,
                                String phone2, String email, String website, String location, String address,
                                String gstNumber, String panNumber, String bankAccount, String ifsc, String upi, String notes,
-                               boolean active, Balance balance, int bills, int items) {
+                               boolean active, Balance balance, int bills, int items, String updatedByName, Instant updatedAt) {
     }
 
     // ---- customers ----
@@ -172,7 +292,7 @@ public final class TradeDtos {
     public record CustomerView(Long id, BrandRef brand, String code, String name, String phone, String phone2,
                                String email, String location, String address, String gstNumber, String panNumber,
                                String notes, boolean active, Balance balance, int quotations, int invoices,
-                               LocalDate lastDocDate) {
+                               LocalDate lastDocDate, String updatedByName, Instant updatedAt) {
     }
 
     // ---- items and stock ----
@@ -250,7 +370,7 @@ public final class TradeDtos {
                            String sizes, String unit, String hsnCode, BigDecimal supplierPrice, BigDecimal mrp,
                            BigDecimal showroomPrice, BigDecimal minSellPrice, boolean trackStock, BigDecimal reorderLevel,
                            BigDecimal totalIn, BigDecimal totalOut, BigDecimal onHand, BigDecimal stockValue,
-                           boolean lowStock, boolean active) {
+                           boolean lowStock, boolean active, String updatedByName, Instant updatedAt) {
     }
 
     /** Opening stock, or stock added or removed by hand (counted, damaged, returned…). */
@@ -277,7 +397,7 @@ public final class TradeDtos {
                            String recordedByName, Instant createdAt) {
     }
 
-    public record ItemDetail(ItemView item, List<MoveView> moves) {
+    public record ItemDetail(ItemView item, List<MoveView> moves, List<HistoryView> history) {
     }
 
     // ---- quotations and invoices ----
@@ -324,6 +444,9 @@ public final class TradeDtos {
         @NotNull(message = "Choose the customer")
         private Long customerId;
 
+        /** The project it belongs to; optional. */
+        private Long projectId;
+
         @NotNull
         private LocalDate docDate;
 
@@ -362,7 +485,7 @@ public final class TradeDtos {
     public record Totals(BigDecimal subtotal, BigDecimal discount, String miscLabel, BigDecimal miscAmount,
                          BigDecimal taxable, BigDecimal gstRate, boolean interState, BigDecimal gstAmount,
                          BigDecimal cgst, BigDecimal sgst, BigDecimal igst, BigDecimal roundOff, BigDecimal total,
-                         BigDecimal paid, BigDecimal due) {
+                         BigDecimal paid, BigDecimal due, BigDecimal writtenOff) {
     }
 
     public record SalesLineView(Long id, Long itemId, String itemCode, String name, String typeName, String hsnCode,
@@ -399,12 +522,15 @@ public final class TradeDtos {
                             List<SalesLineView> lines, Totals totals, BigDecimal costTotal, BigDecimal margin,
                             String remarks, String terms, List<PaymentView> payments, String createdByName,
                             Instant createdAt, Instant issuedAt, String issuedByName, Instant cancelledAt,
-                            String cancelReason, boolean editable) {
+                            String cancelReason, boolean editable, String createdByDesignation, String updatedByName,
+                            Instant updatedAt, List<HistoryView> history, Long projectId, String projectCode, String projectName,
+                            boolean canDelete) {
     }
 
     public record SalesRow(Long id, SalesDocKind kind, String number, SalesDocStatus status, String payStatus,
                            String brandCode, Long customerId, String customerName, String customerPhone,
-                           LocalDate docDate, LocalDate validUntil, BigDecimal total, BigDecimal paid, BigDecimal due) {
+                           LocalDate docDate, LocalDate validUntil, BigDecimal total, BigDecimal paid, BigDecimal due,
+                           String createdByName, Long projectId, String projectCode) {
     }
 
     @Data
@@ -513,12 +639,13 @@ public final class TradeDtos {
                                PartyRef supplier, String supplierBillNo, LocalDate billDate, List<PurchaseLineView> lines,
                                Totals totals, String remarks, List<PaymentView> payments, String createdByName,
                                Instant createdAt, Instant receivedAt, String receivedByName, Instant cancelledAt,
-                               String cancelReason, boolean editable) {
+                               String cancelReason, boolean editable, String updatedByName, Instant updatedAt,
+                               List<HistoryView> history) {
     }
 
     public record PurchaseRow(Long id, String number, PurchaseStatus status, String payStatus, String brandCode,
                               Long supplierId, String supplierName, String supplierBillNo, LocalDate billDate,
-                              BigDecimal total, BigDecimal paid, BigDecimal due, int lines) {
+                              BigDecimal total, BigDecimal paid, BigDecimal due, int lines, String createdByName) {
     }
 
     /** Receiving a bill: also make each line's price the item's supplier price (default yes). */

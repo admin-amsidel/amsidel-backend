@@ -100,6 +100,11 @@ public class ProductItem {
     @Column(nullable = false)
     private boolean active = true;
 
+    /** Who last changed it. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "updated_by")
+    private Employee updatedBy;
+
     @CreatedDate
     @Column(updatable = false)
     private Instant createdAt;

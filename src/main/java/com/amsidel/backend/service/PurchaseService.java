@@ -39,6 +39,7 @@ public class PurchaseService {
     private final TradeNumbers numbers;
     private final TradePayments payments;
     private final TradeAccess access;
+    private final TradeHistoryLog history;
 
     @Transactional(readOnly = true)
     public List<PurchaseRow> list(AuthUser me, Long brandId, LocalDate from, LocalDate to) {
@@ -65,9 +66,13 @@ public class PurchaseService {
         b.setBrand(access.brandFor(me, body.getBrandId()));
         b.setStatus(PurchaseStatus.DRAFT);
         b.setCreatedBy(access.me(me));
+        b.setUpdatedBy(access.me(me));
         fill(me, b, body);
         b.setNumber(numbers.next(b.getBrand(), TradeNumbers.PURCHASE, b.getBillDate()));
-        return view(billRepository.saveAndFlush(b));
+        billRepository.saveAndFlush(b);
+        log(me, b, "CREATED", "From " + b.getSupplier().getName() + (b.getSupplierBillNo() == null ? "" : " (their bill " + b.getSupplierBillNo() + ")")
+                + ": " + linesText(b) + "; total " + PayslipPdf.rupees(b.getTotal()));
+        return view(b);
     }
 
     @Transactional
@@ -77,8 +82,24 @@ public class PurchaseService {
         if (b.getStatus() != PurchaseStatus.DRAFT) {
             throw ApiException.conflict("A received bill cannot be changed; cancel it and make a new one");
         }
+        String linesBefore = linesText(b);
+        BigDecimal totalBefore = b.getTotal();
+        String supplierBefore = b.getSupplier().getName();
+        String billNoBefore = b.getSupplierBillNo();
+        LocalDate dateBefore = b.getBillDate();
         fill(me, b, body);
-        return view(billRepository.saveAndFlush(b));
+        TradeHistoryLog.Changes changes = new TradeHistoryLog.Changes().add("Supplier", supplierBefore, b.getSupplier().getName())
+                .add("Their bill no", billNoBefore, b.getSupplierBillNo()).add("Bill date", dateBefore, b.getBillDate());
+        if (!linesBefore.equals(linesText(b))) {
+            changes.note("Items now: " + linesText(b));
+        }
+        changes.add("Total", totalBefore, b.getTotal());
+        b.setUpdatedBy(access.me(me));
+        billRepository.saveAndFlush(b);
+        if (!changes.isEmpty()) {
+            log(me, b, "UPDATED", changes.toString());
+        }
+        return view(b);
     }
 
     /** Stock in; the prices paid become the items' supplier prices (unless told not to). */
@@ -104,7 +125,10 @@ public class PurchaseService {
         b.setStatus(PurchaseStatus.RECEIVED);
         b.setReceivedAt(Instant.now());
         b.setReceivedBy(access.me(me));
-        return view(billRepository.saveAndFlush(b));
+        b.setUpdatedBy(access.me(me));
+        billRepository.saveAndFlush(b);
+        log(me, b, "RECEIVED", "Into stock: " + linesText(b) + (updatePrices ? "; supplier prices updated" : ""));
+        return view(b);
     }
 
     /** A received bill: its items leave stock again (stock may go below zero if they were sold). */
@@ -126,7 +150,10 @@ public class PurchaseService {
         b.setStatus(PurchaseStatus.CANCELLED);
         b.setCancelledAt(Instant.now());
         b.setCancelReason(reason.strip());
-        return view(billRepository.saveAndFlush(b));
+        b.setUpdatedBy(access.me(me));
+        billRepository.saveAndFlush(b);
+        log(me, b, "CANCELLED", reason.strip() + "; items out of stock again");
+        return view(b);
     }
 
     @Transactional
@@ -139,6 +166,7 @@ public class PurchaseService {
         if (!paymentRepository.forBill(id).isEmpty()) {
             throw ApiException.conflict("This bill has payments; void them first");
         }
+        log(me, b, "DELETED", "From " + b.getSupplier().getName() + ", total " + PayslipPdf.rupees(b.getTotal()));
         billRepository.delete(b);
     }
 
@@ -149,12 +177,15 @@ public class PurchaseService {
         if (b.getStatus() == PurchaseStatus.CANCELLED) {
             throw ApiException.conflict("This bill is cancelled");
         }
-        payments.record(me, b.getBrand(), TradeParty.SUPPLIER, b.getTotal(), b.getPaid(), body, p -> {
-            p.setPurchaseBill(b);
-            p.setSupplier(b.getSupplier());
+        TradePayment p = payments.record(me, b.getBrand(), TradeParty.SUPPLIER, b.getTotal(), b.getPaid(), body, x -> {
+            x.setPurchaseBill(b);
+            x.setSupplier(b.getSupplier());
         });
         b.setPaid(TradePayments.paid(paymentRepository.forBill(id)));
-        return view(billRepository.saveAndFlush(b));
+        b.setUpdatedBy(access.me(me));
+        billRepository.saveAndFlush(b);
+        log(me, b, p.getKind() == TradePaymentKind.REFUND ? "REFUND" : "PAYMENT", TradePayments.describe(p) + "; paid now " + PayslipPdf.rupees(b.getPaid()));
+        return view(b);
     }
 
     @Transactional
@@ -167,7 +198,10 @@ public class PurchaseService {
             throw ApiException.conflict("Void the refund first: more would be refunded than paid");
         }
         b.setPaid(paid);
-        return view(billRepository.saveAndFlush(b));
+        b.setUpdatedBy(access.me(me));
+        billRepository.saveAndFlush(b);
+        log(me, b, "VOIDED", TradePayments.describe(p) + " voided: " + reason.strip());
+        return view(b);
     }
 
     private void fill(AuthUser me, PurchaseBill b, PurchaseBody body) {
@@ -213,6 +247,16 @@ public class PurchaseService {
         }
     }
 
+    private void log(AuthUser me, PurchaseBill b, String action, String details) {
+        history.record(me, b.getBrand(), TradeSubject.PURCHASE, b.getId(), "Purchase " + b.getNumber(), action, details);
+    }
+
+    /** "10 x UPVC-SW-01 @ ₹1,200.00, …". */
+    private static String linesText(PurchaseBill b) {
+        return b.getLines().stream().map(l -> StockLedger.plain(l.getQuantity()) + " x " + l.getItemCode() + " @ " + PayslipPdf.rupees(l.getRate()))
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
     PurchaseBill full(AuthUser me, Long id) {
         PurchaseBill b = billRepository.findFull(id).orElseThrow(() -> new ResourceNotFoundException("Purchase bill not found: " + id));
         access.check(me, b.getBrand());
@@ -237,7 +281,8 @@ public class PurchaseService {
     static PurchaseRow row(PurchaseBill b) {
         BigDecimal due = b.getStatus() == PurchaseStatus.RECEIVED ? b.getTotal().subtract(b.getPaid()).max(BigDecimal.ZERO) : BigDecimal.ZERO;
         return new PurchaseRow(b.getId(), b.getNumber(), b.getStatus(), payStatus(b), b.getBrand().getCode(), b.getSupplier().getId(),
-                b.getSupplier().getName(), b.getSupplierBillNo(), b.getBillDate(), b.getTotal(), b.getPaid(), due, b.getLines().size());
+                b.getSupplier().getName(), b.getSupplierBillNo(), b.getBillDate(), b.getTotal(), b.getPaid(), due, b.getLines().size(),
+                b.getCreatedBy() == null ? null : b.getCreatedBy().getName());
     }
 
     private PurchaseView view(PurchaseBill b) {
@@ -253,6 +298,7 @@ public class PurchaseService {
                         b.getGstRate(), b.isInterState(), b.getGstAmount(), b.getRoundOff(), b.getTotal(), b.getPaid()),
                 b.getRemarks(), pays, b.getCreatedBy() == null ? null : b.getCreatedBy().getName(), b.getCreatedAt(),
                 b.getReceivedAt(), b.getReceivedBy() == null ? null : b.getReceivedBy().getName(), b.getCancelledAt(),
-                b.getCancelReason(), b.getStatus() == PurchaseStatus.DRAFT);
+                b.getCancelReason(), b.getStatus() == PurchaseStatus.DRAFT, b.getUpdatedBy() == null ? null : b.getUpdatedBy().getName(),
+                b.getUpdatedAt(), history.of(List.of(TradeSubject.PURCHASE), b.getId()));
     }
 }

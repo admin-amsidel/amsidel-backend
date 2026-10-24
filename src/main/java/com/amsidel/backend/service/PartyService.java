@@ -41,6 +41,7 @@ public class PartyService {
     private final PurchaseBillRepository purchaseRepository;
     private final TradeNumbers numbers;
     private final TradeAccess access;
+    private final TradeHistoryLog history;
 
     // ---- suppliers ----
 
@@ -85,11 +86,26 @@ public class PartyService {
         if (taken) {
             throw ApiException.conflict("The supplier code " + code + " is already used");
         }
+        String phone = Phones.normalize(body.getPhone(), "Phone");
+        String phone2 = Phones.normalize(body.getPhone2(), "Second phone");
+        TradeHistoryLog.Changes changes = new TradeHistoryLog.Changes();
+        if (id != null) {
+            changes.add("Code", s.getCode(), code).add("Name", s.getName(), body.getName().strip())
+                    .add("Contact", s.getContactPerson(), blank(body.getContactPerson()))
+                    .add("Phone", s.getPhone(), phone).add("Second phone", s.getPhone2(), phone2)
+                    .add("Email", s.getEmail(), lower(body.getEmail())).add("Website", s.getWebsite(), blank(body.getWebsite()))
+                    .add("Location", s.getLocation(), blank(body.getLocation())).add("Address", s.getAddress(), blank(body.getAddress()))
+                    .add("GSTIN", s.getGstNumber(), upper(body.getGstNumber())).add("PAN", s.getPanNumber(), upper(body.getPanNumber()))
+                    .add("Bank account", s.getBankAccountNumber(), blank(body.getBankAccount()))
+                    .add("IFSC", s.getIfscCode(), upper(body.getIfsc())).add("UPI ID", s.getUpiId(), lower(body.getUpi()))
+                    .add("Notes", s.getNotes(), blank(body.getNotes()))
+                    .add("Active", s.isActive(), body.getActive() == null || body.getActive());
+        }
         s.setCode(code);
         s.setName(body.getName().strip());
         s.setContactPerson(blank(body.getContactPerson()));
-        s.setPhone(Phones.normalize(body.getPhone(), "Phone"));
-        s.setPhone2(Phones.normalize(body.getPhone2(), "Second phone"));
+        s.setPhone(phone);
+        s.setPhone2(phone2);
         s.setEmail(lower(body.getEmail()));
         s.setWebsite(blank(body.getWebsite()));
         s.setLocation(blank(body.getLocation()));
@@ -101,7 +117,13 @@ public class PartyService {
         s.setUpiId(lower(body.getUpi()));
         s.setNotes(blank(body.getNotes()));
         s.setActive(body.getActive() == null || body.getActive());
+        s.setUpdatedBy(access.me(me));
         supplierRepository.saveAndFlush(s);
+        if (id == null) {
+            history.record(me, s.getBrand(), TradeSubject.SUPPLIER, s.getId(), s.getName() + " (" + s.getCode() + ")", "CREATED", s.getPhone());
+        } else if (!changes.isEmpty()) {
+            history.record(me, s.getBrand(), TradeSubject.SUPPLIER, s.getId(), s.getName() + " (" + s.getCode() + ")", "UPDATED", changes.toString());
+        }
         return supplier(me, s.getId());
     }
 
@@ -118,7 +140,8 @@ public class PartyService {
         return new SupplierView(s.getId(), BrandRef.of(s.getBrand()), s.getCode(), s.getName(), s.getContactPerson(),
                 s.getPhone(), s.getPhone2(), s.getEmail(), s.getWebsite(), s.getLocation(), s.getAddress(), s.getGstNumber(),
                 s.getPanNumber(), s.getBankAccountNumber(), s.getIfscCode(), s.getUpiId(), s.getNotes(), s.isActive(),
-                new Balance(billed, paid, billed.subtract(paid)), live.size(), items);
+                new Balance(billed, paid, billed.subtract(paid)), live.size(), items,
+                s.getUpdatedBy() == null ? null : s.getUpdatedBy().getName(), s.getUpdatedAt());
     }
 
     // ---- customers ----
@@ -160,9 +183,19 @@ public class PartyService {
         if (id == null) {
             c.setCode(numbers.customer(c.getBrand()));
         }
+        String phone2 = Phones.normalize(body.getPhone2(), "Second phone");
+        TradeHistoryLog.Changes changes = new TradeHistoryLog.Changes();
+        if (id != null) {
+            changes.add("Name", c.getName(), body.getName().strip()).add("Phone", c.getPhone(), phone)
+                    .add("Second phone", c.getPhone2(), phone2).add("Email", c.getEmail(), lower(body.getEmail()))
+                    .add("Location", c.getLocation(), blank(body.getLocation())).add("Address", c.getAddress(), blank(body.getAddress()))
+                    .add("GSTIN", c.getGstNumber(), upper(body.getGstNumber())).add("PAN", c.getPanNumber(), upper(body.getPanNumber()))
+                    .add("Notes", c.getNotes(), blank(body.getNotes()))
+                    .add("Active", c.isActive(), body.getActive() == null || body.getActive());
+        }
         c.setName(body.getName().strip());
         c.setPhone(phone);
-        c.setPhone2(Phones.normalize(body.getPhone2(), "Second phone"));
+        c.setPhone2(phone2);
         c.setEmail(lower(body.getEmail()));
         c.setLocation(blank(body.getLocation()));
         c.setAddress(blank(body.getAddress()));
@@ -170,7 +203,13 @@ public class PartyService {
         c.setPanNumber(upper(body.getPanNumber()));
         c.setNotes(blank(body.getNotes()));
         c.setActive(body.getActive() == null || body.getActive());
+        c.setUpdatedBy(access.me(me));
         customerRepository.saveAndFlush(c);
+        if (id == null) {
+            history.record(me, c.getBrand(), TradeSubject.CUSTOMER, c.getId(), c.getName() + " (" + c.getCode() + ")", "CREATED", c.getPhone());
+        } else if (!changes.isEmpty()) {
+            history.record(me, c.getBrand(), TradeSubject.CUSTOMER, c.getId(), c.getName() + " (" + c.getCode() + ")", "UPDATED", changes.toString());
+        }
         return customer(me, c.getId());
     }
 
@@ -185,11 +224,13 @@ public class PartyService {
                 .filter(d -> d.getKind() == SalesDocKind.INVOICE && d.getStatus() != SalesDocStatus.CANCELLED).toList();
         BigDecimal billed = sum(invoices.stream().filter(d -> d.getStatus() == SalesDocStatus.ISSUED).map(SalesDoc::getTotal).toList());
         BigDecimal paid = sum(invoices.stream().map(SalesDoc::getPaid).toList());
+        BigDecimal writtenOff = sum(invoices.stream().map(SalesDoc::getWrittenOff).toList());
         int quotations = (int) docs.stream().filter(d -> d.getKind() == SalesDocKind.QUOTATION).count();
         LocalDate last = docs.stream().map(SalesDoc::getDocDate).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
         return new CustomerView(c.getId(), BrandRef.of(c.getBrand()), c.getCode(), c.getName(), c.getPhone(), c.getPhone2(),
                 c.getEmail(), c.getLocation(), c.getAddress(), c.getGstNumber(), c.getPanNumber(), c.getNotes(), c.isActive(),
-                new Balance(billed, paid, billed.subtract(paid)), quotations, invoices.size(), last);
+                new Balance(billed, paid, billed.subtract(paid).subtract(writtenOff)), quotations, invoices.size(), last,
+                c.getUpdatedBy() == null ? null : c.getUpdatedBy().getName(), c.getUpdatedAt());
     }
 
     static BigDecimal sum(List<BigDecimal> values) {

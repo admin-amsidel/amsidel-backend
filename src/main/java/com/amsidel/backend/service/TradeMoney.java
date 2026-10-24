@@ -39,11 +39,18 @@ public record TradeMoney(BigDecimal subtotal, BigDecimal discount, BigDecimal mi
     public static Totals totals(BigDecimal subtotal, BigDecimal discount, String miscLabel, BigDecimal misc,
                                 BigDecimal taxable, BigDecimal gstRate, boolean interState, BigDecimal gst,
                                 BigDecimal roundOff, BigDecimal total, BigDecimal paid) {
+        return totals(subtotal, discount, miscLabel, misc, taxable, gstRate, interState, gst, roundOff, total, paid, BigDecimal.ZERO.setScale(2));
+    }
+
+    /** writtenOff: discount written off after issue; it is settled like a payment. */
+    public static Totals totals(BigDecimal subtotal, BigDecimal discount, String miscLabel, BigDecimal misc,
+                                BigDecimal taxable, BigDecimal gstRate, boolean interState, BigDecimal gst,
+                                BigDecimal roundOff, BigDecimal total, BigDecimal paid, BigDecimal writtenOff) {
         BigDecimal half = gst.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
-        BigDecimal due = total.subtract(paid);
+        BigDecimal due = total.subtract(paid).subtract(writtenOff);
         return new Totals(subtotal, discount, miscLabel, misc, taxable, gstRate, interState, gst,
                 interState ? BigDecimal.ZERO : half, interState ? BigDecimal.ZERO : gst.subtract(half),
-                interState ? gst : BigDecimal.ZERO, roundOff, total, paid, due.signum() < 0 ? BigDecimal.ZERO : due);
+                interState ? gst : BigDecimal.ZERO, roundOff, total, paid, due.signum() < 0 ? BigDecimal.ZERO : due, writtenOff);
     }
 
     /** UNPAID, PARTLY_PAID or PAID. */

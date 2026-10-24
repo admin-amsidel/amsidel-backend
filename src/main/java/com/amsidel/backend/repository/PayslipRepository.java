@@ -29,4 +29,9 @@ public interface PayslipRepository extends JpaRepository<Payslip, Long> {
     @Query("select distinct p.fyStartYear from Payslip p where p.employee.id = :employeeId and p.status = 'PUBLISHED'"
             + " and p.paidOn is not null")
     List<Integer> publishedYears(@Param("employeeId") Long employeeId);
+
+    /** Salaries credited between two days (with the lines, for the net pay). */
+    @Query("select distinct p from Payslip p join fetch p.employee e left join fetch e.brand left join fetch p.lines"
+            + " where p.paidOn between :from and :to")
+    List<Payslip> paidBetween(@Param("from") java.time.LocalDate from, @Param("to") java.time.LocalDate to);
 }

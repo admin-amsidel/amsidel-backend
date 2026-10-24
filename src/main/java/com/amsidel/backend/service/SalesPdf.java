@@ -20,7 +20,7 @@ import java.util.stream.Stream;
 /**
  * A quotation or tax invoice as a PDF, in the portal's blue: the brand's band (logo, name, address, GSTIN,
  * contact), who it is for and the bill's details, the lines, the totals with CGST + SGST (or IGST), the amount in
- * words, the brand's bank and UPI details for paying, remarks and terms. A draft or cancelled bill says so across
+ * words, the brand's bank and UPI details for paying (invoices only), remarks and terms. A draft or cancelled bill says so across
  * the page.
  */
 @Component
@@ -64,7 +64,8 @@ public class SalesPdf {
         doc.add(spaced(parties(d), 12, 0));
         doc.add(spaced(lines(d), 12, 0));
         doc.add(spaced(summary(d), 10, 0));
-        PdfPTable pay = payment(d, upiQr);
+        // a quotation is only an offer: the bank and UPI details are on the invoice
+        PdfPTable pay = invoice ? payment(d, upiQr) : null;
         if (pay != null) {
             doc.add(spaced(pay, 12, 0));
         }
@@ -154,6 +155,12 @@ public class SalesPdf {
             info.addElement(kv("Quotation", d.quotationNumber()));
         }
         info.addElement(kv("Supply", d.totals().interState() ? "Inter-state (IGST)" : "Within the state (CGST + SGST)"));
+        if (d.createdByName() != null) {
+            info.addElement(kv("Prepared by", d.createdByName() + (d.createdByDesignation() == null ? "" : ", " + d.createdByDesignation())));
+        }
+        if (d.issuedByName() != null && !d.issuedByName().equals(d.createdByName())) {
+            info.addElement(kv("Issued by", d.issuedByName()));
+        }
         t.addCell(info);
         return t;
     }
@@ -239,6 +246,9 @@ public class SalesPdf {
         s.addCell(totalValue);
         if (d.kind() == SalesDocKind.INVOICE && m.paid().signum() > 0) {
             sumRow(s, "Paid", PayslipPdf.rupees(m.paid()));
+            if (m.writtenOff().signum() > 0) {
+                sumRow(s, "Discount allowed", PayslipPdf.rupees(m.writtenOff()));
+            }
             sumRow(s, "Balance due", PayslipPdf.rupees(m.due()));
         }
         PdfPCell right = cell(Rectangle.BOX);

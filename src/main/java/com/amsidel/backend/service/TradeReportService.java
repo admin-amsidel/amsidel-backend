@@ -99,7 +99,7 @@ public class TradeReportService {
         SalesTotals totals = new SalesTotals(billed.size(), sum(billed, SalesDoc::getSubtotal), sum(billed, SalesDoc::getDiscount),
                 sum(billed, SalesDoc::getMiscAmount), sum(billed, SalesDoc::getTaxable), sum(billed, SalesDoc::getGstAmount),
                 sum(billed, SalesDoc::getTotal), sum(billed, SalesDoc::getPaid),
-                billed.stream().map(d -> d.getTotal().subtract(d.getPaid()).max(ZERO)).reduce(ZERO, BigDecimal::add),
+                billed.stream().map(d -> d.getTotal().subtract(d.getCleared()).max(ZERO)).reduce(ZERO, BigDecimal::add),
                 sumOf(lines, SalesLine::cost), sumOf(lines, SalesLine::margin));
         return new SalesReport(from, to, lines, billed.stream().map(SalesService::row).toList(),
                 groups(lines, l -> String.valueOf(l.customerId()), l -> l.customerName() + " (" + l.customerCode() + ")",
@@ -240,11 +240,11 @@ public class TradeReportService {
         access.require(me, "You cannot see this report", Menus.PROD_REPORTS, Menus.PROD_HOME);
         Long scope = access.scope(me, brandId);
         List<Owed> customers = salesRepository.openInvoices(scope).stream()
-                .filter(d -> d.getTotal().compareTo(d.getPaid()) > 0)
+                .filter(d -> d.getTotal().compareTo(d.getCleared()) > 0)
                 .collect(Collectors.groupingBy(d -> d.getCustomer().getId())).values().stream().map(ds -> {
                     Customer c = ds.getFirst().getCustomer();
                     return owed(c.getId(), c.getCode(), c.getName(), c.getPhone(), ds.getFirst().getBrand().getCode(), ds.size(),
-                            sum(ds, SalesDoc::getTotal), sum(ds, SalesDoc::getPaid),
+                            sum(ds, SalesDoc::getTotal), sum(ds, SalesDoc::getCleared),
                             ds.stream().map(SalesDoc::getDocDate).min(Comparator.naturalOrder()).orElse(null));
                 }).sorted(Comparator.comparing(Owed::due).reversed()).toList();
         List<Owed> suppliers = purchaseRepository.openBills(scope).stream()

@@ -63,9 +63,12 @@ public class TradeAccess {
         return me.brandId();
     }
 
-    /** The brand a new record goes to: mine, or the one chosen (needed when I may use several). */
+    /**
+     * The brand a new record goes to: the one chosen (owners and group admins may choose), else my own assigned brand;
+     * someone without a brand who may use several must choose.
+     */
     public Brand brandFor(AuthUser me, Long brandId) {
-        Long id = allBrands(me) ? brandId : me.brandId();
+        Long id = allBrands(me) ? (brandId != null ? brandId : me.brandId()) : me.brandId();
         if (id == null) {
             List<Brand> mine = brands(me);
             if (mine.size() == 1) {
@@ -83,6 +86,17 @@ public class TradeAccess {
     public void check(AuthUser me, Brand brand) {
         if (!allBrands(me) && !brand.getId().equals(me.brandId())) {
             throw ApiException.forbidden("This belongs to another brand");
+        }
+    }
+
+    /** Owners and admins: may delete bills and projects, and change settled projects. */
+    public boolean admin(AuthUser me) {
+        return me.role() == com.amsidel.backend.entity.Role.OWNER || me.role() == com.amsidel.backend.entity.Role.ADMIN;
+    }
+
+    public void requireAdmin(AuthUser me, String message) {
+        if (!admin(me)) {
+            throw ApiException.forbidden(message);
         }
     }
 

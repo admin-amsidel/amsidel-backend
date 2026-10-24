@@ -47,6 +47,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         // enquiries from the public website (rate limited in EnquiryService)
                         .requestMatchers(HttpMethod.POST, "/api/public/enquiry").permitAll()
+                        // news for customers on the website (only what is meant for customers and showing today)
+                        .requestMatchers(HttpMethod.GET, "/api/public/news", "/api/public/news/*/image").permitAll()
                         // reachable with a temporary PIN too, so the person can replace it
                         .requestMatchers("/api/auth/**").authenticated()
                         // public website reads products; only owners and admins change them

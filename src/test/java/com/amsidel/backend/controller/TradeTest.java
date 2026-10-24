@@ -114,8 +114,14 @@ class TradeTest {
                 .andExpect(jsonPath("$.totals.gstAmount").value(1440.0))
                 .andExpect(jsonPath("$.totals.total").value(9440.0))
                 .andExpect(jsonPath("$.lines[0].unitCost").value(1200.0)));
-        mockMvc.perform(get("/api/trade/sales/" + quote + "/pdf").header("Authorization", auth(owner)))
-                .andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF));
+        byte[] quotePdf = mockMvc.perform(get("/api/trade/sales/" + quote + "/pdf").header("Authorization", auth(owner)))
+                .andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andReturn().getResponse().getContentAsByteArray();
+        // a quotation carries no bank or UPI details
+        com.lowagie.text.pdf.PdfReader quoteReader = new com.lowagie.text.pdf.PdfReader(quotePdf);
+        String quoteText = new com.lowagie.text.pdf.parser.PdfTextExtractor(quoteReader).getTextFromPage(1);
+        org.junit.jupiter.api.Assertions.assertTrue(quoteText.contains("QUOTATION"), quoteText);
+        org.junit.jupiter.api.Assertions.assertFalse(quoteText.contains("UPI ID") || quoteText.contains("Bank account") || quoteText.contains("Scan"), quoteText);
 
         // made into an invoice: a draft, paid in advance, then issued (number, stock out)
         String invoice = idOf(mockMvc.perform(post("/api/trade/sales/" + quote + "/invoice").header("Authorization", auth(owner)))
@@ -177,6 +183,29 @@ class TradeTest {
         mockMvc.perform(post("/api/trade/sales/" + big + "/issue").header("Authorization", auth(owner)))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.error", startsWith("Only 15 piece of UPVC-SW-01")));
         mockMvc.perform(delete("/api/trade/sales/" + big).header("Authorization", auth(owner))).andExpect(status().isNoContent());
+
+        // every step is in the history, with who did it
+        mockMvc.perform(get("/api/trade/sales/" + invoice).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.createdByName").value("Amsidel Owner"))
+                .andExpect(jsonPath("$.updatedByName").value("Amsidel Owner"))
+                .andExpect(jsonPath("$.history[*].action", contains("CANCELLED", "REFUND", "PAYMENT", "ISSUED", "PAYMENT", "CREATED")))
+                .andExpect(jsonPath("$.history[0].byName").value("Amsidel Owner"))
+                .andExpect(jsonPath("$.history[0].details").value(startsWith("Order changed")));
+        mockMvc.perform(get("/api/trade/sales/" + quote).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.history[*].action", contains("INVOICED", "CREATED")));
+        json(put("/api/trade/items/" + item), owner, """
+                {"typeId":%d,"supplierId":%s,"code":"UPVC-SW-01","name":"uPVC sliding window","sizes":"6x4, 8x7",
+                 "supplierPrice":1200,"mrp":3200,"showroomPrice":3000,"minSellPrice":2200,"reorderLevel":3}
+                """.formatted(upvc, supplier)).andExpect(status().isOk()).andExpect(jsonPath("$.updatedByName").value("Amsidel Owner"));
+        mockMvc.perform(get("/api/trade/items/" + item).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.history[0].action").value("UPDATED"))
+                .andExpect(jsonPath("$.history[0].details").value("Showroom price ₹2,800.00 → ₹3,000.00"));
+        mockMvc.perform(get("/api/trade/history/CUSTOMER/" + customer).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$[0].action").value("CREATED"));
+        mockMvc.perform(get("/api/trade/history").header("Authorization", auth(owner)).param("brandId", String.valueOf(dw))
+                        .param("from", TODAY.toString()).param("to", TODAY.toString()))
+                .andExpect(jsonPath("$.length()").value(greaterThan(10)))
+                .andExpect(jsonPath("$[*].subjectType", hasItems("INVOICE", "QUOTATION", "PURCHASE", "ITEM", "CUSTOMER", "SUPPLIER")));
 
         // a payment recorded by mistake is voided, not deleted
         String bview = body(mockMvc.perform(get("/api/trade/purchases/" + bill).header("Authorization", auth(owner))));

@@ -78,6 +78,13 @@ public class TradePayments {
                 .reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
     }
 
+    /** "₹5,000.00 by UPI on 2026-10-23 (txn UPI-4471)". */
+    public static String describe(TradePayment p) {
+        return (p.getKind() == TradePaymentKind.REFUND ? "Refund " : "") + PayslipPdf.rupees(p.getAmount()) + " by " + p.getMode().name()
+                + " on " + p.getPaidOn() + (p.getTransactionId() == null ? "" : " (txn " + p.getTransactionId() + ")")
+                + (p.getRemarks() == null ? "" : " · " + p.getRemarks());
+    }
+
     public static PaymentView view(TradePayment p) {
         Long docId = p.getInvoice() != null ? p.getInvoice().getId() : p.getPurchaseBill() != null ? p.getPurchaseBill().getId() : null;
         String number = p.getInvoice() != null ? p.getInvoice().getNumber() : p.getPurchaseBill() != null ? p.getPurchaseBill().getNumber() : null;

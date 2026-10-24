@@ -49,4 +49,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     /** Does anyone active report to this person? */
     boolean existsByReportsTo_IdAndActiveTrue(Long employeeId);
+
+    /** Active people with a date of birth (for the birthdays on the dashboard). */
+    @Query("select e from Employee e left join fetch e.designation left join fetch e.brand where e.active = true and e.dob is not null")
+    List<Employee> withBirthdays();
 }

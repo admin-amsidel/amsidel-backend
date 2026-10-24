@@ -55,6 +55,11 @@ public class SalesDoc {
     /** Quotations: valid until. */
     private LocalDate validUntil;
 
+    /** The project it belongs to; optional. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "project_id")
+    private Project project;
+
     /** An invoice made from a quotation. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "quotation_id")
@@ -97,6 +102,9 @@ public class SalesDoc {
     /** Payments less refunds (not voided). */
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal paid = BigDecimal.ZERO;
+    /** Discounts written off after issue (what the customer did not pay, kept as an expense); the bill itself is unchanged. */
+    @Column(nullable = false, precision = 14, scale = 2, columnDefinition = "numeric(14,2) default 0")
+    private BigDecimal writtenOff = BigDecimal.ZERO;
     /** What the items cost from the suppliers (for the margin). */
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal costTotal = BigDecimal.ZERO;
@@ -127,10 +135,20 @@ public class SalesDoc {
     @Column(length = 300)
     private String cancelReason;
 
+    /** Who last changed it. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "updated_by")
+    private Employee updatedBy;
+
     @CreatedDate
     @Column(updatable = false)
     private Instant createdAt;
 
     @LastModifiedDate
     private Instant updatedAt;
+
+    /** Paid plus written off: the part of the total that is settled. */
+    public BigDecimal getCleared() {
+        return paid.add(writtenOff);
+    }
 }
