@@ -263,7 +263,9 @@ class AttendanceTest {
         assertThat(summary.get(5)).isEqualTo("1"); // present days
         assertThat(XlsxRead.rowWith(file, "Summary", "Export Lead").get(5)).isEqualTo("0");
         String today = TODAY.format(java.time.format.DateTimeFormatter.ofPattern("dd-MMM-yyyy", java.util.Locale.ENGLISH));
-        assertThat(XlsxRead.rowWith(file, "Daily", "Esha Export", today)).contains("Present (not checked out)", "Office");
+        // on a Sunday or a holiday the status also says so ("… · weekly off")
+        assertThat(XlsxRead.rowWith(file, "Daily", "Esha Export", today)).contains("Office")
+                .anyMatch(cell -> cell.startsWith("Present (not checked out)"));
         assertThat(XlsxRead.rows(file, "Daily").stream().filter(r -> r.contains("Esha Export")).count()).isEqualTo(7);
         assertThat(XlsxRead.rowWith(file, "Entries", "Esha Export", today)).contains("Office", "10.00000, 76.00000");
 

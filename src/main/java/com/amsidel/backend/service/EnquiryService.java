@@ -102,6 +102,11 @@ public class EnquiryService {
             MimeMessageHelper mail = new MimeMessageHelper(message, true, "UTF-8");
             mail.setFrom(from, brand + " website");
             mail.setTo(to);
+            // the office copy, as on every mail (the same address as the enquiry inbox gets it once)
+            String copy = mailService.alwaysCc();
+            if (StringUtils.hasText(copy) && !copy.equalsIgnoreCase(to.trim())) {
+                mail.setCc(copy);
+            }
             if (StringUtils.hasText(r.getEmail())) {
                 mail.setReplyTo(r.getEmail().strip(), oneLine(r.getName()));
             }

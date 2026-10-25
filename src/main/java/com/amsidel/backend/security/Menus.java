@@ -44,9 +44,10 @@ public final class Menus {
     public static final String PROD_PROJECTS = "PROD_PROJECTS";
     public static final String PROD_LEDGER = "PROD_LEDGER";
     public static final String PROD_RECONCILE = "PROD_RECONCILE";
+    public static final String PROD_MAIL = "PROD_MAIL";
     /** Any page of the product portal. */
     public static final String[] PRODUCT_PORTAL = {PROD_HOME, PROD_ITEMS, PROD_TYPES, PROD_SUPPLIERS, PROD_PURCHASES,
-            PROD_CUSTOMERS, PROD_QUOTES, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE};
+            PROD_CUSTOMERS, PROD_QUOTES, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL};
 
     /** One menu; parent null for a top-level menu, path null for a menu that only holds sub-menus. */
     public record Def(String code, String name, String description, int checkpoint, String parent, String path, String icon) {
@@ -107,6 +108,7 @@ public final class Menus {
             new Def("PROD_ACCOUNTS", "Accounts", "Other income and expenses, bank statements and the P&L reconciler", 11600, null, null, "pi-wallet"),
             new Def(PROD_LEDGER, "Income & expenses", "Investment, loans, capital and other income; transport, fixing, discounts and other expenses, by bill and project", 11601, "PROD_ACCOUNTS", "/portal/products/ledger", "pi-arrow-right-arrow-left"),
             new Def(PROD_RECONCILE, "P&L reconciler", "Profit and loss by week, month or year; bank statements tallied with the portal; invoices paid short", 11602, "PROD_ACCOUNTS", "/portal/products/reconciler", "pi-calculator"),
+            new Def(PROD_MAIL, "Customer & supplier mail", "Personal mail and WhatsApp messages to customers and suppliers, like staff mail; the office is copied on every mail", 11700, null, "/portal/products/mail", "pi-envelope"),
             new Def(PROD_REPORTS, "Reports", "Sales, purchases, stock and payments by customer, bill, supplier, product and item; supplier spend charts", 11400, null, "/portal/products/reports", "pi-chart-line")
     );
 

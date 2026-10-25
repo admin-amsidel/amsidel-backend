@@ -117,11 +117,65 @@ class MailTest {
 
         assertThat(mail.sent).hasSize(2);
         MimeMessage first = mail.sent.get(0);
-        assertThat(first.getAllRecipients()).extracting(Address::toString).containsExactly("anu@amsidel.com");
+        // the office is copied on every mail
+        assertThat(first.getRecipients(Message.RecipientType.TO)).extracting(Address::toString).containsExactly("anu@amsidel.com");
+        assertThat(first.getRecipients(Message.RecipientType.CC)).extracting(Address::toString).containsExactly("info.amsidel@gmail.com");
         assertThat(first.getSubject()).isEqualTo("New client: Kumar residence (Anu Thomas)");
         assertThat(first.getFrom()[0].toString()).contains("staff@amsidel.com");
         assertThat(text(first)).contains("Dear Anu Thomas,").contains("Thanks, Anu Thomas.");
         assertThat(text(mail.sent.get(1))).contains("Dear All,");
+    }
+
+    @Test
+    void customerAndSupplierMailLikeStaffMailWithTheOfficeCopy() throws Exception {
+        List<Integer> brandIds = JsonPath.read(body(mockMvc.perform(get("/api/brands").header("Authorization", auth(owner)))),
+                "$[?(@.code == 'DW')].id");
+        long dw = brandIds.getFirst();
+        String customer = idOf(mockMvc.perform(post("/api/trade/customers").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%d,\"name\":\"Varghese Villa\",\"phone\":\"9847033333\",\"email\":\"varghese@example.com\"}".formatted(dw))));
+        String noMail = idOf(mockMvc.perform(post("/api/trade/customers").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%d,\"name\":\"No Mail Home\",\"phone\":\"9847044444\"}".formatted(dw))));
+        String supplier = idOf(mockMvc.perform(post("/api/trade/suppliers").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%d,\"name\":\"Silver Frames\",\"phone\":\"9847011111\",\"email\":\"orders@silverframes.in\"}".formatted(dw))));
+
+        // who can be mailed
+        mockMvc.perform(get("/api/trade/mail/recipients").param("brandId", String.valueOf(dw)).header("Authorization", auth(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.customers[?(@.name == 'Varghese Villa')].email").value(org.hamcrest.Matchers.hasItem("varghese@example.com")))
+                .andExpect(jsonPath("$.suppliers[?(@.name == 'Silver Frames')].party").value(org.hamcrest.Matchers.hasItem("SUPPLIER")));
+        mockMvc.perform(get("/api/trade/mail/setup").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.alwaysCc").value("info.amsidel@gmail.com"));
+
+        // the same mail as staff mail: their name, the signature, the office copy; signed by the brand
+        String json = """
+                {"party":"CUSTOMER","partyId":%s,"subject":"Your quotation, {name}","greeting":"","body":"Please find the **revised** quotation.",
+                 "cc":["INFO.amsidel@gmail.com"],"signature":"Regards,\\n**Sales team**"}
+                """.formatted(customer);
+        mockMvc.perform(post("/api/trade/mail/send").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.sent").value(true)).andExpect(jsonPath("$.email").value("varghese@example.com"));
+        MimeMessage m = mail.sent.getFirst();
+        assertThat(m.getRecipients(Message.RecipientType.TO)).extracting(Address::toString).containsExactly("varghese@example.com");
+        // the office address is not copied twice when it is typed in as well
+        assertThat(m.getRecipients(Message.RecipientType.CC)).extracting(Address::toString).hasSize(1)
+                .allMatch(a -> a.equalsIgnoreCase("info.amsidel@gmail.com"));
+        assertThat(m.getSubject()).isEqualTo("Your quotation, Varghese Villa");
+        assertThat(text(m)).contains("Dear Varghese Villa,").contains("<b>revised</b>").contains("Sent by Amsidel Doors &amp; Windows");
+
+        mockMvc.perform(post("/api/trade/mail/send").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"party\":\"SUPPLIER\",\"partyId\":%s,\"subject\":\"Order\",\"body\":\"Please send 20 frames.\"}".formatted(supplier)))
+                .andExpect(jsonPath("$.sent").value(true));
+        assertThat(mail.sent.get(1).getRecipients(Message.RecipientType.TO)).extracting(Address::toString).containsExactly("orders@silverframes.in");
+        assertThat(mail.sent.get(1).getRecipients(Message.RecipientType.CC)).extracting(Address::toString).containsExactly("info.amsidel@gmail.com");
+
+        // no email: not sent, said so
+        mockMvc.perform(post("/api/trade/mail/send").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"party\":\"CUSTOMER\",\"partyId\":%s,\"subject\":\"Hi\",\"body\":\"Hello\"}".formatted(noMail)))
+                .andExpect(jsonPath("$.sent").value(false)).andExpect(jsonPath("$.error").value("No email on record"));
+        // an employee without the menu
+        mockMvc.perform(post("/api/trade/mail/send").header("Authorization", auth(employee)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"party\":\"CUSTOMER\",\"partyId\":%s,\"subject\":\"Hi\",\"body\":\"Hello\"}".formatted(customer)))
+                .andExpect(status().isForbidden());
+        assertThat(mail.sent).hasSize(2);
     }
 
     @Test
@@ -142,7 +196,8 @@ class MailTest {
 
         MimeMessage m = mail.sent.getFirst();
         assertThat(m.getRecipients(Message.RecipientType.TO)).extracting(Address::toString).containsExactly("anu@amsidel.com");
-        assertThat(m.getRecipients(Message.RecipientType.CC)).extracting(Address::toString).containsExactly("hr@amsidel.com");
+        assertThat(m.getRecipients(Message.RecipientType.CC)).extracting(Address::toString)
+                .containsExactly("hr@amsidel.com", "info.amsidel@gmail.com");
         assertThat(m.getRecipients(Message.RecipientType.BCC)).extracting(Address::toString).containsExactly("boss@amsidel.com");
         String all = text(m);
         assertThat(all).contains("src=\"cid:picture1\"").contains("The new office &lt;Kochi&gt;")

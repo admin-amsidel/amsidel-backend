@@ -71,7 +71,9 @@ class EnquiryTest {
 
         assertThat(mail.sent).hasSize(1);
         MimeMessage m = mail.sent.getFirst();
-        assertThat(m.getAllRecipients()).extracting(Address::toString).containsExactly("enquiries@amsidel.com");
+        // to the enquiry inbox, with the office copy
+        assertThat(m.getRecipients(jakarta.mail.Message.RecipientType.TO)).extracting(Address::toString).containsExactly("enquiries@amsidel.com");
+        assertThat(m.getRecipients(jakarta.mail.Message.RecipientType.CC)).extracting(Address::toString).containsExactly("info.amsidel@gmail.com");
         assertThat(m.getReplyTo()[0].toString()).contains("anu@example.com");
         assertThat(m.getSubject()).isEqualTo("New website enquiry – Casement windows (Anu <Thomas>)");
         String all = text(m);
