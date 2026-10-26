@@ -52,13 +52,22 @@ public final class PayrollViews {
 
     /** One person in the payroll list; set = false when no salary is entered for this year yet. */
     public record SalaryRow(Person employee, boolean set, LocalDate effectiveFrom, int workingDays, Totals totals, boolean editable,
-                            String updatedByName, Instant updatedAt) {
+                            String updatedByName, Instant updatedAt, com.amsidel.backend.entity.TaxRegime taxRegime) {
     }
 
     /** A person's salary for a year, with a line for every component (active ones, plus any retired one it uses). */
     public record SalaryView(Person employee, int fyStartYear, String fyLabel, LocalDate fyStart, LocalDate fyEnd,
                              boolean set, LocalDate effectiveFrom, int workingDays, String notes, List<LineView> lines, Totals totals,
-                             boolean editable, String updatedByName, Instant updatedAt) {
+                             boolean editable, String updatedByName, Instant updatedAt, TaxView tax) {
+    }
+
+    /**
+     * The salary's income tax: the regime, the old-regime declaration, the tax worked out under the regime chosen (null
+     * for manual), both regimes side by side to compare, and whether I may type it by hand.
+     */
+    public record TaxView(com.amsidel.backend.entity.TaxRegime regime, BigDecimal declared, com.amsidel.backend.service.IncomeTax.Calc chosen,
+                          com.amsidel.backend.service.IncomeTax.Calc newRegime, com.amsidel.backend.service.IncomeTax.Calc oldRegime,
+                          boolean canManual, String taxComponentName) {
     }
 
     /** The payroll list for a year, with what it all costs. */

@@ -74,6 +74,11 @@ public class Brand {
     @Column(length = 80)
     private String upiId;
 
+    /** The currency its invoices, quotations and payslips show (the symbol only, no conversion); null = rupees. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 3)
+    private CurrencyCode currency;
+
     /** The brand's Razorpay account for bills paid online (cards and UPI); the money settles to its linked bank. */
     @Column(length = 40)
     private String razorpayKeyId;
@@ -104,5 +109,10 @@ public class Brand {
     @JsonProperty("razorpayReady")
     public boolean isRazorpayReady() {
         return razorpayKeyId != null && razorpayKeySecret != null;
+    }
+
+    /** Rupees unless another currency was chosen. */
+    public CurrencyCode getCurrency() {
+        return currency == null ? CurrencyCode.INR : currency;
     }
 }

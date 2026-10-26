@@ -493,10 +493,10 @@ public class PayslipService {
     /** The person's brand: its name, address, GST number and logo; the company settings fill in what is missing. */
     private Company company(Brand b) {
         if (b == null) {
-            return new Company(companyName, blank(companyAddress), null, null, null, null, null);
+            return new Company(companyName, blank(companyAddress), null, null, null, null, null, "INR", "₹");
         }
         return new Company(b.getName(), b.getAddress() != null ? b.getAddress() : blank(companyAddress), b.getGstNumber(),
-                b.getId(), b.getLogoUpdatedAt(), b.getContactNumber(), b.getEmail());
+                b.getId(), b.getLogoUpdatedAt(), b.getContactNumber(), b.getEmail(), b.getCurrency().name(), b.getCurrency().symbol());
     }
 
     private static String blank(String s) {

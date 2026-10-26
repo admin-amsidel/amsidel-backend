@@ -152,6 +152,51 @@ class PayrollTest {
     }
 
     @Test
+    void incomeTaxByRegimeOrTypedInBySomeoneAllowed() throws Exception {
+        String[] hr = employee("EMPLOYEE", dw, "2025-04-01", "8.2");
+        String emp = employee("EMPLOYEE", dw, "2025-04-01")[0];
+        String lines = "[" + line("BASIC", "150000") + "," + line("PT", "200") + "," + line("TDS", "5000") + "]";
+        // payroll staff without the Manual income tax access: the new regime works it out (the typed 5,000 is not kept)
+        // 18 lakh a year - 75,000 = 17.25 lakh: 60,000 + 60,000 + 25,000 = 1,45,000 + cess 5,800 = 1,50,800 = 12,567 a month
+        json(put("/api/payroll/salaries/" + emp + "?fy=2025"), hr[1], "{\"effectiveFrom\":\"2025-04-01\",\"lines\":%s}".formatted(lines))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tax.regime").value("NEW"))
+                .andExpect(jsonPath("$.tax.canManual").value(false))
+                .andExpect(jsonPath("$.tax.chosen.annualTax").value(150800.0))
+                .andExpect(jsonPath("$.lines[?(@.code == 'TDS')].monthly").value(hasItem(12567.0)));
+        json(put("/api/payroll/salaries/" + emp + "?fy=2025"), hr[1],
+                "{\"effectiveFrom\":\"2025-04-01\",\"taxRegime\":\"MANUAL\",\"lines\":%s}".formatted(lines))
+                .andExpect(status().isForbidden());
+
+        // the old regime with professional tax and the declared deductions: 15,47,600 taxable = 2,76,780 + cess = 2,87,850 a year
+        json(put("/api/payroll/salaries/" + emp + "?fy=2025"), hr[1],
+                "{\"effectiveFrom\":\"2025-04-01\",\"taxRegime\":\"OLD\",\"taxDeclared\":200000,\"lines\":%s}".formatted(lines))
+                .andExpect(jsonPath("$.tax.regime").value("OLD"))
+                .andExpect(jsonPath("$.tax.declared").value(200000.0))
+                .andExpect(jsonPath("$.tax.chosen.taxable").value(1547600.0))
+                .andExpect(jsonPath("$.tax.chosen.annualTax").value(287850.0))
+                .andExpect(jsonPath("$.tax.newRegime.annualTax").value(150800.0))
+                .andExpect(jsonPath("$.lines[?(@.code == 'TDS')].monthly").value(hasItem(23988.0)));
+
+        // the owner may type it; then payroll staff may change the salary but not the tax
+        json(put("/api/payroll/salaries/" + emp + "?fy=2025"), owner,
+                "{\"effectiveFrom\":\"2025-04-01\",\"taxRegime\":\"MANUAL\",\"lines\":%s}".formatted(lines))
+                .andExpect(jsonPath("$.tax.regime").value("MANUAL"))
+                .andExpect(jsonPath("$.tax.chosen").doesNotExist())
+                .andExpect(jsonPath("$.lines[?(@.code == 'TDS')].monthly").value(hasItem(5000.0)));
+        String moreTax = "[" + line("BASIC", "150000") + "," + line("PT", "200") + "," + line("TDS", "9000") + "]";
+        json(put("/api/payroll/salaries/" + emp + "?fy=2025"), hr[1], "{\"effectiveFrom\":\"2025-04-01\",\"lines\":%s}".formatted(moreTax))
+                .andExpect(status().isForbidden());
+        String raise = "[" + line("BASIC", "160000") + "," + line("PT", "200") + "," + line("TDS", "5000") + "]";
+        json(put("/api/payroll/salaries/" + emp + "?fy=2025"), hr[1], "{\"effectiveFrom\":\"2025-04-01\",\"lines\":%s}".formatted(raise))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.tax.regime").value("MANUAL"));
+
+        // the preview while typing: both regimes
+        json(post("/api/payroll/tax-preview?fy=2025"), hr[1], "{\"effectiveFrom\":\"2025-04-01\",\"monthlyGross\":150000,\"monthlyProfessionalTax\":200,\"declared\":200000}")
+                .andExpect(jsonPath("$.NEW.annualTax").value(150800.0)).andExpect(jsonPath("$.OLD.annualTax").value(287850.0));
+    }
+
+    @Test
     void hrGetsThePayrollMenus() throws Exception {
         String[] hr = employee("EMPLOYEE", dw, "2025-04-01", "8.2");
         mockMvc.perform(get("/api/payroll/salaries").header("Authorization", auth(hr[1]))).andExpect(status().isOk());

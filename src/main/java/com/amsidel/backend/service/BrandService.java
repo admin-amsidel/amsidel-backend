@@ -78,6 +78,9 @@ public class BrandService {
                 : request.getIfsc().strip().toUpperCase(Locale.ROOT));
         brand.setUpiId(request.getUpi() == null || request.getUpi().isBlank() ? null
                 : request.getUpi().strip().toLowerCase(Locale.ROOT));
+        if (request.getCurrency() != null) {
+            brand.setCurrency(request.getCurrency());
+        }
     }
 
     // ---- online payments ----

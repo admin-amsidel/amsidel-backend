@@ -62,6 +62,13 @@ public class PayrollController {
         return service.year(me, fy);
     }
 
+    /** The income tax under both regimes for a salary being typed (not saved). */
+    @PostMapping("/tax-preview")
+    public java.util.Map<String, com.amsidel.backend.service.IncomeTax.Calc> taxPreview(@RequestParam int fy,
+                                                                                         @Valid @RequestBody PayrollRequests.TaxPreview body) {
+        return service.taxPreview(fy, body);
+    }
+
     @GetMapping("/salaries/{employeeId}")
     public SalaryView salary(@AuthenticationPrincipal AuthUser me, @PathVariable Long employeeId, @RequestParam int fy) {
         return service.salary(me, employeeId, fy);

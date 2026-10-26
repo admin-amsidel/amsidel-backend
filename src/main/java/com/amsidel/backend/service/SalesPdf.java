@@ -48,7 +48,24 @@ public class SalesPdf {
     }
 
     /** brandLogo / upiQr: the brand's own (null = the group logo / a QR made from the brand's UPI ID). */
+    /** The brand's currency while one document is drawn. */
+    private static final ThreadLocal<com.amsidel.backend.entity.CurrencyCode> CURRENCY =
+            ThreadLocal.withInitial(() -> com.amsidel.backend.entity.CurrencyCode.INR);
+
+    private static String money(BigDecimal v) {
+        return MoneyText.format(v, CURRENCY.get());
+    }
+
     public byte[] render(SalesView d, byte[] brandLogo, byte[] upiQr) {
+        CURRENCY.set(com.amsidel.backend.entity.CurrencyCode.of(d.company().currency()));
+        try {
+            return draw(d, brandLogo, upiQr);
+        } finally {
+            CURRENCY.remove();
+        }
+    }
+
+    private byte[] draw(SalesView d, byte[] brandLogo, byte[] upiQr) {
         boolean invoice = d.kind() == SalesDocKind.INVOICE;
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         Document doc = new Document(PageSize.A4, 32, 32, 30, 36);
@@ -198,8 +215,8 @@ public class SalesPdf {
             t.addCell(row(l.hsnCode() == null ? "" : l.hsnCode(), Element.ALIGN_LEFT, MUTED));
             t.addCell(row(StockLedger.plain(l.quantity()), Element.ALIGN_RIGHT, INK));
             t.addCell(row(l.unit(), Element.ALIGN_LEFT, MUTED));
-            t.addCell(row(PayslipPdf.rupees(l.rate()), Element.ALIGN_RIGHT, INK));
-            t.addCell(row(PayslipPdf.rupees(l.amount()), Element.ALIGN_RIGHT, INK));
+            t.addCell(row(money(l.rate()), Element.ALIGN_RIGHT, INK));
+            t.addCell(row(money(l.amount()), Element.ALIGN_RIGHT, INK));
         }
         return t;
     }
@@ -210,28 +227,28 @@ public class SalesPdf {
         PdfPCell left = cell(Rectangle.NO_BORDER);
         left.setPaddingRight(14);
         left.addElement(para("AMOUNT IN WORDS", regular, 6.5f, MUTED));
-        left.addElement(para(RupeesInWords.of(m.total()), bold, 8.5f, INK));
+        left.addElement(para(MoneyText.words(m.total(), CURRENCY.get()), bold, 8.5f, INK));
         outer.addCell(left);
 
         PdfPTable s = table(new float[]{58, 42});
-        sumRow(s, "Subtotal", PayslipPdf.rupees(m.subtotal()));
+        sumRow(s, "Subtotal", money(m.subtotal()));
         if (m.discount().signum() > 0) {
-            sumRow(s, "Less: discount", "- " + PayslipPdf.rupees(m.discount()));
+            sumRow(s, "Less: discount", "- " + money(m.discount()));
         }
         if (m.miscAmount().signum() > 0) {
-            sumRow(s, "Add: " + (m.miscLabel() == null ? "other charges" : m.miscLabel()), "+ " + PayslipPdf.rupees(m.miscAmount()));
+            sumRow(s, "Add: " + (m.miscLabel() == null ? "other charges" : m.miscLabel()), "+ " + money(m.miscAmount()));
         }
-        sumRow(s, "Taxable value", PayslipPdf.rupees(m.taxable()));
+        sumRow(s, "Taxable value", money(m.taxable()));
         String rate = m.gstRate().stripTrailingZeros().toPlainString();
         if (m.interState()) {
-            sumRow(s, "IGST " + rate + "%", PayslipPdf.rupees(m.igst()));
+            sumRow(s, "IGST " + rate + "%", money(m.igst()));
         } else if (m.gstRate().signum() > 0) {
             String half = m.gstRate().divide(BigDecimal.valueOf(2)).stripTrailingZeros().toPlainString();
-            sumRow(s, "CGST " + half + "%", PayslipPdf.rupees(m.cgst()));
-            sumRow(s, "SGST " + half + "%", PayslipPdf.rupees(m.sgst()));
+            sumRow(s, "CGST " + half + "%", money(m.cgst()));
+            sumRow(s, "SGST " + half + "%", money(m.sgst()));
         }
         if (m.roundOff().signum() != 0) {
-            sumRow(s, "Round off", (m.roundOff().signum() > 0 ? "+ " : "- ") + PayslipPdf.rupees(m.roundOff().abs()));
+            sumRow(s, "Round off", (m.roundOff().signum() > 0 ? "+ " : "- ") + money(m.roundOff().abs()));
         }
         PdfPCell totalLabel = cell(Rectangle.NO_BORDER);
         totalLabel.setBackgroundColor(BLUE);
@@ -242,14 +259,14 @@ public class SalesPdf {
         totalValue.setBackgroundColor(BLUE);
         totalValue.setPadding(9);
         totalValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        totalValue.setPhrase(new Phrase(PayslipPdf.rupees(m.total()), new Font(bold, 12, Font.NORMAL, Color.WHITE)));
+        totalValue.setPhrase(new Phrase(money(m.total()), new Font(bold, 12, Font.NORMAL, Color.WHITE)));
         s.addCell(totalValue);
         if (d.kind() == SalesDocKind.INVOICE && m.paid().signum() > 0) {
-            sumRow(s, "Paid", PayslipPdf.rupees(m.paid()));
+            sumRow(s, "Paid", money(m.paid()));
             if (m.writtenOff().signum() > 0) {
-                sumRow(s, "Discount allowed", PayslipPdf.rupees(m.writtenOff()));
+                sumRow(s, "Discount allowed", money(m.writtenOff()));
             }
-            sumRow(s, "Balance due", PayslipPdf.rupees(m.due()));
+            sumRow(s, "Balance due", money(m.due()));
         }
         PdfPCell right = cell(Rectangle.BOX);
         right.setBorderColor(LINE);
@@ -267,6 +284,13 @@ public class SalesPdf {
     private PdfPTable payment(SalesView d, byte[] upiQr) {
         Company c = d.company();
         boolean invoice = d.kind() == SalesDocKind.INVOICE;
+        // UPI is for rupees only: in another currency the bank details stay, the UPI ID and QR go
+        boolean rupees = CURRENCY.get() == com.amsidel.backend.entity.CurrencyCode.INR;
+        if (!rupees) {
+            upiQr = null;
+            c = new Company(c.brandId(), c.code(), c.name(), c.address(), c.gstNumber(), c.phone(), c.email(), c.bankAccount(), c.ifsc(),
+                    null, c.logoUpdatedAt(), c.upiQrUpdatedAt(), c.currency(), c.currencySymbol());
+        }
         if (c.bankAccount() == null && c.upi() == null && upiQr == null) {
             return null;
         }
@@ -290,7 +314,7 @@ public class SalesPdf {
             details.addElement(kv("UPI ID", c.upi()));
         }
         if (!settled) {
-            details.addElement(kv(invoice ? "Amount to pay" : "Quoted total", PayslipPdf.rupees(toPay)));
+            details.addElement(kv(invoice ? "Amount to pay" : "Quoted total", money(toPay)));
             if (d.number() != null) {
                 details.addElement(para("Please mention " + d.number() + " with the payment.", regular, 7.5f, MUTED));
             }
@@ -307,7 +331,7 @@ public class SalesPdf {
             } catch (IOException e) {
                 throw new IllegalStateException("The QR code could not be read", e);
             }
-            Paragraph cap = para(upiQr != null || !invoice ? "Scan with any UPI app" : "Scan to pay " + PayslipPdf.rupees(toPay),
+            Paragraph cap = para(upiQr != null || !invoice ? "Scan with any UPI app" : "Scan to pay " + money(toPay),
                     bold, 7.5f, INK);
             cap.setAlignment(Element.ALIGN_CENTER);
             q.addElement(cap);

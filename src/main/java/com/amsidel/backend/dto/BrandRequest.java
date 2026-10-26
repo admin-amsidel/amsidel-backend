@@ -52,4 +52,7 @@ public class BrandRequest {
 
     @Pattern(regexp = "|[A-Za-z0-9._-]{2,256}@[A-Za-z]{2,64}", message = "UPI ID looks like name@bank, e.g. amsidel@okhdfcbank")
     private String upi;
+
+    /** The currency its documents show (symbol only); empty = keep (a new brand: rupees). */
+    private com.amsidel.backend.entity.CurrencyCode currency;
 }

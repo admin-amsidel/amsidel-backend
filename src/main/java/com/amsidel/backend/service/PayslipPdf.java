@@ -52,7 +52,24 @@ public class PayslipPdf {
     }
 
     /** brandLogo: the brand's own logo, or null for the group logo. */
+    /** The brand's currency while one payslip is drawn. */
+    private static final ThreadLocal<com.amsidel.backend.entity.CurrencyCode> CURRENCY =
+            ThreadLocal.withInitial(() -> com.amsidel.backend.entity.CurrencyCode.INR);
+
+    private static String money(BigDecimal v) {
+        return MoneyText.format(v, CURRENCY.get());
+    }
+
     public byte[] render(PayslipView p, byte[] brandLogo) {
+        CURRENCY.set(com.amsidel.backend.entity.CurrencyCode.of(p.company().currency()));
+        try {
+            return draw(p, brandLogo);
+        } finally {
+            CURRENCY.remove();
+        }
+    }
+
+    private byte[] draw(PayslipView p, byte[] brandLogo) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         Document doc = new Document(PageSize.A4, 32, 32, 30, 30);
         PdfWriter.getInstance(doc, out);
@@ -170,14 +187,14 @@ public class PayslipPdf {
         }
         for (LineView l : lines) {
             t.addCell(rowCell(l.name(), Element.ALIGN_LEFT, INK));
-            t.addCell(rowCell(rupees(l.fullAmount()), Element.ALIGN_RIGHT, MUTED));
-            t.addCell(rowCell(rupees(l.amount()), Element.ALIGN_RIGHT, INK));
-            t.addCell(rowCell(rupees(l.ytd()), Element.ALIGN_RIGHT, MUTED));
+            t.addCell(rowCell(money(l.fullAmount()), Element.ALIGN_RIGHT, MUTED));
+            t.addCell(rowCell(money(l.amount()), Element.ALIGN_RIGHT, INK));
+            t.addCell(rowCell(money(l.ytd()), Element.ALIGN_RIGHT, MUTED));
         }
         PdfPCell label = text(totalLabel, bold, Element.ALIGN_LEFT, BLUE);
         label.setColspan(2);
         t.addCell(label);
-        t.addCell(text(rupees(total), bold, Element.ALIGN_RIGHT, BLUE));
+        t.addCell(text(money(total), bold, Element.ALIGN_RIGHT, BLUE));
         t.addCell(text("", regular, Element.ALIGN_RIGHT, INK));
         return t;
     }
@@ -209,9 +226,9 @@ public class PayslipPdf {
         outer.addCell(words);
 
         PdfPTable s = table(new float[]{55, 45});
-        sumRow(s, "Gross earnings", rupees(p.money().gross()));
-        sumRow(s, "Less: deductions", "- " + rupees(p.money().deductions()));
-        sumRow(s, "Add: reimbursements", "+ " + rupees(p.money().reimbursements()));
+        sumRow(s, "Gross earnings", money(p.money().gross()));
+        sumRow(s, "Less: deductions", "- " + money(p.money().deductions()));
+        sumRow(s, "Add: reimbursements", "+ " + money(p.money().reimbursements()));
         PdfPCell netLabel = cell(Rectangle.NO_BORDER);
         netLabel.setBackgroundColor(BLUE);
         netLabel.setPadding(9);
@@ -221,7 +238,7 @@ public class PayslipPdf {
         netValue.setBackgroundColor(BLUE);
         netValue.setPadding(9);
         netValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        netValue.setPhrase(new Phrase(rupees(p.money().net()), new Font(bold, 13, Font.NORMAL, Color.WHITE)));
+        netValue.setPhrase(new Phrase(money(p.money().net()), new Font(bold, 13, Font.NORMAL, Color.WHITE)));
         s.addCell(netValue);
         PdfPCell right = cell(Rectangle.BOX);
         right.setBorderColor(LINE);

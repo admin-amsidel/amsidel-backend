@@ -121,8 +121,9 @@ public final class PayslipDtos {
     // ---- views ----
 
     /** The employee's brand as the payslip shows it; logo at /api/brands/{brandId}/logo when logoUpdatedAt is set. */
+    /** currency: the brand's (INR, USD, EUR, GBP) for the payslip's amounts. */
     public record Company(String name, String address, String gstNumber, Long brandId, Instant logoUpdatedAt, String phone,
-                          String email) {
+                          String email, String currency, String currencySymbol) {
     }
 
     public record Money(BigDecimal gross, BigDecimal deductions, BigDecimal reimbursements, BigDecimal net) {

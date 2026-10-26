@@ -9,6 +9,7 @@ import com.amsidel.backend.repository.EmployeeRepository;
 import com.amsidel.backend.repository.PayComponentRepository;
 import com.amsidel.backend.repository.SalaryStructureRepository;
 import com.amsidel.backend.security.AuthUser;
+import com.amsidel.backend.security.Menus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ public class PayrollService {
     private final SalaryStructureRepository salaryRepository;
     private final EmployeeRepository employeeRepository;
     private final PayrollAccess access;
+    private final MenuAccessService menuAccess;
 
     @Value("${app.leave.zone:Asia/Kolkata}")
     private String zone;
@@ -108,7 +110,7 @@ public class PayrollService {
             rows.add(new SalaryRow(Person.of(e), s != null, s == null ? null : s.getEffectiveFrom(),
                     s == null ? DEFAULT_WORKING_DAYS : s.getWorkingDays(), t, editable(me, e),
                     s == null || s.getUpdatedBy() == null ? null : s.getUpdatedBy().getName(),
-                    s == null ? null : s.getUpdatedAt()));
+                    s == null ? null : s.getUpdatedAt(), s == null ? null : s.regime()));
         }
         return new YearView(fy, label(fy), years(), rows, sum(set), set.size());
     }
@@ -149,6 +151,28 @@ public class PayrollService {
             n.setFyStartYear(fy);
             return n;
         });
+        // income tax: worked out under the new or old regime; typed in (Manual) only by someone allowed to
+        // no regime sent: keep the salary's; a new one is typed in by someone allowed to, else the new regime
+        TaxRegime regime = body.getTaxRegime() != null ? body.getTaxRegime() : s.getId() != null ? s.regime()
+                : menuAccess.can(me, Menus.PAY_TAX_MANUAL) ? TaxRegime.MANUAL : TaxRegime.NEW;
+        BigDecimal declared = body.getTaxDeclared() != null ? body.getTaxDeclared().setScale(2, RoundingMode.HALF_UP) : s.getTaxDeclared();
+        PayComponent tds = taxComponent(components.values());
+        if (tds != null) {
+            BigDecimal before = s.getLines().stream().filter(l -> l.getComponent().getId().equals(tds.getId())).map(SalaryLine::getMonthlyAmount)
+                    .findFirst().orElse(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+            if (regime == TaxRegime.MANUAL) {
+                BigDecimal asked = amounts.getOrDefault(tds.getId(), BigDecimal.ZERO);
+                boolean changed = s.regime() != TaxRegime.MANUAL || s.getId() == null || asked.compareTo(before) != 0;
+                if (changed && !menuAccess.can(me, Menus.PAY_TAX_MANUAL)) {
+                    throw ApiException.forbidden("Typing the income tax by hand needs the Manual income tax access; choose the new or old regime");
+                }
+            } else {
+                IncomeTax.Calc calc = taxFor(regime, fy, from, amounts, components, declared);
+                amounts.put(tds.getId(), calc.monthlyTax());
+            }
+        }
+        s.setTaxRegime(regime);
+        s.setTaxDeclared(regime == TaxRegime.OLD ? declared : s.getTaxDeclared());
         s.setEffectiveFrom(from);
         s.setWorkingDays(body.getWorkingDays() == null ? DEFAULT_WORKING_DAYS : body.getWorkingDays());
         s.setNotes(body.getNotes() == null || body.getNotes().isBlank() ? null : body.getNotes().strip());
@@ -225,7 +249,8 @@ public class PayrollService {
         return new SalaryView(Person.of(e), fy, label(fy), start(fy), end(fy), s != null, from,
                 s == null ? DEFAULT_WORKING_DAYS : s.getWorkingDays(),
                 s == null ? null : s.getNotes(), lines, t, editable(me, e),
-                s == null || s.getUpdatedBy() == null ? null : s.getUpdatedBy().getName(), s == null ? null : s.getUpdatedAt());
+                s == null || s.getUpdatedBy() == null ? null : s.getUpdatedBy().getName(), s == null ? null : s.getUpdatedAt(),
+                taxView(me, fy, from, s, amounts));
     }
 
     private Totals totals(SalaryStructure s) {
@@ -277,6 +302,58 @@ public class PayrollService {
 
     private static BigDecimal money(BigDecimal v) {
         return (v == null ? BigDecimal.ZERO : v).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    // ---- income tax ----
+
+    /** The Income Tax component (code TDS) the worked-out tax goes in; null when there is none. */
+    private static PayComponent taxComponent(Collection<PayComponent> all) {
+        return all.stream().filter(c -> "TDS".equalsIgnoreCase(c.getCode())).findFirst().orElse(null);
+    }
+
+    /** The tax on a salary's year: gross earnings and professional tax over the months it is paid in the year. */
+    private static IncomeTax.Calc taxFor(TaxRegime regime, int fy, LocalDate from, Map<Long, BigDecimal> amounts, Map<Long, PayComponent> components,
+                                         BigDecimal declared) {
+        BigDecimal gross = BigDecimal.ZERO;
+        BigDecimal pt = BigDecimal.ZERO;
+        for (Map.Entry<Long, BigDecimal> a : amounts.entrySet()) {
+            PayComponent c = components.get(a.getKey());
+            if (c == null) {
+                continue;
+            }
+            if (c.getKind() == PayComponentKind.EARNING) {
+                gross = gross.add(a.getValue());
+            } else if ("PT".equalsIgnoreCase(c.getCode())) {
+                pt = pt.add(a.getValue());
+            }
+        }
+        int months = monthsPaid(fy, from);
+        BigDecimal m = BigDecimal.valueOf(months);
+        return IncomeTax.calc(regime, fy, gross.multiply(m), pt.multiply(m), declared, months);
+    }
+
+    private TaxView taxView(AuthUser me, int fy, LocalDate from, SalaryStructure s, Map<Long, BigDecimal> amounts) {
+        Map<Long, PayComponent> components = componentRepository.findAll().stream().collect(Collectors.toMap(PayComponent::getId, Function.identity()));
+        TaxRegime regime = s == null ? TaxRegime.NEW : s.regime();
+        BigDecimal declared = s == null ? null : s.getTaxDeclared();
+        IncomeTax.Calc newer = taxFor(TaxRegime.NEW, fy, from, amounts, components, null);
+        IncomeTax.Calc older = taxFor(TaxRegime.OLD, fy, from, amounts, components, declared);
+        PayComponent tds = taxComponent(components.values());
+        return new TaxView(regime, declared, regime == TaxRegime.NEW ? newer : regime == TaxRegime.OLD ? older : null, newer, older,
+                menuAccess.can(me, Menus.PAY_TAX_MANUAL), tds == null ? null : tds.getName());
+    }
+
+    /** Both regimes for a salary still being typed. */
+    public Map<String, IncomeTax.Calc> taxPreview(int fyStart, PayrollRequests.TaxPreview body) {
+        int fy = fy(fyStart);
+        int months = monthsPaid(fy, body.getEffectiveFrom());
+        BigDecimal m = BigDecimal.valueOf(months);
+        BigDecimal gross = body.getMonthlyGross().multiply(m);
+        BigDecimal pt = (body.getMonthlyProfessionalTax() == null ? BigDecimal.ZERO : body.getMonthlyProfessionalTax()).multiply(m);
+        Map<String, IncomeTax.Calc> out = new LinkedHashMap<>();
+        out.put("NEW", IncomeTax.calc(TaxRegime.NEW, fy, gross, pt, null, months));
+        out.put("OLD", IncomeTax.calc(TaxRegime.OLD, fy, gross, pt, body.getDeclared(), months));
+        return out;
     }
 
     private PayComponent component(Long id) {

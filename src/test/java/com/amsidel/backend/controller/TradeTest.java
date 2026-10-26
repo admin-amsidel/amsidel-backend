@@ -257,7 +257,30 @@ class TradeTest {
         mockMvc.perform(get("/api/trade/items")).andExpect(status().isUnauthorized());
     }
 
-    // ---- helpers ----
+    @Test
+    void aBrandInAnotherCurrencyPrintsItsSymbolAndWords() throws Exception {
+        // a brand set to US dollars: the symbol and the words change, nothing is converted; UPI is left out
+        String brand = idOf(json(post("/api/brands"), owner, """
+                {"code":"EXP","name":"Amsidel Exports","bankAccount":"50100099887766","ifsc":"HDFC0001234","upi":"exports@okhdfc","currency":"USD"}
+                """).andExpect(status().isCreated()).andExpect(jsonPath("$.currency").value("USD")));
+        mockMvc.perform(get("/api/brands").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$[?(@.code == 'DW')].currency").value(hasItem("INR")));
+        String customer = idOf(json(post("/api/trade/customers"), owner,
+                "{\"brandId\":%s,\"name\":\"Global Homes LLC\",\"phone\":\"9847055555\"}".formatted(brand)));
+        String invoice = idOf(json(post("/api/trade/sales"), owner, """
+                {"kind":"INVOICE","brandId":%s,"customerId":%s,"docDate":"%s","gstRate":0,
+                 "lines":[{"name":"Aluminium sliding door","quantity":2,"rate":1234.50}]}
+                """.formatted(brand, customer, TODAY)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.company.currency").value("USD")).andExpect(jsonPath("$.company.currencySymbol").value("$")));
+        mockMvc.perform(post("/api/trade/sales/" + invoice + "/issue").header("Authorization", auth(owner))).andExpect(status().isOk());
+        byte[] pdf = mockMvc.perform(get("/api/trade/sales/" + invoice + "/pdf").header("Authorization", auth(owner)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        String text = new com.lowagie.text.pdf.parser.PdfTextExtractor(new com.lowagie.text.pdf.PdfReader(pdf)).getTextFromPage(1).replaceAll("\\s+", " ");
+        assertThat(text).contains("$2,469.00").contains("US Dollar Two Thousand Four Hundred Sixty-Nine Only")
+                .doesNotContain("₹").doesNotContain("exports@okhdfc").contains("50100099887766");
+    }
+
+        // ---- helpers ----
 
     private ResultActions pay(String docId, String kind, String amount) throws Exception {
         return json(post("/api/trade/sales/" + docId + "/payments"), owner,

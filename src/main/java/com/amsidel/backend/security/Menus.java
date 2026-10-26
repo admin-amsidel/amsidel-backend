@@ -30,6 +30,8 @@ public final class Menus {
     public static final String PAYROLL_SALARIES = "PAYROLL_SALARIES";
     public static final String PAY_COMPONENTS = "PAY_COMPONENTS";
     public static final String PAYSLIPS = "PAYSLIPS";
+    /** Not a page: typing a salary's income tax by hand (the Manual tax regime). */
+    public static final String PAY_TAX_MANUAL = "PAY_TAX_MANUAL";
     public static final String MY_PAY = "MY_PAY";
     // the product portal (paths under /portal/products)
     public static final String PROD_HOME = "PROD_HOME";
@@ -86,6 +88,7 @@ public final class Menus {
             new Def(PERF_CYCLES, "Review cycles", "Open and close the yearly review periods", 6003, "PERFORMANCE", "/portal/performance/cycles", "pi-calendar-clock"),
 
             new Def("PAYROLL", "Payroll", "Salaries, monthly payslips and your own pay", 7000, null, null, "pi-wallet"),
+            new Def(PAY_TAX_MANUAL, "Manual income tax", "On Salaries: choose the Manual tax regime and type a salary's income tax by hand (the new and old regimes work it out); its own tick", 7090, null, null, "pi-calculator"),
             new Def(PAYROLL_SALARIES, "Salaries", "Each employee's salary for the financial year: monthly and yearly", 7001, "PAYROLL", "/portal/payroll", "pi-indian-rupee"),
             new Def(PAY_COMPONENTS, "Pay components", "Earnings, deductions and reimbursements used in salaries", 7002, "PAYROLL", "/portal/payroll/components", "pi-list"),
             new Def(PAYSLIPS, "Monthly payslips", "Make, check and publish each month's payslips", 7003, "PAYROLL", "/portal/payroll/payslips", "pi-file"),

@@ -69,6 +69,34 @@ public final class PayrollRequests {
 
         @Pattern(regexp = "|[A-Za-z0-9._-]{2,256}@[A-Za-z]{2,64}", message = "UPI ID looks like name@bank, e.g. anu@okhdfcbank")
         private String upi;
+
+        /** NEW / OLD: the income tax is worked out; MANUAL: typed in (needs the Manual income tax access). Empty = keep (new salary: NEW). */
+        private com.amsidel.backend.entity.TaxRegime taxRegime;
+
+        /** Old regime: deductions and exemptions for the year (80C, 80D, HRA, home-loan interest...). */
+        @DecimalMin(value = "0", message = "Deductions cannot be negative")
+        @Digits(integer = 12, fraction = 2, message = "At most 2 decimals")
+        private BigDecimal taxDeclared;
+    }
+
+    /** The salary being typed, for the tax under both regimes before it is saved. */
+    @Data
+    public static class TaxPreview {
+        @NotNull
+        private LocalDate effectiveFrom;
+
+        @NotNull
+        @DecimalMin("0")
+        @Digits(integer = 12, fraction = 2)
+        private BigDecimal monthlyGross;
+
+        @DecimalMin("0")
+        @Digits(integer = 12, fraction = 2)
+        private BigDecimal monthlyProfessionalTax;
+
+        @DecimalMin("0")
+        @Digits(integer = 12, fraction = 2)
+        private BigDecimal declared;
     }
 
     @Data

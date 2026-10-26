@@ -49,6 +49,15 @@ public class SalaryStructure {
     @Column(length = 500)
     private String notes;
 
+    /** How the income tax is set; null = MANUAL (salaries saved before regimes came). */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private TaxRegime taxRegime;
+
+    /** Old regime: deductions and exemptions declared for the year (80C, 80D, HRA, home-loan interest...). */
+    @Column(precision = 14, scale = 2)
+    private java.math.BigDecimal taxDeclared;
+
     @OneToMany(mappedBy = "structure", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("id")
     private List<SalaryLine> lines = new ArrayList<>();
@@ -63,4 +72,9 @@ public class SalaryStructure {
 
     @LastModifiedDate
     private Instant updatedAt;
+
+    /** The regime in force (MANUAL for salaries saved before regimes came). */
+    public TaxRegime regime() {
+        return taxRegime == null ? TaxRegime.MANUAL : taxRegime;
+    }
 }

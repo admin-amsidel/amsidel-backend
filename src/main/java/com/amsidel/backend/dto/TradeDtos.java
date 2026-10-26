@@ -28,9 +28,10 @@ public final class TradeDtos {
 
     // ---- shared ----
 
-    public record BrandRef(Long id, String code, String name) {
+    /** currency: what its documents show (INR, USD, EUR, GBP). */
+    public record BrandRef(Long id, String code, String name, String currency) {
         public static BrandRef of(Brand b) {
-            return new BrandRef(b.getId(), b.getCode(), b.getName());
+            return new BrandRef(b.getId(), b.getCode(), b.getName(), b.getCurrency().name());
         }
     }
 
@@ -503,11 +504,11 @@ public final class TradeDtos {
     /** The brand as printed on documents. */
     public record Company(Long brandId, String code, String name, String address, String gstNumber, String phone,
                           String email, String bankAccount, String ifsc, String upi, Instant logoUpdatedAt,
-                          Instant upiQrUpdatedAt) {
+                          Instant upiQrUpdatedAt, String currency, String currencySymbol) {
         public static Company of(Brand b) {
             return new Company(b.getId(), b.getCode(), b.getName(), b.getAddress(), b.getGstNumber(), b.getContactNumber(),
                     b.getEmail(), b.getBankAccountNumber(), b.getIfscCode(), b.getUpiId(), b.getLogoUpdatedAt(),
-                    b.getUpiQrUpdatedAt());
+                    b.getUpiQrUpdatedAt(), b.getCurrency().name(), b.getCurrency().symbol());
         }
     }
 
