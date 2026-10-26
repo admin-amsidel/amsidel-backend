@@ -50,6 +50,7 @@ public class ReconcileService {
     private final SalesDocRepository salesRepository;
     private final PurchaseBillRepository purchaseRepository;
     private final BankLineRepository lineRepository;
+    private final MoneyTypeRepository typeRepository;
     private final BrandRepository brandRepository;
     private final BankService bank;
     private final TradeAccess access;
@@ -242,8 +243,8 @@ public class ReconcileService {
         List<Part> outParts = new ArrayList<>();
         part(outParts, "SALARIES", "Salaries", salaryPaid);
         part(outParts, "SUPPLIER_PAYMENTS", "Supplier payments (less refunds)", supplierPaid);
-        for (MoneyCategory c : MoneyCategory.values()) {
-            part(c.isIncome() ? inParts : outParts, c.name(), c.getLabel(), sumEntries(moved, e -> e.getCategory() == c));
+        for (com.amsidel.backend.entity.MoneyType c : typeRepository.findAllByOrderByIncomeDescSortOrderAscLabelAsc()) {
+            part(c.isIncome() ? inParts : outParts, c.getCode(), c.getLabel(), sumEntries(moved, e -> e.getCategory().getCode().equals(c.getCode())));
         }
         Flow flow = new Flow(receipts, otherIncome, funding, moneyIn, salaryPaid, supplierPaid, otherExpenses, fundingOut, moneyOut,
                 moneyIn.subtract(moneyOut), cashIn, cashOut, inParts, outParts);
@@ -256,9 +257,9 @@ public class ReconcileService {
         BigDecimal purchasesNet = sum(bought.stream().map(b -> b.getTotal().subtract(b.getGstAmount())).toList());
         BigDecimal gstPurchases = sum(bought.stream().map(PurchaseBill::getGstAmount).toList());
         BigDecimal pnlOtherIncome = sumEntries(entries, e -> e.getCategory().isIncome() && !e.getCategory().isFunding());
-        BigDecimal discounts = sumEntries(entries, e -> e.getCategory() == MoneyCategory.DISCOUNT);
+        BigDecimal discounts = sumEntries(entries, e -> e.getCategory().isDiscount());
         BigDecimal pnlOther = sumEntries(entries, e -> !e.getCategory().isIncome() && !e.getCategory().isFunding()
-                && e.getCategory() != MoneyCategory.DISCOUNT);
+                && !e.getCategory().isDiscount());
         BigDecimal revenue = salesNet.add(pnlOtherIncome);
         BigDecimal expenses = purchasesNet.add(salaryPaid).add(pnlOther).add(discounts);
         Pnl pnl = new Pnl(salesNet, pnlOtherIncome, revenue, purchasesNet, salaryPaid, pnlOther, discounts, expenses,

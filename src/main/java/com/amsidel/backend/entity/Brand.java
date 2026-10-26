@@ -1,5 +1,7 @@
 package com.amsidel.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -72,6 +74,15 @@ public class Brand {
     @Column(length = 80)
     private String upiId;
 
+    /** The brand's Razorpay account for bills paid online (cards and UPI); the money settles to its linked bank. */
+    @Column(length = 40)
+    private String razorpayKeyId;
+
+    /** Never sent out: only saved and used to call Razorpay. */
+    @JsonIgnore
+    @Column(length = 100)
+    private String razorpayKeySecret;
+
     /** When the logo was last uploaded; null = no logo. */
     private Instant logoUpdatedAt;
 
@@ -88,4 +99,10 @@ public class Brand {
 
     @LastModifiedDate
     private LocalDateTime updatedAt;
+
+    /** Bills of this brand can be paid online. */
+    @JsonProperty("razorpayReady")
+    public boolean isRazorpayReady() {
+        return razorpayKeyId != null && razorpayKeySecret != null;
+    }
 }

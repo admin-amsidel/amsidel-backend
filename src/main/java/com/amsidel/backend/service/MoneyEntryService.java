@@ -42,6 +42,7 @@ public class MoneyEntryService {
     private final TradeAccess access;
     private final TradeNumbers numbers;
     private final TradeHistoryLog history;
+    private final MoneyTypeService types;
 
     void canUse(AuthUser me) {
         access.require(me, "You cannot see income and expenses", Menus.PROD_LEDGER, Menus.PROD_RECONCILE);
@@ -111,7 +112,8 @@ public class MoneyEntryService {
         canUse(me);
         MoneyEntry e = full(me, id);
         lockedBySettledProject(me, e.getProject());
-        if (body.getCategory() != null && body.getCategory().isIncome() != e.getCategory().isIncome()) {
+        MoneyType chosen = types.forEntry(body.getCategory(), e.getCategory());
+        if (chosen.isIncome() != e.getCategory().isIncome()) {
             throw ApiException.badRequest(e.getCategory().isIncome()
                     ? "Income cannot become an expense: delete it and add the expense" : "An expense cannot become income: delete it and add the income");
         }
@@ -121,7 +123,7 @@ public class MoneyEntryService {
         SalesDoc before = e.getInvoice();
         boolean wasWriteOff = e.isWriteOff();
         TradeHistoryLog.Changes changes = new TradeHistoryLog.Changes()
-                .add("For", e.getCategory().getLabel(), body.getCategory().getLabel())
+                .add("For", e.getCategory().getLabel(), chosen.getLabel())
                 .add("Date", e.getEntryDate(), body.getEntryDate())
                 .add("Amount", e.getAmount(), body.getAmount().setScale(2, RoundingMode.HALF_UP))
                 .add("Paid by", mode(e.getMode()), mode(body.getMode()))
@@ -175,7 +177,7 @@ public class MoneyEntryService {
         }
         EntryBody e = new EntryBody();
         e.setBrandId(d.getBrand().getId());
-        e.setCategory(MoneyCategory.DISCOUNT);
+        e.setCategory(MoneyType.DISCOUNT);
         e.setEntryDate(body.getEntryDate());
         e.setAmount(body.getAmount() == null ? due : body.getAmount());
         e.setDescription(blank(body.getDescription()) != null ? body.getDescription()
@@ -187,11 +189,11 @@ public class MoneyEntryService {
 
     private void fill(AuthUser me, MoneyEntry e, EntryBody body) {
         Brand brand = e.getBrand();
-        MoneyCategory category = body.getCategory();
+        MoneyType category = types.forEntry(body.getCategory(), e.getCategory());
         if (body.getEntryDate().isAfter(access.today())) {
             throw ApiException.badRequest("The date cannot be in the future");
         }
-        if (body.getMode() == null && category != MoneyCategory.DISCOUNT) {
+        if (body.getMode() == null && !category.isDiscount()) {
             throw ApiException.badRequest("Choose how it was paid");
         }
         if (body.getMode() == null && body.getInvoiceId() == null) {
@@ -225,7 +227,7 @@ public class MoneyEntryService {
             project = chosen;
         }
         lockedBySettledProject(me, project);
-        if (category == MoneyCategory.DISCOUNT && body.getMode() == null) {
+        if (category.isDiscount() && body.getMode() == null) {
             // written off: at most what is still due (leaving out this entry's own share before)
             BigDecimal mine = e.isWriteOff() && e.getInvoice().getId().equals(invoice.getId()) ? e.getAmount() : BigDecimal.ZERO;
             BigDecimal due = invoice.getTotal().subtract(invoice.getCleared()).add(mine);
@@ -355,8 +357,8 @@ public class MoneyEntryService {
     }
 
     private EntryView view(AuthUser me, MoneyEntry e, boolean withHistory) {
-        MoneyCategory c = e.getCategory();
-        return new EntryView(e.getId(), e.getNumber(), e.getBrand().getCode(), e.getBrand().getId(), c, c.getLabel(), c.isIncome(),
+        MoneyType c = e.getCategory();
+        return new EntryView(e.getId(), e.getNumber(), e.getBrand().getCode(), e.getBrand().getId(), c.getCode(), c.getLabel(), c.isIncome(),
                 c.isFunding(), e.getEntryDate(), e.getAmount(), e.getMode(), e.getPartyName(), e.getTransactionId(), e.getDescription(),
                 e.getRemarks(), e.getInvoice() == null ? null : e.getInvoice().getId(), e.getInvoice() == null ? null : e.getInvoice().getNumber(),
                 e.getProject() == null ? null : e.getProject().getId(), e.getProject() == null ? null : e.getProject().getCode(),

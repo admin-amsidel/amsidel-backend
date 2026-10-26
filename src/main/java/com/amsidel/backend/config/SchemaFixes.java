@@ -35,7 +35,15 @@ public class SchemaFixes implements ApplicationRunner {
     /** Enum columns of tables that may have been made before the enum grew: table, column, enum. */
     private static final List<EnumColumn> ENUM_COLUMNS = List.of(
             new EnumColumn("trade_history", "subject_type", TradeSubject.class),
-            new EnumColumn("news_posts", "audience", com.amsidel.backend.entity.NewsAudience.class));
+            new EnumColumn("news_posts", "audience", com.amsidel.backend.entity.NewsAudience.class),
+            new EnumColumn("online_payments", "method", com.amsidel.backend.entity.OnlineMethod.class),
+            new EnumColumn("online_fees", "method", com.amsidel.backend.entity.OnlineMethod.class));
+
+    /** Columns made optional after they were created as required (ddl update never relaxes them): manual UPI has no Razorpay order. */
+    /** Columns that held an enum and now hold a code from a table: their old allowed-values check goes. */
+    private static final String[][] NO_LONGER_ENUM = {{"money_entries", "category"}};
+
+    private static final String[] NOW_OPTIONAL = {"online_payments.gateway_key_id", "online_payments.gateway_order_id"};
 
     /** Done once (kept in doc_sequences): news saved as "customers" when that meant the website became Public. */
     private static final String NEWS_PUBLIC_DONE = "SETUP-NEWS-PUBLIC";
@@ -70,6 +78,32 @@ public class SchemaFixes implements ApplicationRunner {
             }
         }
         ENUM_COLUMNS.forEach(this::enumCheck);
+        for (String[] tc : NO_LONGER_ENUM) {
+            try {
+                List<Map<String, Object>> checks = jdbc.queryForList(
+                        "select con.conname as name from pg_constraint con join pg_class rel on rel.oid = con.conrelid"
+                                + " where rel.relname = ? and con.contype = 'c' and pg_get_constraintdef(con.oid) like ?", tc[0], "%" + tc[1] + "%");
+                for (Map<String, Object> c : checks) {
+                    jdbc.execute("alter table " + tc[0] + " drop constraint if exists \"" + c.get("name") + "\"");
+                    log.info("{}.{} now takes any category code", tc[0], tc[1]);
+                }
+            } catch (RuntimeException e) {
+                log.warn("Could not free {}.{}: {}", tc[0], tc[1], e.getMessage());
+            }
+        }
+        for (String column : NOW_OPTIONAL) {
+            String[] tc = column.split("\\.");
+            try {
+                String nullable = jdbc.queryForObject("select is_nullable from information_schema.columns where table_name = ? and column_name = ?",
+                        String.class, tc[0], tc[1]);
+                if ("NO".equals(nullable)) {
+                    jdbc.execute("alter table " + tc[0] + " alter column " + tc[1] + " drop not null");
+                    log.info("{} is now optional", column);
+                }
+            } catch (RuntimeException e) {
+                log.warn("Could not make {} optional: {}", column, e.getMessage());
+            }
+        }
         newsPublic();
     }
 

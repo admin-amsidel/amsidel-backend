@@ -1,7 +1,6 @@
 package com.amsidel.backend.dto;
 
 import com.amsidel.backend.dto.TradeDtos.HistoryView;
-import com.amsidel.backend.entity.MoneyCategory;
 import com.amsidel.backend.entity.TradePayMode;
 import jakarta.validation.constraints.*;
 import lombok.Data;
@@ -23,12 +22,37 @@ public final class AccountDtos {
 
     // ---- other income and expenses ----
 
+    /** A kind of income or expense; locked = the discount (invoice write-offs); used = entries were made with it. */
+    public record TypeView(String code, String label, boolean income, boolean funding, boolean active, boolean builtIn,
+                           boolean locked, boolean used, int sortOrder, Instant updatedAt, String updatedByName) {
+    }
+
+    @Data
+    public static class TypeBody {
+        @NotBlank(message = "Give the name")
+        @Size(max = 80, message = "Use at most 80 letters")
+        private String label;
+
+        /** Needed for a new one; can change only while nothing uses it. */
+        private Boolean income;
+
+        private Boolean funding;
+
+        private Boolean active;
+
+        @Min(0)
+        @Max(100000)
+        private Integer sortOrder;
+    }
+
     @Data
     public static class EntryBody {
         private Long brandId;
 
-        @NotNull(message = "Choose what it is for")
-        private MoneyCategory category;
+        /** The code of a kind in money_types, e.g. TRANSPORT. */
+        @NotBlank(message = "Choose what it is for")
+        @Size(max = 20)
+        private String category;
 
         @NotNull(message = "Give the date")
         private LocalDate entryDate;
@@ -79,7 +103,7 @@ public final class AccountDtos {
         private String remarks;
     }
 
-    public record EntryView(Long id, String number, String brandCode, Long brandId, MoneyCategory category, String categoryLabel,
+    public record EntryView(Long id, String number, String brandCode, Long brandId, String category, String categoryLabel,
                             boolean income, boolean funding, LocalDate entryDate, BigDecimal amount, TradePayMode mode,
                             String partyName, String transactionId, String description, String remarks,
                             Long invoiceId, String invoiceNumber, Long projectId, String projectCode, String projectName,

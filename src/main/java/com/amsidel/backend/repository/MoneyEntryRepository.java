@@ -29,6 +29,9 @@ public interface MoneyEntryRepository extends JpaRepository<MoneyEntry, Long> {
     @Query("select e from MoneyEntry e join fetch e.brand where e.project.id = :projectId order by e.entryDate, e.id")
     List<MoneyEntry> forProject(@Param("projectId") Long projectId);
 
+    @Query("select count(e) > 0 from MoneyEntry e where e.category.code = :code")
+    boolean usesCategory(@Param("code") String code);
+
     @Query("select e from MoneyEntry e where e.bankLine.id in :lineIds")
     List<MoneyEntry> forBankLines(@Param("lineIds") List<Long> lineIds);
 }

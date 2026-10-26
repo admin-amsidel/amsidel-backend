@@ -35,6 +35,7 @@ public class AccountsController {
     private static final long MAX_FILE = 10L * 1024 * 1024;
 
     private final MoneyEntryService entries;
+    private final com.amsidel.backend.service.MoneyTypeService types;
     private final BankService bank;
     private final ReconcileService reconcile;
 
@@ -70,6 +71,30 @@ public class AccountsController {
     }
 
     /** The invoices, projects, purchase bills and suppliers of a brand an entry can belong to. */
+    // ---- categories (owners and admins change them) ----
+
+    @GetMapping("/categories")
+    public List<com.amsidel.backend.dto.AccountDtos.TypeView> categories(@AuthenticationPrincipal AuthUser me) {
+        return types.list(me);
+    }
+
+    @PostMapping("/categories")
+    @ResponseStatus(org.springframework.http.HttpStatus.CREATED)
+    public com.amsidel.backend.dto.AccountDtos.TypeView addCategory(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody com.amsidel.backend.dto.AccountDtos.TypeBody body) {
+        return types.create(me, body);
+    }
+
+    @PutMapping("/categories/{code}")
+    public com.amsidel.backend.dto.AccountDtos.TypeView saveCategory(@AuthenticationPrincipal AuthUser me, @PathVariable String code, @Valid @RequestBody com.amsidel.backend.dto.AccountDtos.TypeBody body) {
+        return types.update(me, code, body);
+    }
+
+    @DeleteMapping("/categories/{code}")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    public void deleteCategory(@AuthenticationPrincipal AuthUser me, @PathVariable String code) {
+        types.delete(me, code);
+    }
+
     @GetMapping("/links")
     public EntryLinks links(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Long brandId) {
         return entries.links(me, brandId);

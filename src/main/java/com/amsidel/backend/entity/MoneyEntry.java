@@ -38,9 +38,10 @@ public class MoneyEntry {
     @Column(nullable = false, unique = true, length = 30)
     private String number;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private MoneyCategory category;
+    /** What it was for: a kind set up in money_types (the column keeps the code, e.g. TRANSPORT). */
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "category", nullable = false, foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
+    private MoneyType category;
 
     @Column(name = "entry_date", nullable = false)
     private LocalDate entryDate;
@@ -108,6 +109,6 @@ public class MoneyEntry {
 
     /** A discount on an invoice with no money moved: it lowers what the customer still owes. */
     public boolean isWriteOff() {
-        return category == MoneyCategory.DISCOUNT && mode == null && invoice != null;
+        return category != null && category.isDiscount() && mode == null && invoice != null;
     }
 }

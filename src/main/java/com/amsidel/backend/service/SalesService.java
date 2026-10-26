@@ -294,6 +294,13 @@ public class SalesService {
     public SalesView addPayment(AuthUser me, Long id, PaymentBody body) {
         SalesDoc d = full(me, id);
         canWrite(me, SalesDocKind.INVOICE);
+        receive(me, d, body);
+        return withDelete(me, view(d));
+    }
+
+    /** Money in (or refunded) on an invoice; the caller has checked who may. Bills paid online come here too. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public TradePayment receive(AuthUser me, SalesDoc d, PaymentBody body) {
         if (d.getKind() != SalesDocKind.INVOICE || d.getStatus() == SalesDocStatus.CANCELLED) {
             throw ApiException.conflict("Payments go on an invoice that is not cancelled");
         }
@@ -301,11 +308,17 @@ public class SalesService {
             x.setInvoice(d);
             x.setCustomer(d.getCustomer());
         });
-        d.setPaid(TradePayments.paid(paymentRepository.forInvoice(id)));
+        d.setPaid(TradePayments.paid(paymentRepository.forInvoice(d.getId())));
         d.setUpdatedBy(access.me(me));
         docRepository.saveAndFlush(d);
         log(me, d, p.getKind() == TradePaymentKind.REFUND ? "REFUND" : "PAYMENT", TradePayments.describe(p) + "; paid now " + PayslipPdf.rupees(d.getPaid()));
-        return withDelete(me, view(d));
+        return p;
+    }
+
+    /** A note in the invoice's history (e.g. an online payment started or failed). */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void note(AuthUser me, SalesDoc d, String action, String details) {
+        log(me, d, action, details);
     }
 
     @Transactional

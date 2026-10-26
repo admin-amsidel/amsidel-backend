@@ -1,8 +1,8 @@
 package com.amsidel.backend.entity;
 
 /**
- * What money that is not a customer or supplier payment, nor a salary, was for. Money in or out; funding (investment,
- * loans and their repayment) moves the bank balance but is not profit or loss.
+ * The kinds of other income and expense the portal started with: added once to money_types (MoneyType), where owners
+ * and admins rename them, switch them off and add their own. Entries keep these codes.
  */
 public enum MoneyCategory {
     INVESTMENT(true, true, "Investment from a person"),

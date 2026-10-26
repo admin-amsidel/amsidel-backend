@@ -52,8 +52,11 @@ public class TradeController {
 
     // ---- brands ----
 
-    /** The brands I may work with. */
+    /** The brands I may work with: for every product-portal page (Customer & supplier mail and Pay bill too). */
     @GetMapping("/brands")
+    @Checkpoint({Menus.PROD_HOME, Menus.PROD_ITEMS, Menus.PROD_TYPES, Menus.PROD_SUPPLIERS, Menus.PROD_PURCHASES,
+            Menus.PROD_CUSTOMERS, Menus.PROD_QUOTES, Menus.PROD_INVOICES, Menus.PROD_REPORTS, Menus.PROD_PROJECTS,
+            Menus.PROD_LEDGER, Menus.PROD_RECONCILE, Menus.PROD_MAIL, Menus.PROD_PAY})
     @Transactional(readOnly = true)
     public List<BrandRef> brands(@AuthenticationPrincipal AuthUser me) {
         return access.brands(me).stream().map(BrandRef::of).toList();

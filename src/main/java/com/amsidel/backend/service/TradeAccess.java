@@ -107,6 +107,11 @@ public class TradeAccess {
         }
     }
 
+    /** One of these menus is mine. */
+    public boolean has(AuthUser me, String... menus) {
+        return menuAccess.can(me, menus);
+    }
+
     public Employee me(AuthUser me) {
         return employeeRepository.getReferenceById(me.id());
     }

@@ -214,6 +214,61 @@ class AccountsTest {
     }
 
     @Test
+    void ownersAndAdminsSetUpTheCategories() throws Exception {
+        // dated well before the other tests' periods, and removed at the end
+        LocalDate OLD = TODAY.minusYears(2);
+        // the categories the portal started with, money in first
+        mockMvc.perform(get("/api/accounts/categories").header("Authorization", auth(staff)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].income").value(true))
+                .andExpect(jsonPath("$[?(@.code == 'TRANSPORT')].label").value(hasItem("Transportation")))
+                .andExpect(jsonPath("$[?(@.code == 'DISCOUNT')].locked").value(hasItem(true)));
+        // the accountant may use them, not change them
+        json(post("/api/accounts/categories"), staff, "{\"label\":\"Office supplies\",\"income\":false}").andExpect(status().isForbidden());
+
+        String code = JsonPath.read(body(json(post("/api/accounts/categories"), owner, "{\"label\":\"Office supplies\",\"income\":false}")
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.code").value("OFFICE_SUPPLIES"))
+                .andExpect(jsonPath("$.active").value(true)).andExpect(jsonPath("$.used").value(false))), "$.code");
+        json(post("/api/accounts/categories"), owner, "{\"label\":\"office SUPPLIES\",\"income\":false}").andExpect(status().isConflict());
+        json(post("/api/accounts/categories"), owner, "{\"label\":\"Scrap sales\",\"income\":true}")
+                .andExpect(jsonPath("$.code").value("SCRAP_SALES")).andExpect(jsonPath("$.income").value(true));
+
+        // used for an expense; the reconciler shows it as its own line
+        String entry = idOf(json(post("/api/accounts/entries"), staff, """
+                {"category":"%s","entryDate":"%s","amount":640,"mode":"CASH","description":"Printer paper"}
+                """.formatted(code, OLD)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.categoryLabel").value("Office supplies")).andExpect(jsonPath("$.number", containsString("EXP"))));
+        mockMvc.perform(get("/api/accounts/reconcile").param("brandId", String.valueOf(dw)).param("from", OLD.toString()).param("to", OLD.toString())
+                        .param("groupBy", "MONTH").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.total.flow.outParts[?(@.key == '%s')].amount".formatted(code)).value(hasItem(640.0)));
+
+        // renamed (the entry follows); in use, it cannot turn into income or be deleted, only switched off
+        json(put("/api/accounts/categories/" + code), owner, "{\"label\":\"Stationery & office supplies\"}")
+                .andExpect(jsonPath("$.label").value("Stationery & office supplies")).andExpect(jsonPath("$.used").value(true));
+        mockMvc.perform(get("/api/accounts/entries/" + entry).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.categoryLabel").value("Stationery & office supplies"));
+        json(put("/api/accounts/categories/" + code), owner, "{\"label\":\"Stationery\",\"income\":true}").andExpect(status().isConflict());
+        mockMvc.perform(delete("/api/accounts/categories/" + code).header("Authorization", auth(owner))).andExpect(status().isConflict());
+        json(put("/api/accounts/categories/" + code), owner, "{\"label\":\"Stationery & office supplies\",\"active\":false}")
+                .andExpect(jsonPath("$.active").value(false));
+        // switched off: not for new entries, but the old one still saves
+        json(post("/api/accounts/entries"), staff, """
+                {"category":"%s","entryDate":"%s","amount":100,"mode":"CASH","description":"Pens"}
+                """.formatted(code, OLD)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.error", containsString("switched off")));
+        json(put("/api/accounts/entries/" + entry), staff, """
+                {"category":"%s","entryDate":"%s","amount":650,"mode":"CASH","description":"Printer paper"}
+                """.formatted(code, OLD)).andExpect(status().isOk()).andExpect(jsonPath("$.amount").value(650.0));
+
+        // the discount stays as it is, apart from its name; an unused category can be deleted
+        json(put("/api/accounts/categories/DISCOUNT"), owner, "{\"label\":\"Discount\",\"active\":false}").andExpect(status().isBadRequest());
+        json(put("/api/accounts/categories/DISCOUNT"), owner, "{\"label\":\"Discount allowed\"}").andExpect(jsonPath("$.label").value("Discount allowed"));
+        mockMvc.perform(delete("/api/accounts/categories/DISCOUNT").header("Authorization", auth(owner))).andExpect(status().isBadRequest());
+        mockMvc.perform(delete("/api/accounts/entries/" + entry).header("Authorization", auth(owner))).andExpect(status().is2xxSuccessful());
+        mockMvc.perform(delete("/api/accounts/categories/SCRAP_SALES").header("Authorization", auth(owner))).andExpect(status().isNoContent());
+        json(put("/api/accounts/categories/DISCOUNT"), owner, "{\"label\":\"Discount allowed / short payment\"}").andExpect(status().isOk());
+    }
+
+    @Test
     void theReconcilerIsNotForEveryone() throws Exception {
         idOf(mockMvc.perform(post("/api/employees").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":\"Ravi Sales\",\"userId\":\"ac.ravi\",\"password\":\"ab@123\",\"role\":\"EMPLOYEE\",\"brandId\":%d,\"phone\":\"9847000003\",\"joinedDate\":\"2026-01-05\"}"

@@ -1,6 +1,7 @@
 package com.amsidel.backend.controller;
 
 import com.amsidel.backend.dto.BrandRequest;
+import com.amsidel.backend.dto.RazorpayKeysRequest;
 import com.amsidel.backend.entity.Brand;
 import com.amsidel.backend.service.BrandService;
 import jakarta.validation.Valid;
@@ -39,6 +40,12 @@ public class BrandController {
     @PutMapping("/{id}")
     public Brand update(@PathVariable Long id, @Valid @RequestBody BrandRequest request) {
         return brandService.update(id, request);
+    }
+
+    /** The brand's Razorpay keys for bills paid online; the secret is saved, never sent back. */
+    @PutMapping("/{id}/razorpay")
+    public Brand saveRazorpay(@PathVariable Long id, @Valid @RequestBody RazorpayKeysRequest request) {
+        return brandService.saveRazorpay(id, request);
     }
 
     /** PNG or JPEG, up to 1 MB. */

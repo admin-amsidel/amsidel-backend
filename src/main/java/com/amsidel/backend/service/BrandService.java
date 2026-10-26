@@ -1,6 +1,7 @@
 package com.amsidel.backend.service;
 
 import com.amsidel.backend.dto.BrandRequest;
+import com.amsidel.backend.dto.RazorpayKeysRequest;
 import com.amsidel.backend.entity.Brand;
 import com.amsidel.backend.entity.BrandLogo;
 import com.amsidel.backend.entity.BrandUpiQr;
@@ -77,6 +78,29 @@ public class BrandService {
                 : request.getIfsc().strip().toUpperCase(Locale.ROOT));
         brand.setUpiId(request.getUpi() == null || request.getUpi().isBlank() ? null
                 : request.getUpi().strip().toLowerCase(Locale.ROOT));
+    }
+
+    // ---- online payments ----
+
+    /** Saves the brand's Razorpay keys; a blank secret keeps the saved one, a blank key ID turns online payments off. */
+    @Transactional
+    public Brand saveRazorpay(Long id, RazorpayKeysRequest request) {
+        Brand brand = brandRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Brand not found: " + id));
+        String keyId = blankToNull(request.getKeyId());
+        String secret = blankToNull(request.getKeySecret());
+        if (keyId == null) {
+            brand.setRazorpayKeyId(null);
+            brand.setRazorpayKeySecret(null);
+            return brand;
+        }
+        if (secret == null && (brand.getRazorpayKeySecret() == null || !keyId.equals(brand.getRazorpayKeyId()))) {
+            throw ApiException.badRequest("Give the key secret that goes with this key ID");
+        }
+        brand.setRazorpayKeyId(keyId);
+        if (secret != null) {
+            brand.setRazorpayKeySecret(secret);
+        }
+        return brand;
     }
 
     // ---- logo ----
