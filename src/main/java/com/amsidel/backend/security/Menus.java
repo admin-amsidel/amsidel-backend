@@ -46,6 +46,8 @@ public final class Menus {
     public static final String PROD_RECONCILE = "PROD_RECONCILE";
     public static final String PROD_MAIL = "PROD_MAIL";
     public static final String PROD_PAY = "PROD_PAY";
+    /** Not a page: the team chat window in the portal. */
+    public static final String CHAT = "CHAT";
     /** Not a page: the Manual UPI (office) option on Pay bill. */
     public static final String PROD_PAY_MANUAL = "PROD_PAY_MANUAL";
     /** Any page of the product portal. */
@@ -113,6 +115,7 @@ public final class Menus {
             new Def(PROD_RECONCILE, "P&L reconciler", "Profit and loss by week, month or year; bank statements tallied with the portal; invoices paid short", 11602, "PROD_ACCOUNTS", "/portal/products/reconciler", "pi-calculator"),
             new Def(PROD_MAIL, "Customer & supplier mail", "Personal mail and WhatsApp messages to customers and suppliers, like staff mail; the office is copied on every mail", 11700, null, "/portal/products/mail", "pi-envelope"),
             new Def(PROD_PAY, "Pay bill", "Customers pay their bills online by card or UPI through the brand's Razorpay account; payment history and refunds", 11800, null, "/portal/products/pay", "pi-credit-card"),
+            new Def(CHAT, "Team chat", "The chat window in the portal: one-to-one and group chats with colleagues, admins and owners who have this too; messages are cleared after the set number of days", 12000, null, null, "pi-comments"),
             new Def(PROD_PAY_MANUAL, "Manual UPI (office)", "On Pay bill: a customer pays at the office to the brand's UPI QR code, and the staff record the UPI reference; given on top of Pay bill (its own tick: giving Pay bill does not give it)", 11801, null, null, "pi-qrcode"),
             new Def(PROD_REPORTS, "Reports", "Sales, purchases, stock and payments by customer, bill, supplier, product and item; supplier spend charts", 11400, null, "/portal/products/reports", "pi-chart-line")
     );
