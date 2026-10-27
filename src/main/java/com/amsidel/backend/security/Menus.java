@@ -44,6 +44,8 @@ public final class Menus {
     public static final String PROD_INVOICES = "PROD_INVOICES";
     public static final String PROD_REPORTS = "PROD_REPORTS";
     public static final String PROD_PROJECTS = "PROD_PROJECTS";
+    /** Project status updates for customers, with photos, and the customer's status link. */
+    public static final String PROD_PROJECT_STATUS = "PROD_PROJECT_STATUS";
     public static final String PROD_LEDGER = "PROD_LEDGER";
     public static final String PROD_RECONCILE = "PROD_RECONCILE";
     public static final String PROD_MAIL = "PROD_MAIL";
@@ -54,7 +56,7 @@ public final class Menus {
     public static final String PROD_PAY_MANUAL = "PROD_PAY_MANUAL";
     /** Any page of the product portal. */
     public static final String[] PRODUCT_PORTAL = {PROD_HOME, PROD_ITEMS, PROD_TYPES, PROD_SUPPLIERS, PROD_PURCHASES,
-            PROD_CUSTOMERS, PROD_QUOTES, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL, PROD_PAY, PROD_PAY_MANUAL};
+            PROD_CUSTOMERS, PROD_QUOTES, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL, PROD_PAY, PROD_PAY_MANUAL, PROD_PROJECT_STATUS};
 
     /** One menu; parent null for a top-level menu, path null for a menu that only holds sub-menus. */
     public record Def(String code, String name, String description, int checkpoint, String parent, String path, String icon) {
@@ -112,7 +114,9 @@ public final class Menus {
             new Def(PROD_CUSTOMERS, "Customers", "Customer details and their quotations, invoices and payments", 11301, "PROD_SELLING", "/portal/products/customers", "pi-users"),
             new Def(PROD_QUOTES, "Quotations", "Quotations to customers (PDF), made into invoices", 11302, "PROD_SELLING", "/portal/products/quotations", "pi-file-edit"),
             new Def(PROD_INVOICES, "Invoices", "Final bills (PDF), stock out and customer payments", 11303, "PROD_SELLING", "/portal/products/invoices", "pi-receipt"),
-            new Def(PROD_PROJECTS, "Projects", "Customer projects: team, tasks, quotations, invoices and payments in one place", 11500, null, "/portal/products/projects", "pi-briefcase"),
+            new Def("PROD_PROJECTS_GRP", "Projects", "Customer projects, and their status updates for the customer", 11550, null, null, "pi-briefcase"),
+            new Def(PROD_PROJECTS, "Projects", "Customer projects: team, tasks, quotations, invoices and payments in one place", 11500, "PROD_PROJECTS_GRP", "/portal/products/projects", "pi-briefcase"),
+            new Def(PROD_PROJECT_STATUS, "Project status", "Post status updates with photos for a project's customer, and share the customer's status link (no sign-in)", 11501, "PROD_PROJECTS_GRP", "/portal/products/project-status", "pi-images"),
             new Def("PROD_ACCOUNTS", "Accounts", "Other income and expenses, bank statements and the P&L reconciler", 11600, null, null, "pi-wallet"),
             new Def(PROD_LEDGER, "Income & expenses", "Investment, loans, capital and other income; transport, fixing, discounts and other expenses, by bill and project", 11601, "PROD_ACCOUNTS", "/portal/products/ledger", "pi-arrow-right-arrow-left"),
             new Def(PROD_RECONCILE, "P&L reconciler", "Profit and loss by week, month or year; bank statements tallied with the portal; invoices paid short", 11602, "PROD_ACCOUNTS", "/portal/products/reconciler", "pi-calculator"),

@@ -93,6 +93,10 @@ public class Project {
 
     private Instant completedAt;
 
+    /** The secret in the customer's status link (/track/{code}/{secret}); null = not shared. */
+    @Column(length = 40, unique = true)
+    private String shareToken;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
     private Employee createdBy;

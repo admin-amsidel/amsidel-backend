@@ -18,4 +18,8 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     @Query("select p from Project p join fetch p.brand join fetch p.customer left join fetch p.owner left join fetch p.createdBy"
             + " left join fetch p.updatedBy where p.id = :id")
     Optional<Project> findFull(@Param("id") Long id);
+
+    /** The project a customer's status link points to. */
+    @Query("select p from Project p join fetch p.brand join fetch p.customer where p.shareToken = :token")
+    Optional<Project> findByShareToken(@Param("token") String token);
 }
