@@ -65,6 +65,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/employees/**").hasAnyRole(EVERY_ROLE)
                         .requestMatchers("/api/employees/**").hasAnyRole("OWNER", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/menu-access/**").hasAnyRole(EVERY_ROLE)
+                        .requestMatchers(HttpMethod.GET, "/api/user-types/**").hasAnyRole(EVERY_ROLE)
+                        .requestMatchers("/api/user-types/**").hasAnyRole("OWNER", "ADMIN")
                         .requestMatchers("/api/menu-access/**").hasAnyRole("OWNER", "ADMIN")
                         // everything else: signed in; each API's menu checkpoint (@Checkpoint, MenuAccessService)
                         // decides who may use it, and the services decide whose data they see

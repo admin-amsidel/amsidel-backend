@@ -1,5 +1,6 @@
 package com.amsidel.backend.service;
 
+import com.amsidel.backend.entity.UserType;
 import com.amsidel.backend.dto.MenuAccessEntry;
 import com.amsidel.backend.dto.MenuNode;
 import com.amsidel.backend.dto.MyAccess;
@@ -41,6 +42,7 @@ public class MenuAccessService {
     private final MenuAccessRepository accessRepository;
     private final DesignationRepository designationRepository;
     private final EmployeeRepository employeeRepository;
+    private final com.amsidel.backend.repository.UserTypeRepository userTypeRepository;
 
     private volatile Snapshot snapshot;
 
@@ -61,7 +63,8 @@ public class MenuAccessService {
             // set for this person: only that counts
             given = own;
         } else {
-            given = new HashSet<>(s.grants().getOrDefault(key(AccessSubject.ROLE, me.role().name()), Set.of()));
+            // the user type's menus (a built-in type's key is the role name)
+            given = new HashSet<>(s.grants().getOrDefault(key(AccessSubject.ROLE, me.userType() != null ? me.userType() : me.role().name()), Set.of()));
             if (me.designationId() != null) {
                 given.addAll(s.grants().getOrDefault(key(AccessSubject.DESIGNATION, me.designationId().toString()), Set.of()));
             }
@@ -141,8 +144,16 @@ public class MenuAccessService {
         return new MenuAccessEntry(type, subject, label(type, subject), new ArrayList<>(clean));
     }
 
+    /** A user type or designation removed: its menu access goes too. */
+    @Transactional
+    public void forget(AccessSubject type, String key) {
+        accessRepository.deleteSubject(type, key);
+        refreshAfterCommit();
+    }
+
     /** Reads both tables again (after start-up sync or a change). */
     @Transactional(readOnly = true)
+
     public synchronized void reload() {
         List<MenuItem> menus = new ArrayList<>(menuRepository.findAll());
         menus.sort(Comparator.comparingInt(MenuItem::getSortOrder));
@@ -174,16 +185,19 @@ public class MenuAccessService {
 
     private String checkSubject(AccessSubject type, String key) {
         if (type == AccessSubject.ROLE) {
-            Role role;
-            try {
-                role = Role.valueOf(key.strip().toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException e) {
-                throw ApiException.badRequest("Unknown user type: " + key);
+            String code = key.strip().toUpperCase(Locale.ROOT);
+            UserType t = userTypeRepository.findByCode(code).orElse(null);
+            if (t == null) {
+                try {
+                    Role.valueOf(code);
+                } catch (IllegalArgumentException e) {
+                    throw ApiException.badRequest("Unknown user type: " + key);
+                }
             }
-            if (role == Role.OWNER) {
+            if (Role.OWNER.name().equals(code) || t != null && t.getBaseRole() == Role.OWNER) {
                 throw ApiException.badRequest("Owners always have every menu");
             }
-            return role.name();
+            return code;
         }
         String what = type == AccessSubject.EMPLOYEE ? "employee" : "designation";
         long id;

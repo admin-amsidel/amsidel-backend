@@ -16,7 +16,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     Optional<Employee> findByUserId(@Param("userId") String userId);
 
     @Query("select e from Employee e left join fetch e.brand left join fetch e.designation left join fetch e.reportsTo"
-            + " where e.id = :id")
+            + " left join fetch e.userType where e.id = :id")
     Optional<Employee> findWithBrandById(@Param("id") Long id);
 
     /** Everyone, or one brand's people when brandId is given. */
@@ -41,6 +41,28 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     List<Employee> withDetails(@Param("ids") Collection<Long> ids);
 
     boolean existsByUserId(String userId);
+
+    long countByUserType_Id(Long userTypeId);
+
+    long countByDesignation_Id(Long designationId);
+
+    List<Employee> findByUserType_Id(Long userTypeId);
+
+    /** [userTypeId, count] for the types in use. */
+    @Query("select e.userType.id, count(e) from Employee e where e.userType is not null group by e.userType.id")
+    List<Object[]> countByUserTypeRows();
+
+    /** [role, count] for people with no user type yet (added before user types): theirs is the built-in one of the role. */
+    @Query("select e.role, count(e) from Employee e where e.userType is null group by e.role")
+    List<Object[]> countWithoutUserTypeByRole();
+
+    default java.util.Map<Long, Long> countByUserType() {
+        java.util.Map<Long, Long> out = new java.util.HashMap<>();
+        for (Object[] r : countByUserTypeRows()) {
+            out.put((Long) r[0], ((Number) r[1]).longValue());
+        }
+        return out;
+    }
 
     boolean existsByEmpNumberIgnoreCase(String empNumber);
 

@@ -17,6 +17,8 @@ import java.util.List;
 public class DesignationService {
 
     private final DesignationRepository designationRepository;
+    private final com.amsidel.backend.repository.EmployeeRepository employeeRepository;
+    private final MenuAccessService menuAccess;
 
     @Transactional(readOnly = true)
     public List<Designation> findAll() {
@@ -36,6 +38,20 @@ public class DesignationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Designation not found: " + id));
         apply(designation, request);
         return designation;
+    }
+
+    /** Only one nobody has (else switch it off); its menu access goes too. */
+    @Transactional
+    public void delete(Long id) {
+        Designation d = designationRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Designation not found: " + id));
+        long n = employeeRepository.countByDesignation_Id(id);
+        if (n > 0) {
+            throw ApiException.conflict(n + (n == 1 ? " employee has" : " employees have") + " the designation \"" + d.getName()
+                    + "\": give them another one first, or switch it off");
+        }
+        menuAccess.forget(com.amsidel.backend.entity.AccessSubject.DESIGNATION, Long.toString(id));
+        designationRepository.delete(d);
     }
 
     private void apply(Designation designation, DesignationRequest request) {

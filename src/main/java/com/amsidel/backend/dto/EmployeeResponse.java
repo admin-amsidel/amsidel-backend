@@ -37,7 +37,9 @@ public record EmployeeResponse(
         boolean active,
         boolean mustChangePassword,
         boolean locked,
-        Instant lastLoginAt) {
+        Instant lastLoginAt,
+        Long userTypeId,
+        String userTypeName) {
 
     /** Call inside a transaction: reads the brand, designation and manager. */
     public static EmployeeResponse from(Employee e) {
@@ -72,6 +74,8 @@ public record EmployeeResponse(
                 e.isActive(),
                 e.isMustChangePassword(),
                 e.getLockedUntil() != null && e.getLockedUntil().isAfter(Instant.now()),
-                e.getLastLoginAt());
+                e.getLastLoginAt(),
+                e.getUserType() == null ? null : e.getUserType().getId(),
+                e.getUserType() == null ? null : e.getUserType().getName());
     }
 }

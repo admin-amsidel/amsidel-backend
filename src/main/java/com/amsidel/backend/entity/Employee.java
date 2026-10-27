@@ -38,9 +38,15 @@ public class Employee {
     @Column(nullable = false, length = 100)
     private String passwordHash;
 
+    /** The access level (from the user type: OWNER, ADMIN, MANAGER, EMPLOYEE): what security, approvals and teams follow. */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Role role;
+
+    /** The user type (portal access) given; null = the built-in one of the role. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_type_id")
+    private UserType userType;
 
     /** Null for group-level people (owners, group admins). */
     @ManyToOne(fetch = FetchType.LAZY)

@@ -32,6 +32,14 @@ public class DesignationController {
         return designationService.create(request);
     }
 
+    /** Only one no employee has. */
+    @Checkpoint({Menus.DESIGNATIONS})
+    @DeleteMapping("/{id}")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        designationService.delete(id);
+    }
+
     @Checkpoint({Menus.DESIGNATIONS})
     @PutMapping("/{id}")
     public Designation update(@PathVariable Long id, @Valid @RequestBody DesignationRequest request) {

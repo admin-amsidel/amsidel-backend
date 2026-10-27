@@ -1,5 +1,6 @@
 package com.amsidel.backend.service;
 
+import com.amsidel.backend.entity.UserType;
 import com.amsidel.backend.dto.EmployeeRequest;
 import com.amsidel.backend.dto.EmployeeResponse;
 import com.amsidel.backend.entity.Brand;
@@ -43,6 +44,7 @@ public class EmployeeService {
     private final DesignationRepository designationRepository;
     private final PasswordEncoder passwordEncoder;
     private final SignedInCache signedIn;
+    private final UserTypeService userTypes;
 
     @Transactional(readOnly = true)
     public List<EmployeeResponse> list(AuthUser me, Long brandId) {
@@ -66,6 +68,10 @@ public class EmployeeService {
 
     @Transactional
     public EmployeeResponse create(AuthUser me, EmployeeRequest request) {
+        UserType type = userTypes.forEmployee(request.getUserTypeId(), request.getRole(), null);
+        if (type != null) {
+            request.setRole(type.getBaseRole());
+        }
         checkCanAssign(me, request.getRole(), request.getBrandId());
         if (request.getPassword() == null || request.getPassword().isBlank()) {
             throw ApiException.badRequest(PinPolicy.RULE);
@@ -76,6 +82,7 @@ public class EmployeeService {
         employee.setMustChangePassword(true);
         employee.setPasswordChangedAt(Instant.now());
         apply(employee, request);
+        employee.setUserType(type);
         EmployeeResponse saved = EmployeeResponse.from(employeeRepository.save(employee));
         teamsChanged();
         return saved;
@@ -85,6 +92,10 @@ public class EmployeeService {
     public EmployeeResponse update(AuthUser me, Long id, EmployeeRequest request) {
         Employee employee = find(id);
         checkCanManage(me, employee);
+        UserType type = userTypes.forEmployee(request.getUserTypeId(), request.getRole(), employee.getUserType());
+        if (type != null) {
+            request.setRole(type.getBaseRole());
+        }
         checkCanAssign(me, request.getRole(), request.getBrandId());
         if (employee.getId().equals(me.id())) {
             if (request.getRole() != employee.getRole()) {
@@ -94,7 +105,12 @@ public class EmployeeService {
                 throw ApiException.badRequest("You cannot disable your own account");
             }
         }
+        if (employee.getId().equals(me.id()) && type != null && employee.getUserType() != null && !type.getId().equals(employee.getUserType().getId())) {
+            throw ApiException.badRequest("You cannot change your own user type");
+        }
         apply(employee, request);
+        employee.setUserType(type);
+        signedIn.evict(employee.getId());
         teamsChanged();
         return EmployeeResponse.from(employee);
     }

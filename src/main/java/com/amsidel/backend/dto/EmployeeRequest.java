@@ -35,6 +35,9 @@ public class EmployeeRequest {
     @NotNull
     private Role role;
 
+    /** The user type (portal access); its access level replaces role. Empty = the built-in type of role. */
+    private Long userTypeId;
+
     /** Required for managers and employees; empty for group-level owners and admins. */
     private Long brandId;
 
