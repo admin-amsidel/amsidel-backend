@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.dto;
 
 import com.amsidel.backend.entity.Attendance;
@@ -10,7 +14,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
-/** One attendance entry (a day, or one field visit of it). The photo is at GET /api/attendance/{id}/photo. */
+/** One attendance entry (a day, or one field visit of it). The photo, when taken, is at GET /api/attendance/{id}/photo. */
 public record AttendanceRecord(
         Long id,
         Long employeeId,
@@ -29,7 +33,9 @@ public record AttendanceRecord(
         String note,
         /** Check-in to check-out, once checked out. */
         Long workedMinutes,
-        Device device
+        Device device,
+        /** A photo was taken (always for a field visit; optional at the office or at home). */
+        boolean hasPhoto
 ) {
 
     /** Where and when; flags are LOCATION_MISSING and LOW_ACCURACY. */
@@ -53,7 +59,7 @@ public record AttendanceRecord(
         Long worked = a.getCheckOutAt() == null ? null : Duration.between(a.getCheckInAt(), a.getCheckOutAt()).toMinutes();
         return new AttendanceRecord(a.getId(), e.getId(), e.getName(), e.getEmpNumber(), a.getWorkDate(), a.getEntryNo(),
                 a.getWorkMode(), a.getPlace(), in, out, a.getCheckOutNote(), worked,
-                new Device(a.getDevicePlatform(), a.getDeviceOs(), a.getAppVersion()));
+                new Device(a.getDevicePlatform(), a.getDeviceOs(), a.getAppVersion()), a.getPhotoPath() != null);
     }
 
     private static List<String> flags(boolean missing, boolean low) {

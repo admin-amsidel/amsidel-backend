@@ -1,6 +1,9 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.dto;
 
-import com.amsidel.backend.entity.ProjectStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -19,8 +22,9 @@ public final class ProjectUpdateDtos {
     @Data
     public static class UpdateBody {
         /** The stage: a project status. */
-        @NotNull(message = "Choose the stage")
-        private ProjectStatus status;
+        @NotBlank(message = "Choose the stage")
+        @Size(max = 30)
+        private String status;
 
         @NotBlank(message = "Give the update a title")
         @Size(max = 150)
@@ -34,14 +38,14 @@ public final class ProjectUpdateDtos {
     }
 
     /** One update as the portal shows it: who posted and changed it, and its photos (ids). */
-    public record UpdateView(Long id, Long projectId, ProjectStatus status, String title, String description, Instant happenedAt,
+    public record UpdateView(Long id, Long projectId, String status, String title, String description, Instant happenedAt,
                              List<Long> photoIds, String createdByName, Instant createdAt, String updatedByName, Instant updatedAt,
                              boolean canEdit) {
     }
 
     /** A project on the Project status page. */
     public record StatusRow(Long id, String code, String name, String brandCode, Long customerId, String customerName, String customerPhone,
-                            ProjectStatus status, boolean settled, int updates, Instant lastUpdateAt, boolean shared) {
+                            String status, boolean settled, int updates, Instant lastUpdateAt, boolean shared) {
     }
 
     /** A project's updates, the link for its customer (null = not shared), whether I may post, and the update just posted or changed. */
@@ -50,12 +54,13 @@ public final class ProjectUpdateDtos {
 
     // ---- the customer's link (no sign-in) ----
 
-    public record PublicUpdate(Long id, ProjectStatus status, String title, String description, Instant happenedAt, List<Long> photoIds) {
+    public record PublicUpdate(Long id, String status, String title, String description, Instant happenedAt, List<Long> photoIds) {
     }
 
     /** Only what the customer needs: no amounts, no staff names. */
     public record PublicStatus(String brandName, Long brandId, Instant brandLogoUpdatedAt, String brandPhone, String brandEmail,
-                               String projectCode, String projectName, String customerName, ProjectStatus status,
-                               LocalDate startDate, LocalDate endDate, List<PublicUpdate> updates) {
+                               String projectCode, String projectName, String customerName, String status,
+                               LocalDate startDate, LocalDate endDate, List<PublicUpdate> updates,
+                               List<com.amsidel.backend.service.ProjectStageService.StageView> stages) {
     }
 }

@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.entity;
 
 import jakarta.persistence.*;
@@ -71,8 +75,8 @@ public class Attendance {
     @Column(name = "check_in_ip", length = 64)
     private String checkInIp;
 
-    /** Under the attendance photo folder, e.g. attendance/2026/10/42/22.jpg. */
-    @Column(name = "photo_path", nullable = false, length = 200)
+    /** Under the attendance photo folder, e.g. attendance/2026/10/42/22.jpg; null = no photo (only field visits need one). */
+    @Column(name = "photo_path", length = 200)
     private String photoPath;
 
     @Column(name = "photo_bytes", nullable = false)

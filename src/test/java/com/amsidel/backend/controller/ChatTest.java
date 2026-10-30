@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.controller;
 
 import com.amsidel.backend.scheduler.ChatCleanup;

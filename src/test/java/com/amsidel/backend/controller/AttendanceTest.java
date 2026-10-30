@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.controller;
 
 import com.jayway.jsonpath.JsonPath;
@@ -131,11 +135,9 @@ class AttendanceTest {
         String second = idOf(checkIn(fiona, photo("png"), "FIELD", "10.05", "76.31", "20", "Lulu Mall site")
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.entryNo").value(2)));
-        // office / work from home only as the day's first entry
+        // nothing new while a visit is open
         checkIn(fiona, photo("png"), "OFFICE", "10", "76", "10").andExpect(status().isConflict());
         postJson(fiona, "/api/attendance/check-out", "{\"note\":\"Order confirmed\"}").andExpect(status().isOk());
-        checkIn(fiona, photo("png"), "OFFICE", "10", "76", "10").andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.endsWith("Only field visits can be added after that.")));
 
         // the second visit's photo is {dd}-2.jpg
         String fionaId = JsonPath.read(body(mockMvc.perform(get("/api/attendance/today").header("Authorization", auth(fiona)))),
@@ -154,6 +156,24 @@ class AttendanceTest {
                 .andExpect(jsonPath("$[0].modes", contains("FIELD")));
         // nothing open any more
         postJson(fiona, "/api/attendance/check-out", "{}").andExpect(status().isConflict());
+    }
+
+    @Test
+    void officeAndHomeCanBeCheckedInMoreThanOnceADay() throws Exception {
+        create("Hema Hybrid", "at.hema", "EMPLOYEE", null);
+        String hema = signIn("at.hema");
+        checkIn(hema, null, "WFH", "10", "76", "10").andExpect(status().isCreated()).andExpect(jsonPath("$.entryNo").value(1));
+        // one open at a time
+        checkIn(hema, null, "OFFICE", "10", "76", "10").andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.endsWith("Check out first to check in again")));
+        postJson(hema, "/api/attendance/check-out", "{\"note\":\"Morning at home\"}").andExpect(status().isOk());
+        checkIn(hema, null, "OFFICE", "10", "76", "10").andExpect(status().isCreated()).andExpect(jsonPath("$.entryNo").value(2));
+        postJson(hema, "/api/attendance/check-out", "{}").andExpect(status().isOk());
+        checkIn(hema, null, "OFFICE", "10", "76", "10").andExpect(status().isCreated()).andExpect(jsonPath("$.entryNo").value(3));
+        mockMvc.perform(get("/api/attendance/today").header("Authorization", auth(hema)))
+                .andExpect(jsonPath("$.day.entries.length()").value(3))
+                .andExpect(jsonPath("$.day.modes", org.hamcrest.Matchers.containsInAnyOrder("WFH", "OFFICE")))
+                .andExpect(jsonPath("$.day.open").value(true));
     }
 
     @Test
@@ -194,15 +214,47 @@ class AttendanceTest {
         checkIn(other, fake, "OFFICE", "10", "76", "10").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("The photo must be a JPEG or PNG image"));
         checkIn(other, photo("gif"), "OFFICE", "10", "76", "10").andExpect(status().isBadRequest());
-        mockMvc.perform(multipart("/api/attendance/check-in").param("workMode", "OFFICE").header("Authorization", auth(other)))
+        mockMvc.perform(multipart("/api/attendance/check-in").param("workMode", "FIELD").param("place", "Kumar residence")
+                        .header("Authorization", auth(other)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("Take a photo to check in"));
+                .andExpect(jsonPath("$.error").value("Take a photo to check in for a field visit"));
         checkIn(other, photo("png"), null, "10", "76", "10").andExpect(status().isBadRequest());
         // nothing was saved by the refused attempts
         mockMvc.perform(get("/api/attendance/today").header("Authorization", auth(other)))
                 .andExpect(jsonPath("$.day").doesNotExist());
         postJson(other, "/api/attendance/check-out", "{}").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("You have not checked in today"));
+    }
+
+    @Test
+    void onlyAFieldVisitNeedsAPhoto() throws Exception {
+        create("Hari Home", "at.hari", "EMPLOYEE", null);
+        String hari = signIn("at.hari");
+        String json = body(mockMvc.perform(multipart("/api/attendance/check-in").param("workMode", "WFH")
+                        .param("platform", "web").header("Authorization", auth(hari)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.hasPhoto").value(false)));
+        Integer id = JsonPath.read(json, "$.id");
+        mockMvc.perform(get("/api/attendance/" + id + "/photo").header("Authorization", auth(hari))).andExpect(status().isNotFound());
+        postJson(hari, "/api/attendance/check-out", "{}").andExpect(status().isOk());
+        // a field visit after it still needs one
+        mockMvc.perform(multipart("/api/attendance/check-in").param("workMode", "FIELD").param("place", "Site A").header("Authorization", auth(hari)))
+                .andExpect(status().isBadRequest());
+        checkIn(hari, photo("png"), "FIELD", "10", "76", "10").andExpect(status().isCreated()).andExpect(jsonPath("$.hasPhoto").value(true));
+    }
+
+    @Test
+    void onlyAnOwnerDeletesAttendance() throws Exception {
+        create("Dev Delete", "at.dev", "EMPLOYEE", null);
+        String dev = signIn("at.dev");
+        Integer id = JsonPath.read(body(checkIn(dev, photo("png"), "OFFICE", "10", "76", "10").andExpect(status().isCreated())), "$.id");
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/attendance/" + id).header("Authorization", auth(dev))).andExpect(status().isForbidden());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/attendance/" + id).header("Authorization", auth(lead))).andExpect(status().isForbidden());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/attendance/" + id).header("Authorization", auth(owner))).andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/attendance/" + id + "/photo").header("Authorization", auth(owner))).andExpect(status().isNotFound());
+        // the day is free again: they can check in afresh
+        mockMvc.perform(get("/api/attendance/today").header("Authorization", auth(dev))).andExpect(jsonPath("$.day").doesNotExist());
+        checkIn(dev, photo("png"), "OFFICE", "10", "76", "10").andExpect(status().isCreated());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/attendance/999999").header("Authorization", auth(owner))).andExpect(status().isNotFound());
     }
 
     @Test
@@ -293,7 +345,7 @@ class AttendanceTest {
     private ResultActions checkIn(String token, MockMultipartFile photo, String mode, String lat, String lng, String accuracy,
                                   String place) throws Exception {
         MockMultipartHttpServletRequestBuilder request = multipart("/api/attendance/check-in");
-        request.file(photo);
+        if (photo != null) request.file(photo);
         if (mode != null) request.param("workMode", mode);
         if (place != null) request.param("place", place);
         if (lat != null) request.param("latitude", lat);

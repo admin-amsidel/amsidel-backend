@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.controller;
 
 import com.amsidel.backend.service.ExportService;
@@ -122,6 +126,14 @@ public class AttendanceController {
                 .body(file.bytes());
     }
 
+    /** Owners only: removes one attendance entry (a day or one field visit of it) and its photo. */
+    @Checkpoint({Menus.ATT_TEAM})
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        attendanceService.delete(me, id);
+        return ResponseEntity.noContent().build();
+    }
+
     @Checkpoint({Menus.ATT_CHECKIN, Menus.ATT_TEAM})
     @GetMapping("/{id}/photo")
     public ResponseEntity<byte[]> photo(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
@@ -131,9 +143,10 @@ public class AttendanceController {
                 .body(attendanceService.photo(me, id));
     }
 
+    /** The photo's bytes; null when none was sent (only a field visit needs one). */
     private static byte[] bytes(MultipartFile photo) {
         if (photo == null || photo.isEmpty()) {
-            throw ApiException.badRequest("Take a photo to check in");
+            return null;
         }
         try {
             return photo.getBytes();

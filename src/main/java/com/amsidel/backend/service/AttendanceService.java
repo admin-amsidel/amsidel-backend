@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.service;
 
 import com.amsidel.backend.dto.AttendanceDay;
@@ -9,6 +13,7 @@ import com.amsidel.backend.dto.CheckOutRequest;
 import com.amsidel.backend.dto.TeamMember;
 import com.amsidel.backend.entity.Attendance;
 import com.amsidel.backend.entity.Employee;
+import com.amsidel.backend.entity.Role;
 import com.amsidel.backend.entity.WorkMode;
 import com.amsidel.backend.exception.ApiException;
 import com.amsidel.backend.exception.ResourceNotFoundException;
@@ -86,17 +91,19 @@ public class AttendanceService {
             throw ApiException.conflict(o.getWorkMode() == WorkMode.FIELD
                     ? "Close your visit" + (o.getPlace() == null ? "" : " to " + o.getPlace()) + " (since " + time(o.getCheckInAt())
                     + ") before starting another"
-                    : "You have already checked in today at " + time(o.getCheckInAt()));
+                    : "You have already checked in today at " + time(o.getCheckInAt()) + ". Check out first to check in again");
         }
-        if (!sofar.isEmpty() && request.getWorkMode() != WorkMode.FIELD) {
-            throw ApiException.conflict("You have already checked in today at " + time(sofar.get(0).getCheckInAt())
-                    + ". Only field visits can be added after that.");
-        }
+        // any number of entries a day (office, home or field), one open at a time
         String place = trim(request.getPlace(), 120);
         if (request.getWorkMode() == WorkMode.FIELD && place == null) {
             throw ApiException.badRequest("Enter the place or client you are visiting");
         }
-        byte[] jpeg = AttendancePhotoStore.clean(photo);
+        // a field visit needs a live photo; at the office or at home it is optional
+        boolean hasPhoto = photo != null && photo.length > 0;
+        if (!hasPhoto && request.getWorkMode() == WorkMode.FIELD) {
+            throw ApiException.badRequest("Take a photo to check in for a field visit");
+        }
+        byte[] jpeg = hasPhoto ? AttendancePhotoStore.clean(photo) : null;
         int entryNo = sofar.stream().mapToInt(Attendance::getEntryNo).max().orElse(0) + 1;
 
         Attendance a = new Attendance();
@@ -116,9 +123,9 @@ public class AttendanceService {
         a.setDevicePlatform(trim(request.getPlatform(), 40));
         a.setDeviceOs(trim(request.getOsVersion(), 60));
         a.setAppVersion(trim(request.getAppVersion(), 40));
-        String path = AttendancePhotoStore.pathFor(person.getId(), today, entryNo);
+        String path = hasPhoto ? AttendancePhotoStore.pathFor(person.getId(), today, entryNo) : null;
         a.setPhotoPath(path);
-        a.setPhotoBytes(jpeg.length);
+        a.setPhotoBytes(hasPhoto ? jpeg.length : 0);
         try {
             // written first, so a second check-in sent at the same moment fails here before touching the photo
             attendanceRepository.saveAndFlush(a);
@@ -126,6 +133,16 @@ public class AttendanceService {
             throw ApiException.conflict("You have just checked in; refresh the page");
         }
 
+        if (hasPhoto) {
+            savePhoto(path, jpeg);
+        }
+        log.info("Check-in {} {} #{} {}{}{}", person.getEmpNumber(), today, entryNo, a.getWorkMode(), where.missing() ? " (no location)" : "",
+                hasPhoto ? "" : " (no photo)");
+        return AttendanceRecord.from(a);
+    }
+
+    /** Writes the photo, and removes it again when the check-in is rolled back. */
+    private void savePhoto(String path, byte[] jpeg) {
         photos.save(path, jpeg);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -137,8 +154,6 @@ public class AttendanceService {
                 }
             });
         }
-        log.info("Check-in {} {} #{} {}{}", person.getEmpNumber(), today, entryNo, a.getWorkMode(), where.missing() ? " (no location)" : "");
-        return AttendanceRecord.from(a);
     }
 
     @Transactional
@@ -206,6 +221,36 @@ public class AttendanceService {
         return access.members(me);
     }
 
+    /**
+     * Owners only: removes one attendance entry (a day, or one field visit of it) and, once that is saved, its photo.
+     * The person's other entries of the day stay as they are.
+     */
+    @Transactional
+    public void delete(AuthUser me, Long attendanceId) {
+        if (me.role() != Role.OWNER) {
+            throw ApiException.forbidden("Only an owner can delete attendance");
+        }
+        Attendance a = attendanceRepository.findWithEmployee(attendanceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Attendance not found: " + attendanceId));
+        String path = a.getPhotoPath();
+        attendanceRepository.delete(a);
+        attendanceRepository.flush();
+        if (path != null) {
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        photos.deleteQuietly(path);
+                    }
+                });
+            } else {
+                photos.deleteQuietly(path);
+            }
+        }
+        log.info("Attendance {} of {} on {} #{} deleted by owner {}", attendanceId, a.getEmployee().getEmpNumber(), a.getWorkDate(),
+                a.getEntryNo(), me.id());
+    }
+
     /** The check-in photo, for the person themselves and those who may see their attendance. */
     @Transactional(readOnly = true)
     public byte[] photo(AuthUser me, Long attendanceId) {
@@ -213,6 +258,9 @@ public class AttendanceService {
                 .orElseThrow(() -> new ResourceNotFoundException("Attendance not found: " + attendanceId));
         if (!access.canView(me, a.getEmployee())) {
             throw ApiException.forbidden("You can only see your own photos and those of people below you");
+        }
+        if (a.getPhotoPath() == null) {
+            throw new ResourceNotFoundException("No photo was taken for this check-in");
         }
         return photos.read(a.getPhotoPath());
     }

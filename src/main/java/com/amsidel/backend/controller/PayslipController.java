@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.controller;
 
 import com.amsidel.backend.dto.PayslipDtos.*;
@@ -56,6 +60,13 @@ public class PayslipController {
     @PutMapping("/api/payroll/payslips/{id}")
     public PayslipView save(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody Save body) {
         return service.save(me, id, body);
+    }
+
+    /** This month's income tax for the amounts being typed (nothing saved); empty for a Manual tax salary. */
+    @Checkpoint({Menus.PAYSLIPS})
+    @PostMapping("/api/payroll/payslips/{id}/tax")
+    public PayslipTax tax(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody TaxPreview body) {
+        return service.taxPreview(me, id, body);
     }
 
     @Checkpoint({Menus.PAYSLIPS})

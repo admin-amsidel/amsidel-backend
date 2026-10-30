@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.controller;
 
 import com.amsidel.backend.dto.TradeDtos.*;
@@ -42,11 +46,13 @@ public class TradeController {
     private final PurchaseService purchases;
     private final TradeReportService reports;
     private final SalesPdf pdf;
+    private final ReceiptPdf receipt;
     private final BrandLogoRepository logos;
     private final com.amsidel.backend.repository.BrandUpiQrRepository upiQrs;
     private final TradePaymentRepository paymentRepository;
     private final TradeHistoryLog historyLog;
     private final ProjectService projects;
+    private final ProjectStageService stages;
     @org.springframework.beans.factory.annotation.Value("${app.leave.zone}")
     private java.time.ZoneId zone;
 
@@ -224,8 +230,11 @@ public class TradeController {
         return sales.addPayment(me, id, body);
     }
 
+    /** The quotation or invoice as a PDF: on A4 (default), or as a receipt on a 70, 120 or 150 mm roll (size=70MM...). */
     @GetMapping("/sales/{id}/pdf")
-    public ResponseEntity<byte[]> salesPdf(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+    public ResponseEntity<byte[]> salesPdf(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                           @RequestParam(name = "size", required = false) String size) {
+        PaperSize paper = PaperSize.of(size);
         SalesView d = sales.get(me, id);
         byte[] logo = d.company().logoUpdatedAt() == null ? null
                 : logos.findById(d.company().brandId()).map(l -> l.getContent()).orElse(null);
@@ -235,12 +244,12 @@ public class TradeController {
                 : upiQrs.findById(d.company().brandId())
                         .map(q -> q.getPayload() != null ? UpiQr.png(q.getPayload(), 360) : q.getContent()).orElse(null);
         String name = (d.kind() == SalesDocKind.INVOICE ? "Invoice-" : "Quotation-")
-                + (d.number() == null ? "draft-" + d.id() : d.number()) + ".pdf";
+                + (d.number() == null ? "draft-" + d.id() : d.number()) + (paper.isRoll() ? "-" + paper.widthMm() + "mm" : "") + ".pdf";
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(name).build().toString())
                 .cacheControl(CacheControl.noStore())
-                .body(pdf.render(d, logo, qr));
+                .body(paper.isRoll() ? receipt.render(d, logo, qr, paper) : pdf.render(d, logo, qr));
     }
 
     // ---- purchase bills ----
@@ -330,8 +339,14 @@ public class TradeController {
         return projects.update(me, id, body);
     }
 
+    /** The project statuses in their order (Queued ... Completed, Cancelled), from the project_statuses table. */
+    @GetMapping("/project-statuses")
+    public List<ProjectStageService.StageView> projectStatuses() {
+        return stages.list();
+    }
+
     @PostMapping("/projects/{id}/status")
-    public ProjectView projectStatus(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody ProjectStatusBody body) {
+    public ProjectView projectStatus(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody ProjectStageBody body) {
         return projects.setStatus(me, id, body.getStatus(), body.getNote());
     }
 

@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.config;
 
 import com.amsidel.backend.entity.TradeSubject;
@@ -42,9 +46,12 @@ public class SchemaFixes implements ApplicationRunner {
 
     /** Columns made optional after they were created as required (ddl update never relaxes them): manual UPI has no Razorpay order. */
     /** Columns that held an enum and now hold a code from a table: their old allowed-values check goes. */
-    private static final String[][] NO_LONGER_ENUM = {{"money_entries", "category"}};
+    private static final String[][] NO_LONGER_ENUM = {{"money_entries", "category"}, {"projects", "status"}, {"project_updates", "status"}};
 
-    private static final String[] NOW_OPTIONAL = {"online_payments.gateway_key_id", "online_payments.gateway_order_id"};
+    /** Columns that now hold longer values: table.column and the length (ddl update never widens them). */
+    private static final Object[][] WIDER = {{"projects.status", 30}, {"project_updates.status", 30}};
+
+    private static final String[] NOW_OPTIONAL = {"online_payments.gateway_key_id", "online_payments.gateway_order_id", "attendance.photo_path"};
 
     /** Done once (kept in doc_sequences): news saved as "customers" when that meant the website became Public. */
     private static final String NEWS_PUBLIC_DONE = "SETUP-NEWS-PUBLIC";
@@ -103,6 +110,19 @@ public class SchemaFixes implements ApplicationRunner {
                 }
             } catch (RuntimeException e) {
                 log.warn("Could not make {} optional: {}", column, e.getMessage());
+            }
+        }
+        for (Object[] w : WIDER) {
+            String[] tc = ((String) w[0]).split("\\.");
+            try {
+                Integer length = jdbc.queryForObject("select character_maximum_length from information_schema.columns where table_name = ? and column_name = ?",
+                        Integer.class, tc[0], tc[1]);
+                if (length != null && length < (Integer) w[1]) {
+                    jdbc.execute("alter table " + tc[0] + " alter column " + tc[1] + " type varchar(" + w[1] + ")");
+                    log.info("{} now takes {} characters", w[0], w[1]);
+                }
+            } catch (RuntimeException e) {
+                log.warn("Could not widen {}: {}", w[0], e.getMessage());
             }
         }
         newsPublic();

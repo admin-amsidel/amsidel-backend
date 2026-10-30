@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.controller;
 
 import com.jayway.jsonpath.JsonPath;
@@ -278,6 +282,25 @@ class TradeTest {
         String text = new com.lowagie.text.pdf.parser.PdfTextExtractor(new com.lowagie.text.pdf.PdfReader(pdf)).getTextFromPage(1).replaceAll("\\s+", " ");
         assertThat(text).contains("$2,469.00").contains("US Dollar Two Thousand Four Hundred Sixty-Nine Only")
                 .doesNotContain("₹").doesNotContain("exports@okhdfc").contains("50100099887766");
+
+        // the same invoice as a receipt on a 7, 12 and 15 cm roll: that width, only as long as the bill
+        float[] widthsMm = {70, 120, 150};
+        String[] sizes = {"70MM", "120MM", "150MM"};
+        for (int i = 0; i < sizes.length; i++) {
+            byte[] roll = mockMvc.perform(get("/api/trade/sales/" + invoice + "/pdf").param("size", sizes[i]).header("Authorization", auth(owner)))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.containsString("mm.pdf")))
+                    .andReturn().getResponse().getContentAsByteArray();
+            com.lowagie.text.pdf.PdfReader reader = new com.lowagie.text.pdf.PdfReader(roll);
+            com.lowagie.text.Rectangle page = reader.getPageSize(1);
+            assertThat(reader.getNumberOfPages()).isEqualTo(1);
+            assertThat(page.getWidth()).isCloseTo(widthsMm[i] * 72f / 25.4f, org.assertj.core.data.Offset.offset(0.5f));
+            assertThat(page.getHeight()).isBetween(144f, 1000f);
+            String receipt = new com.lowagie.text.pdf.parser.PdfTextExtractor(reader).getTextFromPage(1).replaceAll("\\s+", " ");
+            assertThat(receipt).contains("Aluminium sliding door").contains("$2,469.00").contains("TOTAL");
+        }
+        mockMvc.perform(get("/api/trade/sales/" + invoice + "/pdf").param("size", "9CM").header("Authorization", auth(owner)))
+                .andExpect(status().isBadRequest());
     }
 
         // ---- helpers ----

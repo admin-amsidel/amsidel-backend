@@ -1,0 +1,5 @@
+
+  Amsidel backend - Spring Boot ${spring-boot.version}
+  Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+  Designed and developed by AMSIDEL Technologies.
+

@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.service;
 
 import com.amsidel.backend.dto.PayrollViews.Person;
@@ -32,7 +36,9 @@ import java.util.stream.Collectors;
  * Making one: the month has the salary's working days (default 26; payroll may set the month's own). Per-day pay =
  * monthly earnings / working days; earnings are paid for the paid days = working days employed - LOP days (a salary
  * starting mid-month counts its working days, i.e. not the weekly offs, from the start date). Deductions and
- * reimbursements are the salary's amounts.
+ * reimbursements are the salary's amounts. Income tax (New or Old regime) is worked out again for the month whenever a
+ * draft is made, saved or made again: the year's income expected, less the tax of the earlier months, over the months
+ * left (see workOutTax); a Manual tax salary keeps the amount typed.
  * Payroll can change any amount while it is a DRAFT, then publishes it and records the salary as credited (when,
  * bank / cash / UPI, reference). The employee sees a payslip only when it is published and credited.
  * Who sees whose: as for salaries (PayrollAccess).
@@ -151,6 +157,7 @@ public class PayslipService {
             p.setDesignationName(e.getDesignation() == null ? null : e.getDesignation().getName());
             p.setUpdatedBy(by);
             fill(p, s, ym, body.getWorkingDays() != null ? body.getWorkingDays() : s.getWorkingDays(), 0);
+            applyTax(p, s);
             payslipRepository.save(p);
             created++;
         }
@@ -197,6 +204,8 @@ public class PayslipService {
         p.setPayDate(body.getPayDate());
         p.setLopDays(body.getLopDays());
         p.setPaidDays(p.getEmployedDays() - body.getLopDays());
+        // the income tax follows the pay (New or Old regime), whatever was typed in its line
+        applyTax(p, salaryRepository.find(e.getId(), p.getFyStartYear()).orElse(null));
         if (money(p.getLines()).net().signum() < 0) {
             throw ApiException.badRequest("Deductions are more than the pay; check the amounts");
         }
@@ -225,6 +234,7 @@ public class PayslipService {
         p.getLines().clear();
         payslipRepository.flush();
         fill(p, s, ym, p.getWorkingDays(), p.getLopDays());
+        applyTax(p, s);
         p.setUpdatedBy(employeeRepository.getReferenceById(me.id()));
         return view(payslipRepository.saveAndFlush(p), true, true);
     }
@@ -387,6 +397,123 @@ public class PayslipService {
         return view(p, false, false);
     }
 
+    /** This month's income tax for the amounts being typed on a draft (nothing saved); null for a Manual tax salary. */
+    @Transactional(readOnly = true)
+    public PayslipTax taxPreview(AuthUser me, Long id, TaxPreview body) {
+        Payslip p = full(id);
+        Employee e = access.visible(me, p.getEmployee().getId());
+        access.requireEditable(me, e);
+        Map<Long, BigDecimal> typed = new HashMap<>();
+        for (LineAmount la : body.getLines()) {
+            typed.put(la.getId(), la.getAmount());
+        }
+        SalaryStructure s = salaryRepository.find(e.getId(), p.getFyStartYear()).orElse(null);
+        return workOutTax(p, s, l -> typed.getOrDefault(l.getId(), l.getAmount()));
+    }
+
+    // ---- income tax ----
+
+    /** Puts this month's income tax in the payslip's Income Tax line (New or Old regime; Manual keeps what is typed). */
+    private void applyTax(Payslip p, SalaryStructure s) {
+        PayslipTax t = workOutTax(p, s, PayslipLine::getAmount);
+        if (t != null) {
+            taxLine(p.getLines()).setAmount(t.monthTax());
+        }
+    }
+
+    /**
+     * This month's income tax under the salary's regime, as payroll does monthly TDS: the year's income expected =
+     * the earlier months of the year (their payslips; a month with none counts at the salary's amounts) + this month
+     * + the months to come at the salary's amounts; its tax under the regime, less the tax of the earlier months,
+     * spread over this month and the months to come. Loss of pay, a part month or a changed amount so changes the tax.
+     * Null when the salary's tax is typed in (Manual) or the payslip has no Income Tax line.
+     */
+    private PayslipTax workOutTax(Payslip p, SalaryStructure s, Function<PayslipLine, BigDecimal> amount) {
+        if (s == null || s.regime() == TaxRegime.MANUAL || taxLine(p.getLines()) == null) {
+            return null;
+        }
+        YearMonth ym = YearMonth.of(p.getPeriodYear(), p.getPeriodMonth());
+        int fy = p.getFyStartYear();
+        BigDecimal salaryGross = ZERO;
+        BigDecimal salaryPt = ZERO;
+        BigDecimal salaryTax = ZERO;
+        for (SalaryLine l : s.getLines()) {
+            PayComponent c = l.getComponent();
+            if (c.getKind() == PayComponentKind.EARNING) {
+                salaryGross = salaryGross.add(l.getMonthlyAmount());
+            } else if (isPt(c.getCode())) {
+                salaryPt = salaryPt.add(l.getMonthlyAmount());
+            } else if (isTds(c.getCode())) {
+                salaryTax = salaryTax.add(l.getMonthlyAmount());
+            }
+        }
+        Map<YearMonth, Payslip> made = new HashMap<>();
+        for (Payslip other : payslipRepository.ofEmployeeYear(p.getEmployee().getId(), fy)) {
+            if (!Objects.equals(other.getId(), p.getId())) {
+                made.put(YearMonth.of(other.getPeriodYear(), other.getPeriodMonth()), other);
+            }
+        }
+        BigDecimal income = ZERO;
+        BigDecimal pt = ZERO;
+        BigDecimal before = ZERO;
+        YearMonth first = YearMonth.from(s.getEffectiveFrom()).isAfter(YearMonth.of(fy, 4)) ? YearMonth.from(s.getEffectiveFrom()) : YearMonth.of(fy, 4);
+        // the earlier months: as paid, or at the salary's amounts when no payslip was made
+        for (YearMonth m = YearMonth.of(fy, 4); m.isBefore(ym); m = m.plusMonths(1)) {
+            Payslip earlier = made.get(m);
+            if (earlier != null) {
+                for (PayslipLine l : earlier.getLines()) {
+                    if (l.getKind() == PayComponentKind.EARNING) {
+                        income = income.add(l.getAmount());
+                    } else if (isPt(l.getCode())) {
+                        pt = pt.add(l.getAmount());
+                    } else if (isTds(l.getCode())) {
+                        before = before.add(l.getAmount());
+                    }
+                }
+            } else if (!m.isBefore(first)) {
+                income = income.add(salaryGross);
+                pt = pt.add(salaryPt);
+                before = before.add(salaryTax);
+            }
+        }
+        // this month
+        for (PayslipLine l : p.getLines()) {
+            if (l.getKind() == PayComponentKind.EARNING) {
+                income = income.add(nz(amount.apply(l)));
+            } else if (isPt(l.getCode())) {
+                pt = pt.add(nz(amount.apply(l)));
+            }
+        }
+        // the months to come, at the salary's amounts
+        YearMonth next = ym.plusMonths(1).isBefore(first) ? first : ym.plusMonths(1);
+        int left = Math.max(0, (int) ChronoUnit.MONTHS.between(next, YearMonth.of(fy + 1, 3)) + 1);
+        income = income.add(salaryGross.multiply(BigDecimal.valueOf(left)));
+        pt = pt.add(salaryPt.multiply(BigDecimal.valueOf(left)));
+
+        IncomeTax.Calc year = IncomeTax.calc(s.regime(), fy, income, pt, s.getTaxDeclared(), 1);
+        BigDecimal month = year.annualTax().subtract(before).max(BigDecimal.ZERO)
+                .divide(BigDecimal.valueOf(left + 1L), 0, RoundingMode.HALF_UP).setScale(2);
+        return new PayslipTax(s.regime(), year.rules(), year.income(), year.annualTax(), before.setScale(2, RoundingMode.HALF_UP), left, month);
+    }
+
+    private static PayslipLine taxLine(Collection<PayslipLine> lines) {
+        return lines.stream().filter(l -> l.getKind() == PayComponentKind.DEDUCTION && isTds(l.getCode())).findFirst().orElse(null);
+    }
+
+    /** The Income Tax component's code, as on salaries. */
+    private static boolean isTds(String code) {
+        return "TDS".equalsIgnoreCase(code);
+    }
+
+    /** Professional tax (taken off the income under the old regime). */
+    private static boolean isPt(String code) {
+        return "PT".equalsIgnoreCase(code);
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? ZERO : v;
+    }
+
     // ---- making and showing ----
 
     /** The lines from the salary: earnings for the paid days, deductions and reimbursements as they are. */
@@ -487,7 +614,10 @@ public class PayslipService {
                 company(p.getEmployee().getBrand()), forPayroll && editable,
                 p.getPublishedBy() == null ? null : p.getPublishedBy().getName(), p.getPublishedAt(), p.getUpdatedAt(),
                 p.getPaidOn(), p.getPaymentMode(), p.getPaymentRef(), forPayroll ? p.getPaymentRemarks() : null,
-                p.getPaidRecordedBy() == null ? null : p.getPaidRecordedBy().getName());
+                p.getPaidRecordedBy() == null ? null : p.getPaidRecordedBy().getName(),
+                forPayroll && p.getStatus() == PayslipStatus.DRAFT
+                        ? workOutTax(p, salaryRepository.find(p.getEmployee().getId(), p.getFyStartYear()).orElse(null), PayslipLine::getAmount)
+                        : null);
     }
 
     /** The person's brand: its name, address, GST number and logo; the company settings fill in what is missing. */

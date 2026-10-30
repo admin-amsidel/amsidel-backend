@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.controller;
 
 import com.jayway.jsonpath.JsonPath;
@@ -70,6 +74,29 @@ class ProjectStatusTest {
                 """.formatted(customer, TODAY, TODAY.plusDays(30))).andExpect(status().isCreated()));
         project = String.valueOf((Object) JsonPath.read(created, "$.id"));
         code = JsonPath.read(created, "$.code");
+    }
+
+    @Test
+    void theProjectStatusesComeFromTheirTable() throws Exception {
+        mockMvc.perform(get("/api/trade/project-statuses").header("Authorization", auth(viewer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].name").value(contains("Queued", "Quotation issued", "Quotation approved", "Confirmed", "Started",
+                        "Completed", "Cancelled")))
+                .andExpect(jsonPath("$[?(@.code == 'COMPLETED')].phase").value(hasItem("DONE")));
+        List<Integer> brandIds = JsonPath.read(body(mockMvc.perform(get("/api/brands").header("Authorization", auth(owner)))), "$[?(@.code == 'DW')].id");
+        String customer = idOf(json(post("/api/trade/customers"), owner, "{\"brandId\":%d,\"name\":\"Stage Villa\",\"phone\":\"9847044444\"}".formatted(brandIds.getFirst())));
+        String id = idOf(json(post("/api/trade/projects"), owner, """
+                {"name":"Stage windows","customerId":%s,"startDate":"%s","status":"QUOTATION_ISSUED"}
+                """.formatted(customer, TODAY)).andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("QUOTATION_ISSUED")));
+        json(post("/api/trade/projects/" + id + "/status"), owner, "{\"status\":\"QUOTATION_APPROVED\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("QUOTATION_APPROVED"))
+                .andExpect(jsonPath("$.history[0].details", containsString("Quotation issued → Quotation approved")));
+        json(post("/api/trade/projects/" + id + "/status"), owner, "{\"status\":\"ON_HOLD\"}").andExpect(status().isBadRequest());
+        // a status update moves it on; Completed marks it done
+        json(post("/api/trade/projects/" + id + "/updates"), poster, "{\"status\":\"CONFIRMED\",\"title\":\"Advance paid\"}")
+                .andExpect(jsonPath("$.project.status").value("CONFIRMED"));
+        json(post("/api/trade/projects/" + id + "/status"), owner, "{\"status\":\"COMPLETED\"}")
+                .andExpect(jsonPath("$.completedAt").isNotEmpty());
     }
 
     @Test

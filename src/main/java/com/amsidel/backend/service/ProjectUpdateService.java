@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.service;
 
 import com.amsidel.backend.dto.ProjectUpdateDtos.*;
@@ -45,6 +49,7 @@ public class ProjectUpdateService {
     private final ProjectUpdatePhotoRepository photos;
     private final TradeAccess access;
     private final TradeHistoryLog history;
+    private final ProjectStageService stages;
 
     private void canSee(AuthUser me) {
         access.require(me, "You cannot see projects", Menus.PROD_PROJECT_STATUS, Menus.PROD_PROJECTS, Menus.PROD_QUOTES,
@@ -173,7 +178,7 @@ public class ProjectUpdateService {
         if (when.isAfter(Instant.now().plus(Duration.ofMinutes(10)))) {
             throw ApiException.badRequest("The date and time cannot be in the future");
         }
-        u.setStatus(body.getStatus());
+        u.setStatus(stages.require(body.getStatus(), u.getStatus()).getCode());
         u.setTitle(body.getTitle().strip());
         u.setDescription(blank(body.getDescription()));
         u.setHappenedAt(when);
@@ -182,13 +187,13 @@ public class ProjectUpdateService {
     /** The project's status follows its newest update. */
     private void follow(AuthUser me, Project p) {
         List<ProjectUpdate> list = updates.forProject(p.getId());
-        if (list.isEmpty() || list.getFirst().getStatus() == p.getStatus()) {
+        if (list.isEmpty() || list.getFirst().getStatus().equals(p.getStatus())) {
             return;
         }
-        ProjectStatus before = p.getStatus();
-        ProjectStatus now = list.getFirst().getStatus();
+        String before = p.getStatus();
+        String now = list.getFirst().getStatus();
         p.setStatus(now);
-        p.setCompletedAt(now == ProjectStatus.COMPLETED ? (p.getCompletedAt() == null ? Instant.now() : p.getCompletedAt()) : null);
+        p.setCompletedAt(stages.isDone(now) ? (p.getCompletedAt() == null ? Instant.now() : p.getCompletedAt()) : null);
         p.setUpdatedBy(access.me(me));
         p.setUpdatedAt(Instant.now());
         projects.saveAndFlush(p);
@@ -296,7 +301,8 @@ public class ProjectUpdateService {
                         u.getPhotos().stream().map(ProjectUpdatePhoto::getId).toList()))
                 .toList();
         return new PublicStatus(b.getName(), b.getId(), b.getLogoUpdatedAt(), b.getContactNumber(), b.getEmail(), p.getCode(), p.getName(),
-                p.getCustomer().getName(), p.getStatus(), p.getStartDate(), p.getEndDate(), list);
+                p.getCustomer().getName(), p.getStatus(), p.getStartDate(), p.getEndDate(), list,
+                stages.all().stream().filter(s -> s.isActive() || s.getCode().equals(p.getStatus())).map(ProjectStageService::view).toList());
     }
 
     @Transactional(readOnly = true)
@@ -333,13 +339,8 @@ public class ProjectUpdateService {
         history.record(me, p.getBrand(), TradeSubject.PROJECT, p.getId(), "Project " + p.getCode() + " · " + p.getName(), action, details, p.getId());
     }
 
-    private static String word(ProjectStatus s) {
-        return switch (s) {
-            case QUEUED -> "Queued";
-            case IN_PROGRESS -> "In progress";
-            case COMPLETED -> "Completed";
-            case CANCELLED -> "Cancelled";
-        };
+    private String word(String code) {
+        return stages.name(code);
     }
 
     private static String imageType(byte[] b) {

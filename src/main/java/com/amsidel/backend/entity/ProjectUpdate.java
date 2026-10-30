@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.entity;
 
 import jakarta.persistence.*;
@@ -28,9 +32,9 @@ public class ProjectUpdate {
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private ProjectStatus status;
+    /** The stage: a project status code (project_statuses). */
+    @Column(nullable = false, length = 30)
+    private String status;
 
     @Column(nullable = false, length = 150)
     private String title;

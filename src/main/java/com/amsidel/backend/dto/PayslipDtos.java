@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.dto;
 
 import com.amsidel.backend.dto.PayrollViews.Person;
@@ -150,7 +154,24 @@ public final class PayslipDtos {
                               int lopDays, int paidDays, List<LineView> lines, Money money, String netInWords,
                               Company company, boolean editable, String publishedByName, Instant publishedAt,
                               Instant updatedAt, LocalDate paidOn, PaymentMode paymentMode, String paymentRef,
-                              String paymentRemarks, String paidRecordedByName) {
+                              String paymentRemarks, String paidRecordedByName, PayslipTax tax) {
+    }
+
+    /**
+     * This month's income tax under the salary's regime (New or Old): the year's income expected (earlier months as
+     * paid, this month, the months to come at the salary's rates), its tax, the tax deducted in the earlier months, and
+     * what is left spread over this and the months to come.
+     */
+    public record PayslipTax(com.amsidel.backend.entity.TaxRegime regime, String rules, BigDecimal yearIncome, BigDecimal yearTax,
+                             BigDecimal taxBefore, int monthsLeft, BigDecimal monthTax) {
+    }
+
+    /** The payslip's amounts being typed, for this month's income tax before saving. */
+    @Data
+    public static class TaxPreview {
+        @NotNull
+        @Size(max = 60)
+        private List<@Valid LineAmount> lines;
     }
 
     public record GenerateResult(int created, int skipped, List<String> notes) {

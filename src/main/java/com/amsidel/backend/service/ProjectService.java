@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.service;
 
 import com.amsidel.backend.dto.TradeDtos.*;
@@ -37,6 +41,7 @@ public class ProjectService {
     private final TradeNumbers numbers;
     private final TradeAccess access;
     private final TradeHistoryLog history;
+    private final ProjectStageService stages;
 
     // ---- reading ----
 
@@ -101,11 +106,11 @@ public class ProjectService {
         String customerBefore = p.getCustomer().getName();
         String ownerBefore = p.getOwner() == null ? null : p.getOwner().getName();
         String teamBefore = team(p);
-        ProjectStatus statusBefore = p.getStatus();
+        String statusBefore = p.getStatus();
         fill(me, p, body);
         changes.add("Customer", customerBefore, p.getCustomer().getName())
                 .add("Owner", ownerBefore, p.getOwner() == null ? null : p.getOwner().getName())
-                .add("Team", teamBefore, team(p)).add("Status", word(statusBefore), word(p.getStatus()));
+                .add("Team", teamBefore, team(p)).add("Status", stages.name(statusBefore), stages.name(p.getStatus()));
         p.setUpdatedBy(access.me(me));
         projectRepository.saveAndFlush(p);
         if (!changes.isEmpty()) {
@@ -115,16 +120,17 @@ public class ProjectService {
     }
 
     @Transactional
-    public ProjectView setStatus(AuthUser me, Long id, ProjectStatus status, String note) {
+    public ProjectView setStatus(AuthUser me, Long id, String code, String note) {
         canWrite(me);
         Project p = full(me, id);
         requireEditable(me, p);
-        ProjectStatus before = p.getStatus();
+        String before = p.getStatus();
+        String status = stages.require(code, before).getCode();
         status(p, status);
         p.setUpdatedBy(access.me(me));
         projectRepository.saveAndFlush(p);
-        if (before != status) {
-            log(me, p, "STATUS", word(before) + " → " + word(status) + (blank(note) == null ? "" : ": " + note.strip()));
+        if (!status.equals(before)) {
+            log(me, p, "STATUS", stages.name(before) + " → " + stages.name(status) + (blank(note) == null ? "" : ": " + note.strip()));
         }
         return view(me, p);
     }
@@ -141,8 +147,8 @@ public class ProjectService {
         if (m.due().signum() > 0 && !access.admin(me)) {
             throw ApiException.conflict(PayslipPdf.rupees(m.due()) + " is still to be paid; an admin can settle it anyway");
         }
-        if (p.getStatus() == ProjectStatus.QUEUED || p.getStatus() == ProjectStatus.IN_PROGRESS) {
-            status(p, ProjectStatus.COMPLETED);
+        if (stages.isOpen(p.getStatus())) {
+            status(p, ProjectStage.COMPLETED);
         }
         p.setSettled(true);
         p.setSettledAt(Instant.now());
@@ -298,8 +304,8 @@ public class ProjectService {
         p.setEstimatedAmount(money(body.getEstimatedAmount()));
         p.setFinalAmount(money(body.getFinalAmount()));
         p.setRemarks(blank(body.getRemarks()));
-        if (body.getStatus() != null) {
-            status(p, body.getStatus());
+        if (body.getStatus() != null && !body.getStatus().isBlank()) {
+            status(p, stages.require(body.getStatus(), p.getId() == null ? null : p.getStatus()).getCode());
         }
     }
 
@@ -325,9 +331,9 @@ public class ProjectService {
         t.setRemarks(blank(body.getRemarks()));
     }
 
-    private void status(Project p, ProjectStatus status) {
+    private void status(Project p, String status) {
         p.setStatus(status);
-        p.setCompletedAt(status == ProjectStatus.COMPLETED ? (p.getCompletedAt() == null ? Instant.now() : p.getCompletedAt()) : null);
+        p.setCompletedAt(stages.isDone(status) ? (p.getCompletedAt() == null ? Instant.now() : p.getCompletedAt()) : null);
     }
 
     private Employee person(Project p, Long id) {

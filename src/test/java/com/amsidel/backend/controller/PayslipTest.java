@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.controller;
 
 import com.jayway.jsonpath.JsonPath;
@@ -318,6 +322,43 @@ class PayslipTest {
         json(post("/api/payroll/payslips/generate"), owner, "{\"year\":2025,\"month\":7,\"employeeIds\":[" + emp[0] + "]}");
         mockMvc.perform(get("/api/payroll/payslips/" + payslipId(emp[0], 2025, 7)).header("Authorization", auth(owner)))
                 .andExpect(jsonPath("$.workingDays").value(26));
+    }
+
+    @Test
+    void incomeTaxIsWorkedOutAgainForTheMonth() throws Exception {
+        String[] emp = employee("2025-04-01");
+        // new regime: 1,50,000 a month is 12,567 tax a month (as on the salary)
+        String lines = "[" + line("BASIC", "150000") + "," + line("PT", "200") + "," + line("TDS", "0") + "]";
+        json(put("/api/payroll/salaries/" + emp[0] + "?fy=2025"), owner,
+                "{\"effectiveFrom\":\"2025-04-01\",\"taxRegime\":\"NEW\",\"lines\":%s}".formatted(lines))
+                .andExpect(jsonPath("$.lines[?(@.code == 'TDS')].monthly").value(hasItem(12567.0)));
+        // June, a full month (April and May made no payslip: they count as paid at the salary): the same tax
+        json(post("/api/payroll/payslips/generate"), owner, "{\"year\":2025,\"month\":6,\"employeeIds\":[" + emp[0] + "]}")
+                .andExpect(jsonPath("$.created").value(1));
+        String id = payslipId(emp[0], 2025, 6);
+        String view = body(mockMvc.perform(get("/api/payroll/payslips/" + id).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.lines[?(@.code == 'TDS')].amount").value(hasItem(12567.0)))
+                .andExpect(jsonPath("$.tax.regime").value("NEW")).andExpect(jsonPath("$.tax.monthsLeft").value(9)));
+
+        // half the month unpaid: less pay, less tax; a tax typed in its line is not kept
+        List<Map<String, Object>> ls = JsonPath.read(view, "$.lines");
+        String half = ls.stream().map(l -> "{\"id\":%s,\"amount\":%s}".formatted(l.get("id"),
+                        "BASIC".equals(l.get("code")) ? "75000" : "TDS".equals(l.get("code")) ? "99999" : l.get("amount")))
+                .collect(Collectors.joining(",", "[", "]"));
+        double preview = ((Number) JsonPath.read(body(json(post("/api/payroll/payslips/" + id + "/tax"), owner, "{\"lines\":%s}".formatted(half))
+                .andExpect(status().isOk())), "$.monthTax")).doubleValue();
+        String saved = body(json(put("/api/payroll/payslips/" + id), owner,
+                "{\"payDate\":\"2025-06-30\",\"lopDays\":13,\"lines\":%s,\"publish\":false}".formatted(half)).andExpect(status().isOk()));
+        List<Double> tds = JsonPath.read(saved, "$.lines[?(@.code == 'TDS')].amount");
+        assertThat(tds.getFirst()).isEqualTo(preview).isLessThan(12567.0).isGreaterThan(0.0);
+
+        // typed in (Manual): what payroll types stays
+        String manual = "[" + line("BASIC", "150000") + "," + line("PT", "200") + "," + line("TDS", "5000") + "]";
+        json(put("/api/payroll/salaries/" + emp[0] + "?fy=2025"), owner,
+                "{\"effectiveFrom\":\"2025-04-01\",\"taxRegime\":\"MANUAL\",\"lines\":%s}".formatted(manual)).andExpect(status().isOk());
+        mockMvc.perform(post("/api/payroll/payslips/" + id + "/recalculate").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.lines[?(@.code == 'TDS')].amount").value(hasItem(5000.0)))
+                .andExpect(jsonPath("$.tax").doesNotExist());
     }
 
     @Test

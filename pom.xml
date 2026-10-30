@@ -15,7 +15,23 @@
     <artifactId>amsidel-backend</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>amsidel-backend</name>
-    <description>Amsidel Enterprises backend service</description>
+    <description>Amsidel Enterprises backend service. Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.</description>
+    <organization>
+        <name>AMSIDEL Technologies</name>
+    </organization>
+    <licenses>
+        <license>
+            <name>Proprietary: Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.</name>
+            <url>LICENSE</url>
+            <distribution>manual</distribution>
+        </license>
+    </licenses>
+    <developers>
+        <developer>
+            <name>AMSIDEL Technologies</name>
+            <organization>AMSIDEL Technologies</organization>
+        </developer>
+    </developers>
 
     <properties>
         <java.version>21</java.version>

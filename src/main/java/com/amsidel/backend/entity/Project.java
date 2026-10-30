@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.entity;
 
 import jakarta.persistence.*;
@@ -50,9 +54,9 @@ public class Project {
     @Column(length = 4000)
     private String description;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 12)
-    private ProjectStatus status = ProjectStatus.QUEUED;
+    /** A project status code (project_statuses), e.g. QUOTATION_ISSUED. */
+    @Column(nullable = false, length = 30)
+    private String status = ProjectStage.QUEUED;
 
     /** Closed with the money done: only admins and owners may change it now. */
     @Column(nullable = false)

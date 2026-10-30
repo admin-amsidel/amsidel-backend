@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 AMSIDEL Technologies. All rights reserved.
+ * Designed and developed by AMSIDEL Technologies.
+ */
 package com.amsidel.backend.dto;
 
 import com.amsidel.backend.entity.*;
@@ -83,7 +87,8 @@ public final class TradeDtos {
         @Digits(integer = 12, fraction = 2, message = "Use at most 12 digits and 2 decimals")
         private BigDecimal finalAmount;
 
-        private ProjectStatus status;
+        /** A project status code (project_statuses); empty = as it is. */
+        private String status;
 
         @Size(max = 2000)
         private String remarks;
@@ -114,6 +119,17 @@ public final class TradeDtos {
 
         @Size(max = 1000)
         private String remarks;
+    }
+
+    /** A project's new status: a code from project_statuses, and why (optional). */
+    @Data
+    public static class ProjectStageBody {
+        @NotBlank(message = "Choose the status")
+        @Size(max = 30)
+        private String status;
+
+        @Size(max = 500)
+        private String note;
     }
 
     @Data
@@ -147,12 +163,12 @@ public final class TradeDtos {
     }
 
     public record ProjectRow(Long id, String code, String name, String brandCode, Long customerId, String customerName,
-                             String customerPhone, ProjectStatus status, boolean settled, String ownerName, LocalDate startDate,
+                             String customerPhone, String status, boolean settled, String ownerName, LocalDate startDate,
                              LocalDate endDate, ProjectMoney money, int tasks, int tasksDone, String createdByName, Instant updatedAt) {
     }
 
     public record ProjectView(Long id, String code, String name, BrandRef brand, PartyRef customer, String description,
-                              ProjectStatus status, boolean settled, Instant settledAt, String settledByName, PersonRef owner,
+                              String status, boolean settled, Instant settledAt, String settledByName, PersonRef owner,
                               List<PersonRef> members, LocalDate startDate, LocalDate endDate, String remarks, ProjectMoney money,
                               List<SalesRow> bills, List<PaymentView> payments, List<TaskView> tasks, List<HistoryView> history,
                               String createdByName, Instant createdAt, String updatedByName, Instant updatedAt, Instant completedAt,
