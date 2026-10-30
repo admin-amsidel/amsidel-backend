@@ -28,4 +28,8 @@ public interface GoalRepository extends JpaRepository<Goal, Long> {
 
     @Query("select coalesce(sum(g.weightage), 0) from Goal g where g.review.id = :reviewId and (:exceptId is null or g.id <> :exceptId)")
     int weightOf(@Param("reviewId") Long reviewId, @Param("exceptId") Long exceptId);
+
+    /** The goal a sales achievement record belongs to. */
+    @Query("select e.goal.id from SalesEntry e where e.id = :entryId")
+    Optional<Long> goalOfSalesEntry(@Param("entryId") Long entryId);
 }

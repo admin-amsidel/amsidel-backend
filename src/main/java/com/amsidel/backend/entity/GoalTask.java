@@ -11,7 +11,7 @@ import lombok.Setter;
 
 import java.time.LocalDate;
 
-/** A sub-task of a goal: its weight in the goal (the goal's tasks add up to 100%), dates and % done. */
+/** A sub-task of a goal: its weight in the goal (the goal's tasks add up to 100%), dates and % done; for a sales goal, its target amount. */
 @Entity
 @Table(name = "goal_tasks")
 @Getter
@@ -43,6 +43,10 @@ public class GoalTask {
     /** % done, 0-100. */
     @Column(nullable = false)
     private int progress;
+
+    /** Sales goals: this sub-task's share of the goal's target amount. */
+    @Column(name = "target_amount", precision = 14, scale = 2)
+    private java.math.BigDecimal targetAmount;
 
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;

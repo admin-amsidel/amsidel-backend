@@ -20,6 +20,8 @@ import java.util.List;
  * A goal a manager sets for someone in a review: its weight in the review (a person's goals add up to 100%), its
  * dates, and its sub-tasks (their weights add up to 100% of the goal). After the end date the person rates it
  * (0.5-5 in half stars), then the manager rates it (0.5-5) with written feedback.
+ * A sales goal (type SALES) has a target amount split over its sub-tasks; the person records what they achieved
+ * (SalesEntry), and its progress and self rating follow achieved / target.
  */
 @Entity
 @Table(name = "goals")
@@ -39,6 +41,15 @@ public class Goal {
 
     @Column(nullable = false, length = 150)
     private String title;
+
+    /** GENERAL or SALES; null (goals set before types came) = GENERAL. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "goal_type", length = 12)
+    private GoalType type;
+
+    /** Sales goals: the amount to achieve. */
+    @Column(name = "target_amount", precision = 14, scale = 2)
+    private java.math.BigDecimal targetAmount;
 
     @Column(length = 2000)
     private String description;
@@ -60,6 +71,15 @@ public class Goal {
     @OneToMany(mappedBy = "goal", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("sortOrder")
     private List<GoalTask> tasks = new ArrayList<>();
+
+    /** Sales goals: what the person achieved, oldest first. */
+    @OneToMany(mappedBy = "goal", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("fromDate, id")
+    private List<SalesEntry> salesEntries = new ArrayList<>();
+
+    public boolean isSales() {
+        return type == GoalType.SALES;
+    }
 
     /** 0.5-5 in half stars. */
     @Column(name = "self_rating", precision = 3, scale = 1)

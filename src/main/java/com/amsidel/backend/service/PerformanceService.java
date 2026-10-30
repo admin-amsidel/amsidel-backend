@@ -28,6 +28,8 @@ import static com.amsidel.backend.dto.PerformanceViews.one;
 /**
  * Yearly performance: review cycles (date to date); in each, a person's self intro and skills (validated by their
  * manager), goals with weighted sub-tasks set by their manager, self and manager ratings (1-5), and achievements.
+ * A goal is General (progress moved by hand, rated by the person) or Sales (a target amount; the person records what
+ * they achieved, and the progress and self rating follow achieved / target).
  * "Manager" is anyone above the person in the reporting line, or an owner/admin in scope (TeamAccess). A closed
  * cycle is read-only.
  */
@@ -106,7 +108,8 @@ public class PerformanceService {
         List<AchievementView> achievements = achievementRepository
                 .forEmployee(person.getId(), cycle.getStartDate(), cycle.getEndDate()).stream().map(AchievementView::of).toList();
         return new ReviewView(CycleView.of(cycle), Person.of(person), rights, review.map(Review::getSelfIntro).orElse(null),
-                skills, goalViews, achievements, totals(goals), today);
+                skills, goalViews, achievements, totals(goals), today,
+                person.getBrand() == null ? "₹" : person.getBrand().getCurrency().symbol());
     }
 
     /** Everyone below me (or in my scope) with their totals in a cycle. */
@@ -253,6 +256,9 @@ public class PerformanceService {
     public void deleteGoal(AuthUser me, Long id) {
         Goal g = goal(id);
         requireManager(me, g.getReview().getEmployee(), g.getReview().getCycle());
+        if (!g.getSalesEntries().isEmpty()) {
+            throw ApiException.conflict("Achievements are recorded against this goal; it cannot be removed");
+        }
         if (g.getSelfRating() != null) {
             throw ApiException.conflict("This goal is already rated and cannot be removed");
         }
@@ -266,6 +272,7 @@ public class PerformanceService {
         Rights rights = requireSelfOrManager(me, g);
         GoalTask t = g.getTasks().stream().filter(x -> x.getId().equals(taskId)).findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Sub-task not found: " + taskId));
+        requireGeneral(g);
         requireNotRated(g);
         t.setProgress(progress);
         return view(g, rights, today());
@@ -276,6 +283,7 @@ public class PerformanceService {
     public GoalView goalProgress(AuthUser me, Long goalId, int progress) {
         Goal g = goal(goalId);
         Rights rights = requireSelfOrManager(me, g);
+        requireGeneral(g);
         if (!g.getTasks().isEmpty()) {
             throw ApiException.badRequest("This goal's progress comes from its sub-tasks");
         }
@@ -291,6 +299,9 @@ public class PerformanceService {
         Review review = g.getReview();
         if (!review.getEmployee().getId().equals(me.id())) {
             throw ApiException.forbidden("Only the person can rate their own goal");
+        }
+        if (g.isSales()) {
+            throw ApiException.badRequest("A sales goal's self rating is worked out from the amounts you record");
         }
         requireOpen(review.getCycle());
         if (today().isBefore(g.getEndDate())) {
@@ -310,8 +321,9 @@ public class PerformanceService {
     public GoalView managerRate(AuthUser me, Long goalId, PerformanceRequests.Rating body) {
         Goal g = goal(goalId);
         requireManager(me, g.getReview().getEmployee(), g.getReview().getCycle());
-        if (g.getSelfRating() == null) {
-            throw ApiException.badRequest("The person rates the goal first");
+        if (!selfDone(g, today())) {
+            throw ApiException.badRequest(g.isSales() ? "The person records what they achieved first (or wait for the goal's end date)"
+                    : "The person rates the goal first");
         }
         if (body.getComment() == null || body.getComment().isBlank()) {
             throw ApiException.badRequest("Write your feedback with the rating");
@@ -321,6 +333,145 @@ public class PerformanceService {
         g.setManagerRatedBy(employeeRepository.getReferenceById(me.id()));
         g.setManagerRatedAt(Instant.now());
         return view(g, new Rights(false, true), today());
+    }
+
+    // ---- sales goals: what the person achieved ----
+
+    @Transactional
+    public GoalView addSalesEntry(AuthUser me, Long goalId, PerformanceRequests.SalesEntryBody body) {
+        Goal g = goal(goalId);
+        requireRecorder(me, g);
+        SalesEntry e = new SalesEntry();
+        e.setGoal(g);
+        e.setCreatedAt(Instant.now());
+        apply(e, g, body);
+        g.getSalesEntries().add(e);
+        rateSales(g);
+        goalRepository.saveAndFlush(g);
+        return view(g, new Rights(true, false), today());
+    }
+
+    @Transactional
+    public GoalView updateSalesEntry(AuthUser me, Long id, PerformanceRequests.SalesEntryBody body) {
+        Goal g = goalOfEntry(id);
+        requireRecorder(me, g);
+        SalesEntry e = g.getSalesEntries().stream().filter(x -> x.getId().equals(id)).findFirst().orElseThrow();
+        apply(e, g, body);
+        e.setUpdatedAt(Instant.now());
+        rateSales(g);
+        return view(g, new Rights(true, false), today());
+    }
+
+    @Transactional
+    public GoalView deleteSalesEntry(AuthUser me, Long id) {
+        Goal g = goalOfEntry(id);
+        requireRecorder(me, g);
+        g.getSalesEntries().removeIf(x -> x.getId().equals(id));
+        rateSales(g);
+        return view(g, new Rights(true, false), today());
+    }
+
+    private Goal goalOfEntry(Long entryId) {
+        Long goalId = goalRepository.goalOfSalesEntry(entryId)
+                .orElseThrow(() -> new ResourceNotFoundException("Achievement record not found: " + entryId));
+        return goal(goalId);
+    }
+
+    /** Only the person records against their sales goal, while the cycle is open and before the manager rates it. */
+    private void requireRecorder(AuthUser me, Goal g) {
+        if (!g.isSales()) {
+            throw ApiException.badRequest("Amounts are recorded only against sales goals");
+        }
+        if (!g.getReview().getEmployee().getId().equals(me.id())) {
+            throw ApiException.forbidden("Only the person records what they achieved");
+        }
+        requireOpen(g.getReview().getCycle());
+        if (g.getManagerRating() != null) {
+            throw ApiException.conflict("Your manager has already rated this goal");
+        }
+    }
+
+    /** Inside the goal's (or sub-task's) dates; a goal with sub-tasks needs one; invoice numbers tidied up. */
+    private static void apply(SalesEntry e, Goal g, PerformanceRequests.SalesEntryBody body) {
+        if (body.getToDate().isBefore(body.getFromDate())) {
+            throw ApiException.badRequest("The end date must be on or after the start date");
+        }
+        GoalTask task = null;
+        if (!g.getTasks().isEmpty()) {
+            if (body.getTaskId() == null) {
+                throw ApiException.badRequest("Choose the sub-task it counts for");
+            }
+            task = g.getTasks().stream().filter(t -> t.getId().equals(body.getTaskId())).findFirst()
+                    .orElseThrow(() -> ApiException.badRequest("That sub-task is not part of this goal"));
+        }
+        java.time.LocalDate from = task == null ? g.getStartDate() : task.getStartDate();
+        java.time.LocalDate to = task == null ? g.getEndDate() : task.getEndDate();
+        if (body.getFromDate().isBefore(from) || body.getToDate().isAfter(to)) {
+            throw ApiException.badRequest("The dates must be inside " + (task == null ? "the goal's" : "the sub-task's") + " dates ("
+                    + from + " to " + to + ")");
+        }
+        e.setTask(task);
+        e.setAmount(body.getAmount().setScale(2, java.math.RoundingMode.HALF_UP));
+        e.setFromDate(body.getFromDate());
+        e.setToDate(body.getToDate());
+        e.setInvoiceNumbers(invoices(body.getInvoiceNumbers()));
+        e.setDescription(blankToNull(body.getDescription()));
+    }
+
+    /** "inv-1,  INV-2 ,inv-1" -> "inv-1, INV-2": trimmed, empty ones and repeats left out. */
+    static String invoices(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        LinkedHashSet<String> list = new LinkedHashSet<>();
+        for (String part : raw.split("[,;\\n]")) {
+            String v = part.strip();
+            if (!v.isEmpty()) {
+                list.add(v);
+            }
+        }
+        String joined = String.join(", ", list);
+        if (joined.length() > 1000) {
+            throw ApiException.badRequest("Too many invoice numbers for one record; split it into two");
+        }
+        return joined.isEmpty() ? null : joined;
+    }
+
+    /** A sales goal's self rating: achieved / target as stars (5 = target met), in half stars; none until something is recorded. */
+    private void rateSales(Goal g) {
+        if (g.getSalesEntries().isEmpty()) {
+            g.setSelfRating(null);
+            g.setSelfRatedAt(null);
+            return;
+        }
+        double ratio = ratio(achieved(g), g.getTargetAmount());
+        double stars = Math.max(0.5, Math.min(5, Math.round(Math.min(ratio, 1) * 10) / 2.0));
+        g.setSelfRating(BigDecimal.valueOf(stars).setScale(1, java.math.RoundingMode.HALF_UP));
+        g.setSelfRatedAt(Instant.now());
+    }
+
+    private static BigDecimal achieved(Goal g) {
+        return g.getSalesEntries().stream().map(SalesEntry::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static BigDecimal achieved(Goal g, GoalTask t) {
+        return g.getSalesEntries().stream().filter(e -> e.getTask() != null && e.getTask().getId().equals(t.getId()))
+                .map(SalesEntry::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static double ratio(BigDecimal achieved, BigDecimal target) {
+        return target == null || target.signum() <= 0 ? 0 : achieved.doubleValue() / target.doubleValue();
+    }
+
+    /** The person's part is done: rated (general), or something recorded or the end date come (sales). */
+    private static boolean selfDone(Goal g, LocalDate today) {
+        return g.getSelfRating() != null || (g.isSales() && !today.isBefore(g.getEndDate()));
+    }
+
+    private static void requireGeneral(Goal g) {
+        if (g.isSales()) {
+            throw ApiException.badRequest("A sales goal's progress comes from the amounts recorded");
+        }
     }
 
     // ---- achievements ----
@@ -458,9 +609,52 @@ public class PerformanceService {
                     + "%; this person has " + (100 - others) + "% left");
         }
         List<PerformanceRequests.TaskBody> tasks = body.getTasks() == null ? List.of() : body.getTasks();
-        int taskTotal = tasks.stream().mapToInt(PerformanceRequests.TaskBody::getWeightage).sum();
-        if (!tasks.isEmpty() && taskTotal != 100) {
-            throw ApiException.badRequest("Sub-task weights add up to " + taskTotal + "%; they must make 100%");
+        GoalType type = body.getType() == null ? GoalType.GENERAL : body.getType();
+        boolean sales = type == GoalType.SALES;
+        if (g.getId() != null && type != (g.isSales() ? GoalType.SALES : GoalType.GENERAL) && !g.getSalesEntries().isEmpty()) {
+            throw ApiException.conflict("Achievements are recorded against this goal; it stays a sales goal");
+        }
+        // sales: a target amount, split over the sub-tasks (their weights follow their targets)
+        int[] weights = new int[tasks.size()];
+        if (sales) {
+            if (body.getTargetAmount() == null) {
+                throw ApiException.badRequest("Give the goal's target amount");
+            }
+            BigDecimal sum = BigDecimal.ZERO;
+            for (PerformanceRequests.TaskBody t : tasks) {
+                if (t.getTargetAmount() == null) {
+                    throw ApiException.badRequest("Give sub-task \"" + t.getTitle().strip() + "\" its target amount");
+                }
+                sum = sum.add(t.getTargetAmount());
+            }
+            if (!tasks.isEmpty() && sum.compareTo(body.getTargetAmount()) != 0) {
+                throw ApiException.badRequest("Sub-task targets add up to " + sum.stripTrailingZeros().toPlainString()
+                        + "; they must make the goal's target of " + body.getTargetAmount().stripTrailingZeros().toPlainString());
+            }
+            int given = 0;
+            for (int i = 0; i < tasks.size(); i++) {
+                weights[i] = i == tasks.size() - 1 ? 100 - given
+                        : (int) Math.round(tasks.get(i).getTargetAmount().doubleValue() * 100 / body.getTargetAmount().doubleValue());
+                given += weights[i];
+            }
+        } else {
+            for (int i = 0; i < tasks.size(); i++) {
+                if (tasks.get(i).getWeightage() == null) {
+                    throw ApiException.badRequest("Give sub-task \"" + tasks.get(i).getTitle().strip() + "\" its weightage");
+                }
+                weights[i] = tasks.get(i).getWeightage();
+            }
+            int taskTotal = java.util.Arrays.stream(weights).sum();
+            if (!tasks.isEmpty() && taskTotal != 100) {
+                throw ApiException.badRequest("Sub-task weights add up to " + taskTotal + "%; they must make 100%");
+            }
+        }
+        // a sub-task with achievements recorded against it stays
+        Set<Long> kept = tasks.stream().map(PerformanceRequests.TaskBody::getId).filter(Objects::nonNull).collect(Collectors.toSet());
+        for (SalesEntry e : g.getSalesEntries()) {
+            if (e.getTask() != null && !kept.contains(e.getTask().getId())) {
+                throw ApiException.conflict("Achievements are recorded against sub-task \"" + e.getTask().getTitle() + "\"; keep it");
+            }
         }
         for (PerformanceRequests.TaskBody t : tasks) {
             if (t.getEndDate().isBefore(t.getStartDate())) {
@@ -472,6 +666,8 @@ public class PerformanceService {
         }
 
         g.setTitle(body.getTitle().strip());
+        g.setType(type);
+        g.setTargetAmount(sales ? body.getTargetAmount().setScale(2, java.math.RoundingMode.HALF_UP) : null);
         g.setDescription(blankToNull(body.getDescription()));
         g.setWeightage(body.getWeightage());
         g.setStartDate(body.getStartDate());
@@ -486,7 +682,8 @@ public class PerformanceService {
             GoalTask t = body2.getId() != null && existing.containsKey(body2.getId()) ? existing.get(body2.getId()) : new GoalTask();
             t.setGoal(g);
             t.setTitle(body2.getTitle().strip());
-            t.setWeightage(body2.getWeightage());
+            t.setWeightage(weights[order]);
+            t.setTargetAmount(sales ? body2.getTargetAmount().setScale(2, java.math.RoundingMode.HALF_UP) : null);
             t.setStartDate(body2.getStartDate());
             t.setEndDate(body2.getEndDate());
             t.setSortOrder(order++);
@@ -494,21 +691,37 @@ public class PerformanceService {
         }
         g.getTasks().clear();
         g.getTasks().addAll(next);
+        if (sales) {
+            // a new target changes how far along the recorded amounts are
+            rateSales(g);
+        }
     }
 
     private GoalView view(Goal g, Rights rights, LocalDate today) {
         boolean ended = !today.isBefore(g.getEndDate());
+        boolean sales = g.isSales();
+        List<TaskView> tasks = g.getTasks().stream().map(t -> !sales ? TaskView.of(t)
+                : new TaskView(t.getId(), t.getTitle(), t.getWeightage(), t.getStartDate(), t.getEndDate(),
+                (int) Math.min(100, Math.round(ratio(achieved(g, t), t.getTargetAmount()) * 100)), t.getTargetAmount(), achieved(g, t))).toList();
+        BigDecimal achieved = sales ? achieved(g) : null;
         return new GoalView(g.getId(), g.getTitle(), g.getDescription(), g.getWeightage(), g.getStartDate(), g.getEndDate(),
-                one(progressOf(g)), g.getTasks().stream().map(TaskView::of).toList(), g.getSelfRating(), g.getSelfComment(),
+                one(progressOf(g)), tasks, g.getSelfRating(), g.getSelfComment(),
                 g.getSelfRatedAt(), g.getManagerRating(), g.getManagerComment(),
                 g.getManagerRatedBy() == null ? null : g.getManagerRatedBy().getName(), g.getManagerRatedAt(),
-                rights.self() && ended && g.getManagerRating() == null,
-                rights.manager() && g.getSelfRating() != null,
-                rights.admin() || (rights.manager() && g.getManagerRating() == null));
+                !sales && rights.self() && ended && g.getManagerRating() == null,
+                rights.manager() && selfDone(g, today),
+                rights.admin() || (rights.manager() && g.getManagerRating() == null),
+                sales ? GoalType.SALES : GoalType.GENERAL, g.getTargetAmount(), achieved,
+                sales ? one(ratio(achieved, g.getTargetAmount()) * 100) : null,
+                sales ? g.getSalesEntries().stream().map(SalesEntryView::of).toList() : List.of(),
+                sales && rights.self() && g.getManagerRating() == null);
     }
 
-    /** % done: weighted sub-tasks, or the goal's own % without them. */
+    /** % done: achieved / target for a sales goal (at most 100); else weighted sub-tasks, or the goal's own %. */
     private static double progressOf(Goal g) {
+        if (g.isSales()) {
+            return Math.min(100, ratio(achieved(g), g.getTargetAmount()) * 100);
+        }
         if (g.getTasks().isEmpty()) {
             return g.getProgress();
         }

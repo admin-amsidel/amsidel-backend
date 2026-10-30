@@ -152,6 +152,27 @@ public class PerformanceController {
         return service.taskProgress(me, goalId, taskId, body.getProgress());
     }
 
+    /** Sales goals: the person records what they achieved; progress and self rating follow. */
+    @Checkpoint({Menus.PERF_MY})
+    @PostMapping("/goals/{goalId}/sales-entries")
+    public GoalView addSalesEntry(@AuthenticationPrincipal AuthUser me, @PathVariable Long goalId,
+                                  @Valid @RequestBody PerformanceRequests.SalesEntryBody body) {
+        return service.addSalesEntry(me, goalId, body);
+    }
+
+    @Checkpoint({Menus.PERF_MY})
+    @PutMapping("/sales-entries/{id}")
+    public GoalView updateSalesEntry(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
+                                     @Valid @RequestBody PerformanceRequests.SalesEntryBody body) {
+        return service.updateSalesEntry(me, id, body);
+    }
+
+    @Checkpoint({Menus.PERF_MY})
+    @DeleteMapping("/sales-entries/{id}")
+    public GoalView deleteSalesEntry(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        return service.deleteSalesEntry(me, id);
+    }
+
     @Checkpoint({Menus.PERF_MY})
     @PutMapping("/goals/{id}/self-rating")
     public GoalView selfRate(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,

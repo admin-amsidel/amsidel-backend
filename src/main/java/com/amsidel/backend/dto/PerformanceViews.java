@@ -53,20 +53,38 @@ public final class PerformanceViews {
         }
     }
 
-    public record TaskView(Long id, String title, int weightage, LocalDate startDate, LocalDate endDate, int progress) {
+    /** A sub-task; for a sales goal also its target and what was achieved towards it (progress follows the two). */
+    public record TaskView(Long id, String title, int weightage, LocalDate startDate, LocalDate endDate, int progress,
+                           BigDecimal targetAmount, BigDecimal achievedAmount) {
         public static TaskView of(GoalTask t) {
-            return new TaskView(t.getId(), t.getTitle(), t.getWeightage(), t.getStartDate(), t.getEndDate(), t.getProgress());
+            return new TaskView(t.getId(), t.getTitle(), t.getWeightage(), t.getStartDate(), t.getEndDate(), t.getProgress(), null, null);
+        }
+    }
+
+    /** One record of what was achieved towards a sales goal. */
+    public record SalesEntryView(Long id, Long taskId, String taskTitle, BigDecimal amount, LocalDate fromDate, LocalDate toDate,
+                                 List<String> invoiceNumbers, String description, Instant createdAt) {
+        public static SalesEntryView of(SalesEntry e) {
+            List<String> invoices = e.getInvoiceNumbers() == null ? List.of()
+                    : java.util.Arrays.stream(e.getInvoiceNumbers().split(",")).map(String::strip).filter(s -> !s.isEmpty()).toList();
+            return new SalesEntryView(e.getId(), e.getTask() == null ? null : e.getTask().getId(),
+                    e.getTask() == null ? null : e.getTask().getTitle(), e.getAmount(), e.getFromDate(), e.getToDate(), invoices,
+                    e.getDescription(), e.getCreatedAt());
         }
     }
 
     /**
      * A goal with its sub-tasks; progress is worked out from the sub-tasks (weight x % done), or the goal's own %
      * when it has none. canSelfRate / canManagerRate say whether that rating can be given now.
+     * A sales goal (type SALES) also has its target, the amount achieved (its entries added up), achievedPercent (can
+     * pass 100) and the entries; its progress and self rating follow from them. canRecord: the person may add entries.
      */
     public record GoalView(Long id, String title, String description, int weightage, LocalDate startDate, LocalDate endDate,
                            BigDecimal progress, List<TaskView> tasks, BigDecimal selfRating, String selfComment,
                            Instant selfRatedAt, BigDecimal managerRating, String managerComment, String managerRatedBy,
-                           Instant managerRatedAt, boolean canSelfRate, boolean canManagerRate, boolean canEdit) {
+                           Instant managerRatedAt, boolean canSelfRate, boolean canManagerRate, boolean canEdit,
+                           GoalType type, BigDecimal targetAmount, BigDecimal achievedAmount, BigDecimal achievedPercent,
+                           List<SalesEntryView> salesEntries, boolean canRecord) {
     }
 
     public record AchievementView(Long id, String title, String category, LocalDate achievedOn, String details,
@@ -86,8 +104,10 @@ public final class PerformanceViews {
     }
 
     /** One person's review in one cycle. */
+    /** currencySymbol: the person's brand currency, for sales targets and amounts. */
     public record ReviewView(CycleView cycle, Person employee, Rights rights, String selfIntro, List<SkillView> skills,
-                             List<GoalView> goals, List<AchievementView> achievements, Totals totals, LocalDate today) {
+                             List<GoalView> goals, List<AchievementView> achievements, Totals totals, LocalDate today,
+                             String currencySymbol) {
     }
 
     /** One row of the team overview. */

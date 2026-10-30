@@ -263,6 +263,74 @@ class PerformanceTest {
 
     // ---- helpers ----
 
+    @Test
+    void salesGoalsFollowTheAmountsAchieved() throws Exception {
+        String[] emp = employee();
+        LocalDate from = TODAY.minusMonths(2);
+        LocalDate to = TODAY.minusDays(1);
+        String q1 = "{\"title\":\"Q1 windows\",\"targetAmount\":100000,\"startDate\":\"%s\",\"endDate\":\"%s\"}".formatted(from, from.plusMonths(1));
+        String q2 = "{\"title\":\"Q2 doors\",\"targetAmount\":150000,\"startDate\":\"%s\",\"endDate\":\"%s\"}".formatted(from.plusMonths(1), to);
+        // the sub-task targets must make the goal's target
+        json(post("/api/performance/cycles/" + cycle + "/employees/" + emp[0] + "/goals"), lead, """
+                {"title":"Sales FY","type":"SALES","targetAmount":300000,"weightage":60,"startDate":"%s","endDate":"%s","tasks":[%s,%s]}
+                """.formatted(from, to, q1, q2)).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value(startsWith("Sub-task targets add up to 250000")));
+        String goalJson = body(json(post("/api/performance/cycles/" + cycle + "/employees/" + emp[0] + "/goals"), lead, """
+                {"title":"Sales FY","type":"SALES","targetAmount":250000,"weightage":60,"startDate":"%s","endDate":"%s","tasks":[%s,%s]}
+                """.formatted(from, to, q1, q2)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("SALES")).andExpect(jsonPath("$.tasks[*].weightage", contains(40, 60)))
+                .andExpect(jsonPath("$.progress").value(0)));
+        String goalId = String.valueOf((Object) JsonPath.read(goalJson, "$.id"));
+        Integer task1 = JsonPath.read(goalJson, "$.tasks[0].id");
+        Integer task2 = JsonPath.read(goalJson, "$.tasks[1].id");
+
+        // no stars or sliders by hand
+        rate(emp[1], goalId, "self", 4, "").andExpect(status().isBadRequest());
+        json(put("/api/performance/goals/" + goalId + "/tasks/" + task1 + "/progress"), emp[1], "{\"progress\":50}").andExpect(status().isBadRequest());
+        // the manager does not record for them; the sub-task is needed; dates inside it
+        String entry = "{\"taskId\":%s,\"amount\":%s,\"fromDate\":\"%s\",\"toDate\":\"%s\",\"invoiceNumbers\":\"%s\",\"description\":\"Kumar villa\"}";
+        json(post("/api/performance/goals/" + goalId + "/sales-entries"), lead, entry.formatted(task1, 1000, from, from.plusDays(5), "X"))
+                .andExpect(status().isForbidden());
+        json(post("/api/performance/goals/" + goalId + "/sales-entries"), emp[1], entry.formatted(null, 1000, from, from.plusDays(5), "X"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("Choose the sub-task it counts for"));
+        json(post("/api/performance/goals/" + goalId + "/sales-entries"), emp[1], entry.formatted(task1, 1000, from.minusDays(3), from, "X"))
+                .andExpect(status().isBadRequest());
+
+        // 80,000 of the first sub-task's 1,00,000 and 45,000 of the second's 1,50,000: 1,25,000 of 2,50,000 = 50%, 2.5 stars
+        json(post("/api/performance/goals/" + goalId + "/sales-entries"), emp[1],
+                entry.formatted(task1, 80000, from, from.plusDays(20), " INV-101 ,INV-102,, INV-101"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.salesEntries[0].invoiceNumbers", contains("INV-101", "INV-102")))
+                .andExpect(jsonPath("$.tasks[0].achievedAmount").value(80000)).andExpect(jsonPath("$.tasks[0].progress").value(80));
+        String after = body(json(post("/api/performance/goals/" + goalId + "/sales-entries"), emp[1],
+                entry.formatted(task2, 45000, from.plusMonths(1), to, "INV-150")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.achievedAmount").value(125000)).andExpect(jsonPath("$.achievedPercent").value(50))
+                .andExpect(jsonPath("$.progress").value(50)).andExpect(jsonPath("$.selfRating").value(2.5))
+                .andExpect(jsonPath("$.canManagerRate").value(false)));
+        Integer second = JsonPath.read(after, "$.salesEntries[1].id");
+        // changed to 1,70,000: 2,50,000 of 2,50,000 = 100%, 5 stars
+        json(put("/api/performance/sales-entries/" + second), emp[1], entry.formatted(task2, 170000, from.plusMonths(1), to, "INV-150, INV-151"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.achievedPercent").value(100)).andExpect(jsonPath("$.selfRating").value(5));
+        // the review counts it with its weight (60% of the review at 100%)
+        mockMvc.perform(get("/api/performance/cycles/" + cycle + "/me").header("Authorization", auth(emp[1])))
+                .andExpect(jsonPath("$.totals.progress").value(60)).andExpect(jsonPath("$.currencySymbol").value("₹"));
+        // a sub-task with records stays; the goal stays sales; it cannot be removed
+        json(put("/api/performance/goals/" + goalId), lead, """
+                {"title":"Sales FY","type":"SALES","targetAmount":100000,"weightage":60,"startDate":"%s","endDate":"%s","tasks":[%s]}
+                """.formatted(from, to, q1.replace("\"title\"", "\"id\":" + task1 + ",\"title\""))).andExpect(status().isConflict());
+        json(put("/api/performance/goals/" + goalId), lead, goalJson("Sales FY", 60, from, to)).andExpect(status().isConflict());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/performance/goals/" + goalId)
+                .header("Authorization", auth(lead))).andExpect(status().isConflict());
+        // the manager rates it with feedback; then it is final
+        rate(lead, goalId, "manager", 4.5, "Target met").andExpect(status().isOk()).andExpect(jsonPath("$.canRecord").value(false));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/performance/sales-entries/" + second)
+                .header("Authorization", auth(emp[1]))).andExpect(status().isConflict());
+        // a general goal records nothing
+        String general = idOf(goal(lead, emp[0], "General", 40, from, to));
+        json(post("/api/performance/goals/" + general + "/sales-entries"), emp[1], entry.formatted(null, 1000, from, to, "X"))
+                .andExpect(status().isBadRequest());
+    }
+
     /** A new employee below the lead: {id, token}. */
     private String[] employee() throws Exception {
         String userId = "pf.emp" + (++seq);

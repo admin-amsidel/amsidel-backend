@@ -75,6 +75,12 @@ public final class PerformanceRequests {
     public static class GoalBody {
         @NotBlank @Size(max = 150)
         private String title;
+        /** GENERAL (default) or SALES. */
+        private com.amsidel.backend.entity.GoalType type;
+        /** Sales goals: the amount to achieve. */
+        @DecimalMin(value = "0.01", message = "The target amount must be more than 0")
+        @Digits(integer = 12, fraction = 2, message = "Use at most 12 digits and 2 decimals")
+        private BigDecimal targetAmount;
         @Size(max = 2000)
         private String description;
         @NotNull @Min(1) @Max(100)
@@ -94,8 +100,13 @@ public final class PerformanceRequests {
         private Long id;
         @NotBlank @Size(max = 150)
         private String title;
-        @NotNull @Min(1) @Max(100)
+        /** General goals: % of the goal (sales goals: worked out from the target amounts). */
+        @Min(1) @Max(100)
         private Integer weightage;
+        /** Sales goals: this sub-task's target amount. */
+        @DecimalMin(value = "0.01", message = "A sub-task's target must be more than 0")
+        @Digits(integer = 12, fraction = 2, message = "Use at most 12 digits and 2 decimals")
+        private BigDecimal targetAmount;
         @NotNull
         private LocalDate startDate;
         @NotNull
@@ -115,6 +126,26 @@ public final class PerformanceRequests {
         private BigDecimal rating;
         @Size(max = 2000)
         private String comment;
+    }
+
+    /** What the person achieved towards a sales goal: amount, period, invoice numbers and a note. */
+    @Data
+    public static class SalesEntryBody {
+        /** The sub-task it counts for (needed when the goal has sub-tasks). */
+        private Long taskId;
+        @NotNull(message = "Give the amount achieved")
+        @DecimalMin(value = "0.01", message = "The amount must be more than 0")
+        @Digits(integer = 12, fraction = 2, message = "Use at most 12 digits and 2 decimals")
+        private BigDecimal amount;
+        @NotNull(message = "Give the start date")
+        private LocalDate fromDate;
+        @NotNull(message = "Give the end date")
+        private LocalDate toDate;
+        /** Comma separated: "INV-101, INV-102". */
+        @Size(max = 1000)
+        private String invoiceNumbers;
+        @Size(max = 1000)
+        private String description;
     }
 
     @Data
