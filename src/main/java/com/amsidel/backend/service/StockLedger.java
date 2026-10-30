@@ -38,7 +38,10 @@ public class StockLedger {
             throw ApiException.conflict("Only " + plain(item.getOnHand()) + " " + item.getUnit() + " of " + item.getCode()
                     + " (" + item.getName() + ") in stock; " + plain(q.negate()) + " needed");
         }
-        if (q.signum() > 0) {
+        if (kind == StockMoveKind.RETURN_OUT) {
+            // sent back: it is as if it had not been received; nothing more has gone out (sold)
+            item.setTotalIn(item.getTotalIn().add(q));
+        } else if (q.signum() > 0) {
             item.setTotalIn(item.getTotalIn().add(q));
         } else {
             item.setTotalOut(item.getTotalOut().add(q.negate()));

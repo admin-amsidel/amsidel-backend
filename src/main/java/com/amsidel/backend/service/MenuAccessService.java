@@ -252,7 +252,10 @@ public class MenuAccessService {
     private static void addWithChildren(Snapshot s, MenuItem menu, Set<String> codes) {
         if (codes.add(menu.getCode())) {
             for (MenuItem child : s.children().getOrDefault(menu.getCode(), List.of())) {
-                addWithChildren(s, child, codes);
+                // a sub-menu with its own tick comes only when it is given itself
+                if (!Menus.OWN_TICK.contains(child.getCode())) {
+                    addWithChildren(s, child, codes);
+                }
             }
         }
     }
@@ -282,7 +285,8 @@ public class MenuAccessService {
         if (!allowed.test(m) && children.isEmpty()) {
             return null;
         }
-        return new MenuNode(m.getCode(), m.getName(), m.getDescription(), m.getCheckpoint(), m.getPath(), m.getIcon(), children);
+        return new MenuNode(m.getCode(), m.getName(), m.getDescription(), m.getCheckpoint(), m.getPath(), m.getIcon(), children,
+                Menus.OWN_TICK.contains(m.getCode()));
     }
 
     private static String key(AccessSubject type, String key) {

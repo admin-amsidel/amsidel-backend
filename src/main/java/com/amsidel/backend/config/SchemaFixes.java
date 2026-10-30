@@ -4,6 +4,7 @@
  */
 package com.amsidel.backend.config;
 
+import com.amsidel.backend.entity.StockMoveKind;
 import com.amsidel.backend.entity.TradeSubject;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +43,8 @@ public class SchemaFixes implements ApplicationRunner {
             new EnumColumn("news_posts", "audience", com.amsidel.backend.entity.NewsAudience.class),
             new EnumColumn("online_payments", "method", com.amsidel.backend.entity.OnlineMethod.class),
             new EnumColumn("online_fees", "method", com.amsidel.backend.entity.OnlineMethod.class),
-            new EnumColumn("brands", "currency", com.amsidel.backend.entity.CurrencyCode.class));
+            new EnumColumn("brands", "currency", com.amsidel.backend.entity.CurrencyCode.class),
+            new EnumColumn("stock_moves", "kind", StockMoveKind.class));
 
     /** Columns made optional after they were created as required (ddl update never relaxes them): manual UPI has no Razorpay order. */
     /** Columns that held an enum and now hold a code from a table: their old allowed-values check goes. */

@@ -34,4 +34,8 @@ public interface ProductItemRepository extends JpaRepository<ProductItem, Long> 
     boolean existsByBrandIdAndCodeIgnoreCaseAndIdNot(Long brandId, String code, Long id);
 
     boolean existsByTypeId(Long typeId);
+
+    /** The brand's item with this code (any case), with its type. */
+    @Query("select i from ProductItem i join fetch i.type join fetch i.brand where i.brand.id = :brandId and upper(i.code) = upper(:code)")
+    Optional<ProductItem> findByCode(@Param("brandId") Long brandId, @Param("code") String code);
 }

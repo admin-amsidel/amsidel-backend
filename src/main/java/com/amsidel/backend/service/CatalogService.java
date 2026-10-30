@@ -198,7 +198,8 @@ public class CatalogService {
         }
         BigDecimal q = switch (body.getKind()) {
             case OPENING, ADJUST_IN -> body.getQuantity();
-            case ADJUST_OUT -> body.getQuantity().negate();
+            // a return goes back out of stock and off what was received; what went out (sold) stays as it was
+            case ADJUST_OUT, RETURN_OUT -> body.getQuantity().negate();
             default -> throw ApiException.badRequest("Purchases and sales change stock through their bills");
         };
         StockMove m = ledger.move(i.getId(), body.getKind(), q, body.getMovedOn(), null, null, null, body.getNote().strip(), access.me(me), false);

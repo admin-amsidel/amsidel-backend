@@ -58,9 +58,13 @@ public final class Menus {
     public static final String CHAT = "CHAT";
     /** Not a page: the Manual UPI (office) option on Pay bill. */
     public static final String PROD_PAY_MANUAL = "PROD_PAY_MANUAL";
+    /** Checking and approving stock received by scanning item QR labels: opens the Scan stock in page. */
+    public static final String PROD_STOCK_APPROVE = "PROD_STOCK_APPROVE";
+    /** Sub-menus that a tick on their parent menu does not give: each needs its own tick. */
+    public static final java.util.Set<String> OWN_TICK = java.util.Set.of(PROD_STOCK_APPROVE);
     /** Any page of the product portal. */
     public static final String[] PRODUCT_PORTAL = {PROD_HOME, PROD_ITEMS, PROD_TYPES, PROD_SUPPLIERS, PROD_PURCHASES,
-            PROD_CUSTOMERS, PROD_QUOTES, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL, PROD_PAY, PROD_PAY_MANUAL, PROD_PROJECT_STATUS};
+            PROD_CUSTOMERS, PROD_QUOTES, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL, PROD_PAY, PROD_PAY_MANUAL, PROD_PROJECT_STATUS, PROD_STOCK_APPROVE};
 
     /** One menu; parent null for a top-level menu, path null for a menu that only holds sub-menus. */
     public record Def(String code, String name, String description, int checkpoint, String parent, String path, String icon) {
@@ -111,6 +115,8 @@ public final class Menus {
             new Def("PROD_CATALOG", "Products & stock", "Product types, items, prices and stock", 11100, null, null, "pi-box"),
             new Def(PROD_ITEMS, "Items & stock", "Items with their prices; stock in, out and on hand", 11101, "PROD_CATALOG", "/portal/products/items", "pi-box"),
             new Def(PROD_TYPES, "Product types", "The types of product each brand sells", 11102, "PROD_CATALOG", "/portal/products/types", "pi-tags"),
+            // under Products & stock but its own tick (OWN_TICK: giving Products & stock does not give it); it opens the Scan stock in page
+            new Def(PROD_STOCK_APPROVE, "Approve scanned stock", "Check and approve stock received by scanning item QR labels (on the Scan stock in page); approving adds it to stock and makes new items from their labels (its own tick)", 11103, "PROD_CATALOG", "/portal/products/stock-scan", "pi-check-square"),
             new Def("PROD_BUYING", "Purchasing", "Suppliers, purchase bills and supplier payments", 11200, null, null, "pi-truck"),
             new Def(PROD_SUPPLIERS, "Suppliers", "Supplier details, bank details and what is owed to them", 11201, "PROD_BUYING", "/portal/products/suppliers", "pi-building"),
             new Def(PROD_PURCHASES, "Purchase bills", "Goods bought: bills, stock received and payments to suppliers", 11202, "PROD_BUYING", "/portal/products/purchases", "pi-download"),

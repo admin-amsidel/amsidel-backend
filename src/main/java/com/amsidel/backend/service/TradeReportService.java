@@ -202,7 +202,7 @@ public class TradeReportService {
             BigDecimal sold = ms.stream().filter(m -> m.getKind() == StockMoveKind.SALE || m.getKind() == StockMoveKind.SALE_CANCEL)
                     .map(StockMove::getQuantity).reduce(ZERO, BigDecimal::add).negate();
             BigDecimal adjusted = ms.stream().filter(m -> m.getKind() == StockMoveKind.OPENING || m.getKind() == StockMoveKind.ADJUST_IN
-                    || m.getKind() == StockMoveKind.ADJUST_OUT).map(StockMove::getQuantity).reduce(ZERO, BigDecimal::add);
+                    || m.getKind() == StockMoveKind.ADJUST_OUT || m.getKind() == StockMoveKind.RETURN_OUT || m.getKind() == StockMoveKind.RETURN_IN).map(StockMove::getQuantity).reduce(ZERO, BigDecimal::add);
             BigDecimal retail = i.getOnHand().signum() <= 0 ? ZERO : i.getOnHand().multiply(i.getShowroomPrice()).setScale(2, RoundingMode.HALF_UP);
             return new StockLine(CatalogService.view(i), bought, sold, adjusted, retail);
         }).toList();

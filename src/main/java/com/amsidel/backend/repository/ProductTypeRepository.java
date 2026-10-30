@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 /** Product types; brandId null = every brand. */
 public interface ProductTypeRepository extends JpaRepository<ProductType, Long> {
@@ -23,4 +24,6 @@ public interface ProductTypeRepository extends JpaRepository<ProductType, Long> 
     boolean existsByBrandIdAndCodeIgnoreCaseAndIdNot(Long brandId, String code, Long id);
 
     long countByBrandId(Long brandId);
+
+    Optional<ProductType> findFirstByBrandIdAndCodeIgnoreCase(Long brandId, String code);
 }

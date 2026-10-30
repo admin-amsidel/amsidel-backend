@@ -44,6 +44,9 @@ class TradeTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
     private String owner;
     private long dw;
     private int upvc;
@@ -311,6 +314,96 @@ class TradeTest {
     }
 
     /** A new person of DW with this user type; returns their token. */
+    @Test
+    void aReturnLowersStockAndWhatCameInNotWhatWentOut() throws Exception {
+        String item = idOf(json(post("/api/trade/items"), owner, """
+                {"brandId":%d,"typeId":%d,"code":"ret-01","name":"Returned window","supplierPrice":1500,"mrp":4500,
+                 "showroomPrice":4000,"minSellPrice":3500,"openingStock":5}
+                """.formatted(dw, upvc)).andExpect(status().isCreated()));
+        json(post("/api/trade/items/" + item + "/stock"), owner,
+                "{\"kind\":\"ADJUST_OUT\",\"quantity\":3,\"movedOn\":\"%s\",\"note\":\"Sold at the counter\"}".formatted(TODAY))
+                .andExpect(jsonPath("$.item.totalOut").value(3.0)).andExpect(jsonPath("$.item.onHand").value(2.0));
+        // 1 sent back to the supplier: on hand 2 -> 1, total in 5 -> 4, total out (sold) stays 3
+        json(post("/api/trade/items/" + item + "/stock"), owner,
+                "{\"kind\":\"RETURN_OUT\",\"quantity\":1,\"movedOn\":\"%s\",\"note\":\"Sent back to the supplier, damaged\"}".formatted(TODAY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.item.onHand").value(1.0)).andExpect(jsonPath("$.item.totalIn").value(4.0))
+                .andExpect(jsonPath("$.item.totalOut").value(3.0))
+                .andExpect(jsonPath("$.moves[0].kind").value("RETURN_OUT")).andExpect(jsonPath("$.moves[0].balanceAfter").value(1.0));
+        // a move saved with the old "added back" return still reads; it is not offered any more
+        jdbc.update("insert into stock_moves (item_id, moved_on, kind, quantity, balance_after, unit_cost, note, created_at)"
+                + " values (?, ?, 'RETURN_IN', 1, 2, 1500, 'Old return', current_timestamp)", Long.valueOf(item), TODAY);
+        mockMvc.perform(get("/api/trade/items/" + item).header("Authorization", auth(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.moves[*].kind", hasItem("RETURN_IN")));
+        json(post("/api/trade/items/" + item + "/stock"), owner,
+                "{\"kind\":\"RETURN_IN\",\"quantity\":1,\"movedOn\":\"%s\",\"note\":\"x\"}".formatted(TODAY)).andExpect(status().isBadRequest());
+        // not more than is on hand
+        json(post("/api/trade/items/" + item + "/stock"), owner,
+                "{\"kind\":\"RETURN_OUT\",\"quantity\":5,\"movedOn\":\"%s\",\"note\":\"Too many\"}".formatted(TODAY))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void qrLabelsAndStockReceivedByScanningThem() throws Exception {
+        String item = idOf(json(post("/api/trade/items"), owner, """
+                {"brandId":%d,"typeId":%d,"code":"qr-door-01","name":"Steel safety door","sizes":"7x3","hsnCode":"7308",
+                 "supplierPrice":9000,"mrp":15000,"showroomPrice":13500,"minSellPrice":12000,"openingStock":2}
+                """.formatted(dw, upvc)).andExpect(status().isCreated()));
+        // the label holds the item's details, not its stock
+        String payload = JsonPath.read(body(mockMvc.perform(get("/api/trade/items/" + item + "/qr").header("Authorization", auth(owner)))), "$.payload");
+        assertThat(payload).contains("\"t\":\"AMSIDEL-ITEM\"").contains("\"code\":\"QR-DOOR-01\"").contains("\"showroomPrice\":13500")
+                .doesNotContain("onHand");
+        byte[] sheet = mockMvc.perform(post("/api/trade/items/qr-labels").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"itemId\":%s,\"copies\":6}],\"showPrice\":true}".formatted(item)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertThat(new String(sheet, 0, 5)).isEqualTo("%PDF-");
+
+        // a label of an item this brand does not have yet (another shop's), and garbage
+        String newLabel = payload.replace("QR-DOOR-01", "QR-WIN-77").replace("Steel safety door", "Casement window")
+                .replace("\"showroomPrice\":13500", "\"showroomPrice\":4200");
+        json(post("/api/trade/stock-receipts"), owner, "{\"brandId\":%d,\"lines\":[{\"payload\":\"hello\",\"quantity\":1}]}".formatted(dw))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("This QR code is not an item label"));
+
+        // scanned: the door three times (two reads of 1 and one of 2 put together), the new window once; someone on Items & stock sends it
+        String staffId = idOf(mockMvc.perform(post("/api/employees").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Store keeper\",\"userId\":\"tr.store\",\"password\":\"ab@123\",\"role\":\"EMPLOYEE\",\"brandId\":%d,\"phone\":\"+91 98470 00000\",\"joinedDate\":\"2026-01-05\"}"
+                        .formatted(dw))).andExpect(status().isCreated()));
+        // Products & stock (the parent) gives Items & stock but not Approve scanned stock: that is its own tick
+        json(put("/api/menu-access/EMPLOYEE/" + staffId), owner, "{\"checkpoints\":[\"11100\"]}").andExpect(status().isOk());
+        String staff = token(changePin(token(login("tr.store", "ab@123")), "ab@123", "cd@456"));
+        mockMvc.perform(get("/api/auth/access").header("Authorization", auth(staff)))
+                .andExpect(jsonPath("$.codes", hasItem("PROD_ITEMS"))).andExpect(jsonPath("$.codes", not(hasItem("PROD_STOCK_APPROVE"))));
+        String esc = payload.replace("\"", "\\\"");
+        String escNew = newLabel.replace("\"", "\\\"");
+        String receipt = body(json(post("/api/trade/stock-receipts"), staff, """
+                {"brandId":%d,"note":"Delivery from Tata Steel","lines":[{"payload":"%s","quantity":1},{"payload":"%s","quantity":1},
+                 {"payload":"%s","quantity":2}]}""".formatted(dw, esc, escNew, esc)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING")).andExpect(jsonPath("$.lines.length()").value(2))
+                .andExpect(jsonPath("$.lines[0].quantity").value(3)).andExpect(jsonPath("$.lines[0].exists").value(true))
+                .andExpect(jsonPath("$.lines[1].exists").value(false)).andExpect(jsonPath("$.canDecide").value(false)));
+        String receiptId = String.valueOf((Object) JsonPath.read(receipt, "$.id"));
+        Integer windowLine = JsonPath.read(receipt, "$.lines[1].id");
+        // the store keeper cannot approve their own scan; nothing in stock yet
+        json(post("/api/trade/stock-receipts/" + receiptId + "/approve"), staff, "{}").andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/trade/items/" + item).header("Authorization", auth(owner))).andExpect(jsonPath("$.item.onHand").value(2.0));
+
+        // the approver corrects the window to 4: the door +3, the window made from its label with 4 in stock
+        json(post("/api/trade/stock-receipts/" + receiptId + "/approve"), owner,
+                "{\"note\":\"Counted\",\"lines\":[{\"id\":%d,\"quantity\":4}]}".formatted(windowLine))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("APPROVED"))
+                .andExpect(jsonPath("$.lines[1].createdItem").value(true)).andExpect(jsonPath("$.lines[1].approvedQuantity").value(4));
+        mockMvc.perform(get("/api/trade/items/" + item).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.item.onHand").value(5.0)).andExpect(jsonPath("$.moves[0].note").value(startsWith("Scanned stock receipt SR-")));
+        mockMvc.perform(get("/api/trade/items").param("brandId", String.valueOf(dw)).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$[?(@.code == 'QR-WIN-77')].onHand").value(hasItem(4.0)))
+                .andExpect(jsonPath("$[?(@.code == 'QR-WIN-77')].showroomPrice").value(hasItem(4200.0)))
+                .andExpect(jsonPath("$[?(@.code == 'QR-WIN-77')].hsnCode").value(hasItem("7308")));
+        // decided once
+        json(post("/api/trade/stock-receipts/" + receiptId + "/reject"), owner, "{\"note\":\"x\"}").andExpect(status().isConflict());
+        mockMvc.perform(get("/api/trade/stock-receipts").param("brandId", String.valueOf(dw)).header("Authorization", auth(staff)))
+                .andExpect(jsonPath("$[0].status").value("APPROVED")).andExpect(jsonPath("$[0].decidedByName").exists());
+    }
+
     private String employee(String role) throws Exception {
         String userId = "tr.p" + (++seq);
         mockMvc.perform(post("/api/employees").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)

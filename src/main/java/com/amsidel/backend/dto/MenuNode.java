@@ -6,7 +6,7 @@ package com.amsidel.backend.dto;
 
 import java.util.List;
 
-/** A menu with its sub-menus, in display order. */
+/** A menu with its sub-menus, in display order; ownTick: a tick on its parent does not give it. */
 public record MenuNode(String code, String name, String description, int checkpoint, String path, String icon,
-                       List<MenuNode> children) {
+                       List<MenuNode> children, boolean ownTick) {
 }
