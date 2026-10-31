@@ -315,6 +315,67 @@ class TradeTest {
 
     /** A new person of DW with this user type; returns their token. */
     @Test
+    void aSalesOrderConfirmsTheProjectThenBecomesTheInvoice() throws Exception {
+        String customer = idOf(json(post("/api/trade/customers"), owner,
+                "{\"brandId\":%d,\"name\":\"Order Villa\",\"phone\":\"9847077777\"}".formatted(dw)).andExpect(status().isCreated()));
+        String project = idOf(json(post("/api/trade/projects"), owner,
+                "{\"brandId\":%d,\"name\":\"Villa doors\",\"customerId\":%s,\"startDate\":\"%s\"}".formatted(dw, customer, TODAY)).andExpect(status().isCreated()));
+        String item = idOf(json(post("/api/trade/items"), owner, """
+                {"brandId":%d,"typeId":%d,"code":"so-door-01","name":"Teak door","supplierPrice":10000,"mrp":20000,
+                 "showroomPrice":18000,"minSellPrice":15000,"openingStock":10}
+                """.formatted(dw, upvc)).andExpect(status().isCreated()));
+        String lines = "[{\"itemId\":%s,\"name\":\"Teak door\",\"quantity\":3,\"rate\":18000},{\"name\":\"Installation\",\"quantity\":1,\"rate\":3000}]".formatted(item);
+        String quote = idOf(json(post("/api/trade/sales"), owner, """
+                {"kind":"QUOTATION","brandId":%d,"customerId":%s,"projectId":%s,"docDate":"%s","gstRate":18,"lines":%s}
+                """.formatted(dw, customer, project, TODAY, lines)).andExpect(status().isCreated()));
+
+        // the quotation becomes a sales order with its own number; the quotation is accepted
+        String order = body(mockMvc.perform(post("/api/trade/sales/" + quote + "/order").header("Authorization", auth(owner)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.kind").value("SALES_ORDER"))
+                .andExpect(jsonPath("$.number", matchesPattern("DWSOR-\\d{6}-\\d{3}"))).andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.sourceKind").value("QUOTATION")).andExpect(jsonPath("$.lines.length()").value(2)));
+        String orderId = String.valueOf((Object) JsonPath.read(order, "$.id"));
+        mockMvc.perform(get("/api/trade/sales/" + quote).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.status").value("ACCEPTED")).andExpect(jsonPath("$.madeKind").value("SALES_ORDER"));
+        mockMvc.perform(post("/api/trade/sales/" + quote + "/order").header("Authorization", auth(owner))).andExpect(status().isConflict());
+        // not invoiced before it is confirmed
+        mockMvc.perform(post("/api/trade/sales/" + orderId + "/invoice").header("Authorization", auth(owner))).andExpect(status().isConflict());
+
+        // the customer drops the installation and takes 2 doors
+        json(put("/api/trade/sales/" + orderId), owner, """
+                {"kind":"SALES_ORDER","brandId":%d,"customerId":%s,"projectId":%s,"docDate":"%s","gstRate":18,
+                 "lines":[{"itemId":%s,"name":"Teak door","quantity":2,"rate":18000}]}
+                """.formatted(dw, customer, project, TODAY, item)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totals.subtotal").value(36000.0));
+
+        // confirmed: fixed, no stock out, and the project is Confirmed
+        mockMvc.perform(post("/api/trade/sales/" + orderId + "/issue").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.status").value("ISSUED")).andExpect(jsonPath("$.editable").value(false));
+        mockMvc.perform(get("/api/trade/projects/" + project).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.history[0].details", containsString("sales order")));
+        mockMvc.perform(get("/api/trade/items/" + item).header("Authorization", auth(owner))).andExpect(jsonPath("$.item.onHand").value(10.0));
+        json(put("/api/trade/sales/" + orderId), owner, """
+                {"kind":"SALES_ORDER","brandId":%d,"customerId":%s,"docDate":"%s","gstRate":18,"lines":[{"name":"x","quantity":1,"rate":1}]}
+                """.formatted(dw, customer, TODAY)).andExpect(status().isConflict());
+
+        // the invoice is made from the order (2 doors), issued: stock out, invoice number of its own
+        String invoice = idOf(mockMvc.perform(post("/api/trade/sales/" + orderId + "/invoice").header("Authorization", auth(owner)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.kind").value("INVOICE"))
+                .andExpect(jsonPath("$.sourceKind").value("SALES_ORDER")).andExpect(jsonPath("$.quotationId").value(Integer.parseInt(orderId))));
+        mockMvc.perform(post("/api/trade/sales/" + invoice + "/issue").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.number", matchesPattern("DWSLD-\\d{6}-\\d{3}")));
+        mockMvc.perform(get("/api/trade/items/" + item).header("Authorization", auth(owner))).andExpect(jsonPath("$.item.onHand").value(8.0));
+        // an order with its invoice is not cancelled; sales orders have their own list and PDF
+        json(post("/api/trade/sales/" + orderId + "/cancel"), owner, "{\"reason\":\"changed mind\"}").andExpect(status().isConflict());
+        mockMvc.perform(get("/api/trade/sales").param("kind", "SALES_ORDER").param("brandId", String.valueOf(dw))
+                        .param("from", TODAY.minusDays(1).toString()).param("to", TODAY.plusDays(1).toString()).header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$[?(@.id == " + orderId + ")].status").value(hasItem("ISSUED")));
+        mockMvc.perform(get("/api/trade/sales/" + orderId + "/pdf").header("Authorization", auth(owner)))
+                .andExpect(status().isOk()).andExpect(header().string("Content-Disposition", containsString("Sales-order-DWSOR-")));
+    }
+
+    @Test
     void aReturnLowersStockAndWhatCameInNotWhatWentOut() throws Exception {
         String item = idOf(json(post("/api/trade/items"), owner, """
                 {"brandId":%d,"typeId":%d,"code":"ret-01","name":"Returned window","supplierPrice":1500,"mrp":4500,

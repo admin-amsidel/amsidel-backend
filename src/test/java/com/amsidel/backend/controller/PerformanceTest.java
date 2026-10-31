@@ -264,6 +264,62 @@ class PerformanceTest {
     // ---- helpers ----
 
     @Test
+    void salesOrderGoalsCountTheOrdersOfTheProjectsThePersonIsAllocatedTo() throws Exception {
+        String[] emp = employee();
+        String[] other = employee();
+        json(put("/api/menu-access/EMPLOYEE/" + emp[0]), owner, "{\"checkpoints\":[\"11304\",\"11301\",\"6001\"]}").andExpect(status().isOk());
+        String customer = idOf(json(post("/api/trade/customers"), owner, "{\"brandId\":%d,\"name\":\"Goal Villa\",\"phone\":\"9847099999\"}".formatted(dw)));
+        // her project (she is an allocated employee), and someone else's
+        String mine = idOf(json(post("/api/trade/projects"), owner,
+                "{\"brandId\":%d,\"name\":\"Goal villa windows\",\"customerId\":%s,\"startDate\":\"%s\",\"memberIds\":[%s]}".formatted(dw, customer, TODAY, emp[0]))
+                .andExpect(status().isCreated()));
+        String theirs = idOf(json(post("/api/trade/projects"), owner,
+                "{\"brandId\":%d,\"name\":\"Goal villa doors\",\"customerId\":%s,\"startDate\":\"%s\",\"memberIds\":[%s]}".formatted(dw, customer, TODAY, other[0]))
+                .andExpect(status().isCreated()));
+        String goal = idOf(json(post("/api/performance/cycles/" + cycle + "/employees/" + emp[0] + "/goals"), lead, """
+                {"title":"Orders FY","type":"SALES_ORDER","targetAmount":100000,"weightage":50,"startDate":"%s","endDate":"%s","tasks":[]}
+                """.formatted(TODAY.minusMonths(1), TODAY.plusMonths(1))).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("SALES_ORDER")).andExpect(jsonPath("$.achievedAmount").value(0)));
+        // sub-tasks are not for this kind
+        json(post("/api/performance/cycles/" + cycle + "/employees/" + emp[0] + "/goals"), lead, """
+                {"title":"x","type":"SALES_ORDER","targetAmount":1000,"weightage":10,"startDate":"%s","endDate":"%s",
+                 "tasks":[{"title":"t","startDate":"%s","endDate":"%s"}]}
+                """.formatted(TODAY, TODAY, TODAY, TODAY)).andExpect(status().isBadRequest());
+
+        String order = "{\"kind\":\"SALES_ORDER\",\"brandId\":%d,\"customerId\":%s,\"projectId\":%s,\"docDate\":\"%s\",\"gstRate\":18,\"lines\":[{\"name\":\"Windows\",\"quantity\":1,\"rate\":%s}]}";
+        // on her project, made and confirmed by the owner: hers in full (30,000 and 50,000 before GST)
+        String first = idOf(json(post("/api/trade/sales"), owner, order.formatted(dw, customer, mine, TODAY, "30000")).andExpect(status().isCreated()));
+        String second = idOf(json(post("/api/trade/sales"), owner, order.formatted(dw, customer, mine, TODAY, "50000")).andExpect(status().isCreated()));
+        // a draft on her project; one she makes on someone else's project; one with no project: none of them count
+        json(post("/api/trade/sales"), owner, order.formatted(dw, customer, mine, TODAY, "99999")).andExpect(status().isCreated());
+        String elsewhere = idOf(json(post("/api/trade/sales"), emp[1], order.formatted(dw, customer, theirs, TODAY, "70000")).andExpect(status().isCreated()));
+        String loose = idOf(json(post("/api/trade/sales"), emp[1], order.formatted(dw, customer, "null", TODAY, "60000")).andExpect(status().isCreated()));
+        // on her project but dated before the goal starts (confirmed today): the order date counts, so it is left out
+        String early = idOf(json(post("/api/trade/sales"), owner, order.formatted(dw, customer, mine, TODAY.minusMonths(2), "40000")).andExpect(status().isCreated()));
+        for (String id : List.of(first, second, elsewhere, loose, early)) {
+            mockMvc.perform(post("/api/trade/sales/" + id + "/issue").header("Authorization", auth(owner))).andExpect(status().isOk());
+        }
+        // the project is Confirmed
+        mockMvc.perform(get("/api/trade/projects/" + mine).header("Authorization", auth(owner))).andExpect(jsonPath("$.status").value("CONFIRMED"));
+
+        // 80,000 of 1,00,000: 80%, 4 stars, each order a line with its month
+        mockMvc.perform(get("/api/performance/cycles/" + cycle + "/me").header("Authorization", auth(emp[1])))
+                .andExpect(jsonPath("$.goals[?(@.id == " + goal + ")].achievedAmount").value(hasItem(80000.0)))
+                .andExpect(jsonPath("$.goals[?(@.id == " + goal + ")].achievedPercent").value(hasItem(80.0)))
+                .andExpect(jsonPath("$.goals[?(@.id == " + goal + ")].selfRating").value(hasItem(4.0)))
+                .andExpect(jsonPath("$.goals[?(@.id == " + goal + ")].orders.length()").value(hasItem(2)))
+                .andExpect(jsonPath("$.goals[?(@.id == " + goal + ")].orders[0].month").value(hasItem(java.time.YearMonth.from(TODAY).toString())))
+                .andExpect(jsonPath("$.goals[?(@.id == " + goal + ")].orders[0].total").value(hasItem(35400.0)));
+        rate(emp[1], goal, "self", 4, "").andExpect(status().isBadRequest());
+        // a cancelled order drops out
+        json(post("/api/trade/sales/" + second + "/cancel"), owner, "{\"reason\":\"Customer called it off\"}").andExpect(status().isOk());
+        mockMvc.perform(get("/api/performance/cycles/" + cycle + "/employees/" + emp[0]).header("Authorization", auth(lead)))
+                .andExpect(jsonPath("$.goals[?(@.id == " + goal + ")].achievedAmount").value(hasItem(30000.0)))
+                .andExpect(jsonPath("$.goals[?(@.id == " + goal + ")].canManagerRate").value(hasItem(true)));
+        rate(lead, goal, "manager", 3, "Good start").andExpect(status().isOk());
+    }
+
+    @Test
     void salesGoalsFollowTheAmountsAchieved() throws Exception {
         String[] emp = employee();
         LocalDate from = TODAY.minusMonths(2);

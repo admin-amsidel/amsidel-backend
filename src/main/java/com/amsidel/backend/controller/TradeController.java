@@ -215,6 +215,14 @@ public class TradeController {
         return sales.makeInvoice(me, id);
     }
 
+    /** A draft sales order from this quotation. */
+    @PostMapping("/sales/{id}/order")
+    @ResponseStatus(HttpStatus.CREATED)
+    public SalesView makeOrder(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        return sales.makeOrder(me, id);
+    }
+
+    /** Issues an invoice; confirms a sales order. */
     @PostMapping("/sales/{id}/issue")
     public SalesView issue(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
         return sales.issue(me, id);
@@ -243,7 +251,7 @@ public class TradeController {
         byte[] qr = d.company().upiQrUpdatedAt() == null ? null
                 : upiQrs.findById(d.company().brandId())
                         .map(q -> q.getPayload() != null ? UpiQr.png(q.getPayload(), 360) : q.getContent()).orElse(null);
-        String name = (d.kind() == SalesDocKind.INVOICE ? "Invoice-" : "Quotation-")
+        String name = (d.kind() == SalesDocKind.INVOICE ? "Invoice-" : d.kind() == SalesDocKind.SALES_ORDER ? "Sales-order-" : "Quotation-")
                 + (d.number() == null ? "draft-" + d.id() : d.number()) + (paper.isRoll() ? "-" + paper.widthMm() + "mm" : "") + ".pdf";
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)

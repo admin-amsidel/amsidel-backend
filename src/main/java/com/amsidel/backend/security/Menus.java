@@ -45,6 +45,7 @@ public final class Menus {
     public static final String PROD_PURCHASES = "PROD_PURCHASES";
     public static final String PROD_CUSTOMERS = "PROD_CUSTOMERS";
     public static final String PROD_QUOTES = "PROD_QUOTES";
+    public static final String PROD_ORDERS = "PROD_ORDERS";
     public static final String PROD_INVOICES = "PROD_INVOICES";
     public static final String PROD_REPORTS = "PROD_REPORTS";
     public static final String PROD_PROJECTS = "PROD_PROJECTS";
@@ -64,7 +65,7 @@ public final class Menus {
     public static final java.util.Set<String> OWN_TICK = java.util.Set.of(PROD_STOCK_APPROVE);
     /** Any page of the product portal. */
     public static final String[] PRODUCT_PORTAL = {PROD_HOME, PROD_ITEMS, PROD_TYPES, PROD_SUPPLIERS, PROD_PURCHASES,
-            PROD_CUSTOMERS, PROD_QUOTES, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL, PROD_PAY, PROD_PAY_MANUAL, PROD_PROJECT_STATUS, PROD_STOCK_APPROVE};
+            PROD_CUSTOMERS, PROD_QUOTES, PROD_ORDERS, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL, PROD_PAY, PROD_PAY_MANUAL, PROD_PROJECT_STATUS, PROD_STOCK_APPROVE};
 
     /** One menu; parent null for a top-level menu, path null for a menu that only holds sub-menus. */
     public record Def(String code, String name, String description, int checkpoint, String parent, String path, String icon) {
@@ -123,6 +124,7 @@ public final class Menus {
             new Def("PROD_SELLING", "Sales", "Customers, quotations, invoices and customer payments", 11300, null, null, "pi-shopping-cart"),
             new Def(PROD_CUSTOMERS, "Customers", "Customer details and their quotations, invoices and payments", 11301, "PROD_SELLING", "/portal/products/customers", "pi-users"),
             new Def(PROD_QUOTES, "Quotations", "Quotations to customers (PDF), made into invoices", 11302, "PROD_SELLING", "/portal/products/quotations", "pi-file-edit"),
+            new Def(PROD_ORDERS, "Sales orders", "The customer's confirmed order (from a quotation, items removed or changed), before the invoice; confirming it sets the project to Confirmed", 11304, "PROD_SELLING", "/portal/products/sales-orders", "pi-check-square"),
             new Def(PROD_INVOICES, "Invoices", "Final bills (PDF), stock out and customer payments", 11303, "PROD_SELLING", "/portal/products/invoices", "pi-receipt"),
             new Def("PROD_PROJECTS_GRP", "Projects", "Customer projects, and their status updates for the customer", 11550, null, null, "pi-briefcase"),
             new Def(PROD_PROJECTS, "Projects", "Customer projects: team, tasks, quotations, invoices and payments in one place", 11500, "PROD_PROJECTS_GRP", "/portal/products/projects", "pi-briefcase"),

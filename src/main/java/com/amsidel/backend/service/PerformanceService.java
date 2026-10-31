@@ -45,13 +45,14 @@ public class PerformanceService {
     private final BrandRepository brandRepository;
     private final TeamAccess access;
     private final MenuAccessService menuAccess;
+    private final SalesDocRepository salesDocs;
     private final ZoneId zone;
 
     public PerformanceService(ReviewCycleRepository cycleRepository, ReviewRepository reviewRepository,
                               SkillRepository skillRepository, GoalRepository goalRepository,
                               AchievementRepository achievementRepository, EmployeeRepository employeeRepository,
                               BrandRepository brandRepository, TeamAccess access, MenuAccessService menuAccess,
-                              @Value("${app.leave.zone}") ZoneId zone) {
+                              SalesDocRepository salesDocs, @Value("${app.leave.zone}") ZoneId zone) {
         this.cycleRepository = cycleRepository;
         this.reviewRepository = reviewRepository;
         this.skillRepository = skillRepository;
@@ -61,6 +62,7 @@ public class PerformanceService {
         this.brandRepository = brandRepository;
         this.access = access;
         this.menuAccess = menuAccess;
+        this.salesDocs = salesDocs;
         this.zone = zone;
     }
 
@@ -129,6 +131,7 @@ public class PerformanceService {
         for (Employee e : people) {
             Review r = reviews.get(e.getId());
             List<Goal> goals = r == null ? List.of() : goalsByReview.getOrDefault(r.getId(), List.of());
+            goals.forEach(this::readOrders);
             List<Skill> skills = r == null ? List.of() : skillRepository.forReview(r.getId());
             int toRate = (int) goals.stream().filter(g -> g.getSelfRating() != null && g.getManagerRating() == null).count();
             int toValidate = (int) skills.stream().filter(s -> s.getManagerLevel() == null).count();
@@ -300,8 +303,9 @@ public class PerformanceService {
         if (!review.getEmployee().getId().equals(me.id())) {
             throw ApiException.forbidden("Only the person can rate their own goal");
         }
-        if (g.isSales()) {
-            throw ApiException.badRequest("A sales goal's self rating is worked out from the amounts you record");
+        if (g.isSales() || g.isOrders()) {
+            throw ApiException.badRequest(g.isOrders() ? "A sales-order goal's self rating is worked out from your confirmed orders"
+                    : "A sales goal's self rating is worked out from the amounts you record");
         }
         requireOpen(review.getCycle());
         if (today().isBefore(g.getEndDate())) {
@@ -321,8 +325,9 @@ public class PerformanceService {
     public GoalView managerRate(AuthUser me, Long goalId, PerformanceRequests.Rating body) {
         Goal g = goal(goalId);
         requireManager(me, g.getReview().getEmployee(), g.getReview().getCycle());
+        readOrders(g);
         if (!selfDone(g, today())) {
-            throw ApiException.badRequest(g.isSales() ? "The person records what they achieved first (or wait for the goal's end date)"
+            throw ApiException.badRequest(g.isSales() || g.isOrders() ? "Wait for the first achievement (or the goal's end date)"
                     : "The person rates the goal first");
         }
         if (body.getComment() == null || body.getComment().isBlank()) {
@@ -465,13 +470,50 @@ public class PerformanceService {
 
     /** The person's part is done: rated (general), or something recorded or the end date come (sales). */
     private static boolean selfDone(Goal g, LocalDate today) {
-        return g.getSelfRating() != null || (g.isSales() && !today.isBefore(g.getEndDate()));
+        return g.getSelfRating() != null || ((g.isSales() || g.isOrders()) && !today.isBefore(g.getEndDate()));
     }
 
     private static void requireGeneral(Goal g) {
-        if (g.isSales()) {
-            throw ApiException.badRequest("A sales goal's progress comes from the amounts recorded");
+        if (g.isSales() || g.isOrders()) {
+            throw ApiException.badRequest(g.isOrders() ? "A sales-order goal's progress comes from the confirmed orders"
+                    : "A sales goal's progress comes from the amounts recorded");
         }
+    }
+
+    // ---- sales-order goals: the person's confirmed orders ----
+
+    /**
+     * Fills in a sales-order goal's orders: confirmed ones whose order date (as entered on the order) is in the goal's
+     * dates, on projects the person is an allocated employee of, whoever made the order. Each allocated employee gets
+     * the order in full. The self rating follows achieved / target, as for sales goals.
+     */
+    private void readOrders(Goal g) {
+        if (!g.isOrders()) {
+            return;
+        }
+        List<SalesDoc> orders = salesDocs.confirmedOrdersFor(g.getReview().getEmployee().getId(), g.getStartDate(), g.getEndDate());
+        g.setOrders(orders);
+        if (orders.isEmpty()) {
+            g.setSelfRating(null);
+            return;
+        }
+        double stars = Math.max(0.5, Math.min(5, Math.round(Math.min(ratio(ordered(g), g.getTargetAmount()), 1) * 10) / 2.0));
+        g.setSelfRating(BigDecimal.valueOf(stars).setScale(1, java.math.RoundingMode.HALF_UP));
+    }
+
+    /** What the confirmed orders add up to before GST (what counts towards the target). */
+    private static BigDecimal ordered(Goal g) {
+        return g.getOrders().stream().map(SalesDoc::getTaxable).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private OrderLineView orderLine(SalesDoc d) {
+        // the order date entered on the order (not the day it was made or confirmed)
+        LocalDate on = d.getDocDate();
+        SalesDoc invoice = salesDocs.fromQuotation(d.getId()).stream().findFirst().orElse(null);
+        return new OrderLineView(d.getId(), d.getNumber(), on, java.time.YearMonth.from(on).toString(), d.getTaxable(), d.getTotal(),
+                d.getCustomer().getName(), d.getProject() == null ? null : d.getProject().getCode(),
+                invoice == null ? null : invoice.getId(), invoice == null ? null : (invoice.getNumber() == null ? "(draft)" : invoice.getNumber()),
+                invoice == null ? null : invoice.getStatus().name());
     }
 
     // ---- achievements ----
@@ -611,7 +653,16 @@ public class PerformanceService {
         List<PerformanceRequests.TaskBody> tasks = body.getTasks() == null ? List.of() : body.getTasks();
         GoalType type = body.getType() == null ? GoalType.GENERAL : body.getType();
         boolean sales = type == GoalType.SALES;
-        if (g.getId() != null && type != (g.isSales() ? GoalType.SALES : GoalType.GENERAL) && !g.getSalesEntries().isEmpty()) {
+        boolean orders = type == GoalType.SALES_ORDER;
+        if (orders) {
+            if (body.getTargetAmount() == null) {
+                throw ApiException.badRequest("Give the goal's target amount");
+            }
+            if (!tasks.isEmpty()) {
+                throw ApiException.badRequest("A sales-order goal has no sub-tasks: each confirmed order is a line of it");
+            }
+        }
+        if (g.getId() != null && type != GoalType.SALES && !g.getSalesEntries().isEmpty()) {
             throw ApiException.conflict("Achievements are recorded against this goal; it stays a sales goal");
         }
         // sales: a target amount, split over the sub-tasks (their weights follow their targets)
@@ -667,7 +718,7 @@ public class PerformanceService {
 
         g.setTitle(body.getTitle().strip());
         g.setType(type);
-        g.setTargetAmount(sales ? body.getTargetAmount().setScale(2, java.math.RoundingMode.HALF_UP) : null);
+        g.setTargetAmount(sales || orders ? body.getTargetAmount().setScale(2, java.math.RoundingMode.HALF_UP) : null);
         g.setDescription(blankToNull(body.getDescription()));
         g.setWeightage(body.getWeightage());
         g.setStartDate(body.getStartDate());
@@ -698,29 +749,35 @@ public class PerformanceService {
     }
 
     private GoalView view(Goal g, Rights rights, LocalDate today) {
+        readOrders(g);
         boolean ended = !today.isBefore(g.getEndDate());
         boolean sales = g.isSales();
+        boolean orders = g.isOrders();
         List<TaskView> tasks = g.getTasks().stream().map(t -> !sales ? TaskView.of(t)
                 : new TaskView(t.getId(), t.getTitle(), t.getWeightage(), t.getStartDate(), t.getEndDate(),
                 (int) Math.min(100, Math.round(ratio(achieved(g, t), t.getTargetAmount()) * 100)), t.getTargetAmount(), achieved(g, t))).toList();
-        BigDecimal achieved = sales ? achieved(g) : null;
+        BigDecimal achieved = sales ? achieved(g) : orders ? ordered(g) : null;
         return new GoalView(g.getId(), g.getTitle(), g.getDescription(), g.getWeightage(), g.getStartDate(), g.getEndDate(),
                 one(progressOf(g)), tasks, g.getSelfRating(), g.getSelfComment(),
                 g.getSelfRatedAt(), g.getManagerRating(), g.getManagerComment(),
                 g.getManagerRatedBy() == null ? null : g.getManagerRatedBy().getName(), g.getManagerRatedAt(),
-                !sales && rights.self() && ended && g.getManagerRating() == null,
+                !sales && !orders && rights.self() && ended && g.getManagerRating() == null,
                 rights.manager() && selfDone(g, today),
                 rights.admin() || (rights.manager() && g.getManagerRating() == null),
-                sales ? GoalType.SALES : GoalType.GENERAL, g.getTargetAmount(), achieved,
-                sales ? one(ratio(achieved, g.getTargetAmount()) * 100) : null,
+                sales ? GoalType.SALES : orders ? GoalType.SALES_ORDER : GoalType.GENERAL, g.getTargetAmount(), achieved,
+                sales || orders ? one(ratio(achieved, g.getTargetAmount()) * 100) : null,
                 sales ? g.getSalesEntries().stream().map(SalesEntryView::of).toList() : List.of(),
-                sales && rights.self() && g.getManagerRating() == null);
+                sales && rights.self() && g.getManagerRating() == null,
+                orders ? g.getOrders().stream().map(this::orderLine).toList() : List.of());
     }
 
     /** % done: achieved / target for a sales goal (at most 100); else weighted sub-tasks, or the goal's own %. */
     private static double progressOf(Goal g) {
         if (g.isSales()) {
             return Math.min(100, ratio(achieved(g), g.getTargetAmount()) * 100);
+        }
+        if (g.isOrders()) {
+            return Math.min(100, ratio(ordered(g), g.getTargetAmount()) * 100);
         }
         if (g.getTasks().isEmpty()) {
             return g.getProgress();

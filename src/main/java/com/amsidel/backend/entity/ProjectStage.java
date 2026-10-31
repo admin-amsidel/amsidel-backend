@@ -24,6 +24,8 @@ public class ProjectStage {
 
     public static final String QUEUED = "QUEUED";
     public static final String STARTED = "IN_PROGRESS";
+    /** Set when a sales order of the project is confirmed. */
+    public static final String CONFIRMED = "CONFIRMED";
     public static final String COMPLETED = "COMPLETED";
     public static final String CANCELLED = "CANCELLED";
 

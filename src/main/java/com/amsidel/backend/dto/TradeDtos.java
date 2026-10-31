@@ -541,7 +541,7 @@ public final class TradeDtos {
                             Instant createdAt, Instant issuedAt, String issuedByName, Instant cancelledAt,
                             String cancelReason, boolean editable, String createdByDesignation, String updatedByName,
                             Instant updatedAt, List<HistoryView> history, Long projectId, String projectCode, String projectName,
-                            boolean canDelete) {
+                            boolean canDelete, SalesDocKind sourceKind, SalesDocKind madeKind) {
     }
 
     public record SalesRow(Long id, SalesDocKind kind, String number, SalesDocStatus status, String payStatus,

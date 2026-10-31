@@ -26,6 +26,8 @@ public class TradeNumbers {
 
     public static final String SALE = "SLD";
     public static final String QUOTATION = "QTN";
+    /** Sales orders: DWSOR-102026-001. */
+    public static final String ORDER = "SOR";
     public static final String PURCHASE = "PUR";
 
     private final DocSequenceRepository sequences;

@@ -7,6 +7,7 @@ package com.amsidel.backend.entity;
 /** What a history entry is about. */
 public enum TradeSubject {
     QUOTATION,
+    SALES_ORDER,
     INVOICE,
     PURCHASE,
     ITEM,

@@ -44,4 +44,14 @@ public interface SalesDocRepository extends JpaRepository<SalesDoc, Long> {
             + " where (:brandId is null or b.id = :brandId) and d.kind = 'INVOICE' and d.status <> 'CANCELLED'"
             + " and d.status <> 'DRAFT'")
     List<SalesDoc> openInvoices(@Param("brandId") Long brandId);
+
+    /**
+     * Confirmed (not cancelled) sales orders whose order date is in this period, on projects this person is an
+     * allocated employee of, oldest first: the credit goes to the project's allocated employees, whoever made or
+     * confirmed the order.
+     */
+    @Query("select distinct d from SalesDoc d join fetch d.customer join fetch d.project p join p.members m"
+            + " where d.kind = com.amsidel.backend.entity.SalesDocKind.SALES_ORDER and d.status = com.amsidel.backend.entity.SalesDocStatus.ISSUED"
+            + " and m.id = :employeeId and d.docDate between :from and :to order by d.docDate, d.id")
+    List<SalesDoc> confirmedOrdersFor(@Param("employeeId") Long employeeId, @Param("from") LocalDate from, @Param("to") LocalDate to);
 }

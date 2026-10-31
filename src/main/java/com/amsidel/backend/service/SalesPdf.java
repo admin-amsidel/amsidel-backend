@@ -74,7 +74,7 @@ public class SalesPdf {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         Document doc = new Document(PageSize.A4, 32, 32, 30, 36);
         PdfWriter writer = PdfWriter.getInstance(doc, out);
-        String title = invoice ? "TAX INVOICE" : "QUOTATION";
+        String title = invoice ? "TAX INVOICE" : d.kind() == SalesDocKind.SALES_ORDER ? "SALES ORDER" : "QUOTATION";
         doc.addTitle(title + " " + number(d));
         doc.addAuthor(d.company().name());
         doc.open();
@@ -99,7 +99,7 @@ public class SalesPdf {
             doc.add(para(d.terms(), regular, 7.5f, INK));
         }
         doc.add(spaced(signature(d), 22, 0));
-        doc.add(spaced(para("System-generated " + (invoice ? "invoice" : "quotation") + " from the " + d.company().name()
+        doc.add(spaced(para("System-generated " + (invoice ? "invoice" : d.kind() == SalesDocKind.SALES_ORDER ? "sales order" : "quotation") + " from the " + d.company().name()
                 + " company portal.", regular, 7, MUTED), 10, 0));
         doc.close();
         return out.toByteArray();
@@ -156,7 +156,7 @@ public class SalesPdf {
         PdfPTable t = table(new float[]{55, 45});
         PartyRef c = d.customer();
         PdfPCell to = softBox();
-        to.addElement(para(d.kind() == SalesDocKind.INVOICE ? "BILL TO" : "QUOTATION FOR", regular, 6.5f, MUTED));
+        to.addElement(para(d.kind() == SalesDocKind.INVOICE ? "BILL TO" : d.kind() == SalesDocKind.SALES_ORDER ? "ORDER FOR" : "QUOTATION FOR", regular, 6.5f, MUTED));
         to.addElement(para(c.name(), bold, 10, INK));
         to.addElement(para(join("  ·  ", c.code(), c.phone(), c.email()), regular, 7.5f, MUTED));
         if (c.address() != null) {
@@ -167,7 +167,7 @@ public class SalesPdf {
         }
         t.addCell(to);
         PdfPCell info = softBox();
-        info.addElement(kv(d.kind() == SalesDocKind.INVOICE ? "Invoice no." : "Quotation no.", number(d)));
+        info.addElement(kv(d.kind() == SalesDocKind.INVOICE ? "Invoice no." : d.kind() == SalesDocKind.SALES_ORDER ? "Order no." : "Quotation no.", number(d)));
         info.addElement(kv("Date", DATE.format(d.docDate())));
         if (d.validUntil() != null) {
             info.addElement(kv("Valid until", DATE.format(d.validUntil())));
@@ -257,7 +257,7 @@ public class SalesPdf {
         PdfPCell totalLabel = cell(Rectangle.NO_BORDER);
         totalLabel.setBackgroundColor(BLUE);
         totalLabel.setPadding(9);
-        totalLabel.setPhrase(new Phrase(d.kind() == SalesDocKind.INVOICE ? "TOTAL" : "QUOTED TOTAL", new Font(bold, 10, Font.NORMAL, Color.WHITE)));
+        totalLabel.setPhrase(new Phrase(d.kind() == SalesDocKind.INVOICE ? "TOTAL" : d.kind() == SalesDocKind.SALES_ORDER ? "ORDER TOTAL" : "QUOTED TOTAL", new Font(bold, 10, Font.NORMAL, Color.WHITE)));
         s.addCell(totalLabel);
         PdfPCell totalValue = cell(Rectangle.NO_BORDER);
         totalValue.setBackgroundColor(BLUE);

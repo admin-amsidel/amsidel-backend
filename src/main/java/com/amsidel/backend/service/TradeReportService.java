@@ -278,7 +278,8 @@ public class TradeReportService {
                            BigDecimal receivedThisMonth, BigDecimal paidOutThisMonth, BigDecimal receivable, BigDecimal payable,
                            BigDecimal stockValue, int items, int lowStock, int outOfStock, int openQuotations,
                            List<ItemView> lowItems, List<SalesRow> recentInvoices, List<SalesRow> openQuotationList,
-                           List<MonthBar> months, List<Group> topSuppliers, List<Group> topItems) {
+                           List<MonthBar> months, List<Group> topSuppliers, List<Group> topItems,
+                           BigDecimal ordersThisMonth, int ordersConfirmedThisMonth, int openOrders) {
     }
 
     @Transactional(readOnly = true)
@@ -307,6 +308,11 @@ public class TradeReportService {
                 .sorted(Comparator.comparing(ItemView::onHand)).limit(8).toList();
         List<SalesDoc> quotes = salesRepository.list(scope, SalesDocKind.QUOTATION, today.minusMonths(6), today.plusYears(1)).stream()
                 .filter(d -> d.getStatus() == SalesDocStatus.DRAFT || d.getStatus() == SalesDocStatus.SENT).toList();
+        // sales orders: confirmed ones with this month's order date, and drafts still to confirm
+        List<SalesDoc> orders = salesRepository.list(scope, SalesDocKind.SALES_ORDER, today.minusMonths(6), today.plusYears(1));
+        List<SalesDoc> confirmedNow = orders.stream().filter(d -> d.getStatus() == SalesDocStatus.ISSUED
+                && YearMonth.from(d.getDocDate()).equals(now)).toList();
+        int openOrders = (int) orders.stream().filter(d -> d.getStatus() == SalesDocStatus.DRAFT).count();
         OwedReport owed = owed(me, brandId);
         List<SalesRow> recent = salesRepository.list(scope, SalesDocKind.INVOICE, today.minusMonths(3), today.plusYears(1)).stream()
                 .limit(6).map(SalesService::row).toList();
@@ -325,7 +331,8 @@ public class TradeReportService {
                 groups(plines, l -> String.valueOf(l.supplierId()), PurchaseLine::supplierName, PurchaseLine::billId,
                         PurchaseLine::quantity, PurchaseLine::amount, none).stream().limit(6).toList(),
                 groups(plines, PurchaseLine::itemCode, l -> l.itemCode() + " · " + l.itemName(), PurchaseLine::billId,
-                        PurchaseLine::quantity, PurchaseLine::amount, none).stream().limit(8).toList());
+                        PurchaseLine::quantity, PurchaseLine::amount, none).stream().limit(8).toList(),
+                sum(confirmedNow, SalesDoc::getTotal), confirmedNow.size(), openOrders);
     }
 
     // ---- Excel ----

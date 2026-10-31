@@ -75,7 +75,7 @@ public class ReceiptPdf {
         Document doc = new Document(new Rectangle(w, pageHeight), k.side, k.side, k.top, k.bottom);
         PdfWriter writer = PdfWriter.getInstance(doc, out);
         boolean invoice = d.kind() == SalesDocKind.INVOICE;
-        String title = invoice ? "TAX INVOICE" : "QUOTATION";
+        String title = invoice ? "TAX INVOICE" : d.kind() == SalesDocKind.SALES_ORDER ? "SALES ORDER" : "QUOTATION";
         doc.addTitle(title + " " + number(d));
         doc.addAuthor(d.company().name());
         doc.open();
@@ -90,7 +90,7 @@ public class ReceiptPdf {
             doc.add(left("Valid until " + DATE.format(d.validUntil()), regular, k.small, MUTED));
         }
         PartyRef c = d.customer();
-        doc.add(left((invoice ? "Bill to: " : "For: ") + c.name(), bold, k.body, INK));
+        doc.add(left((invoice ? "Bill to: " : d.kind() == SalesDocKind.SALES_ORDER ? "Order for: " : "For: ") + c.name(), bold, k.body, INK));
         String contact = join(" · ", c.phone(), c.gstNumber() == null ? null : "GSTIN " + c.gstNumber());
         if (!contact.isEmpty()) {
             doc.add(left(contact, regular, k.small, MUTED));
@@ -113,7 +113,7 @@ public class ReceiptPdf {
             doc.add(spaced(left("Terms: " + d.terms(), regular, k.small - 0.5f, MUTED), 3));
         }
         doc.add(rule());
-        doc.add(center(invoice ? "Thank you! Please visit again." : "Thank you for your interest.", bold, k.body));
+        doc.add(center(invoice ? "Thank you! Please visit again." : d.kind() == SalesDocKind.SALES_ORDER ? "Thank you for your order." : "Thank you for your interest.", bold, k.body));
         used[0] = pageHeight - writer.getVerticalPosition(true) + k.bottom;
         doc.close();
         return out.toByteArray();
@@ -202,7 +202,7 @@ public class ReceiptPdf {
         if (m.roundOff().signum() != 0) {
             row(t, "Round off", (m.roundOff().signum() > 0 ? "+ " : "- ") + money(d, m.roundOff().abs()), k);
         }
-        PdfPCell label = cell(d.kind() == SalesDocKind.INVOICE ? "TOTAL" : "QUOTED TOTAL", bold, k.body + 2, Element.ALIGN_LEFT);
+        PdfPCell label = cell(d.kind() == SalesDocKind.INVOICE ? "TOTAL" : d.kind() == SalesDocKind.SALES_ORDER ? "ORDER TOTAL" : "QUOTED TOTAL", bold, k.body + 2, Element.ALIGN_LEFT);
         PdfPCell value = cell(money(d, m.total()), bold, k.body + 2, Element.ALIGN_RIGHT);
         for (PdfPCell c : new PdfPCell[]{label, value}) {
             c.setBorder(Rectangle.TOP | Rectangle.BOTTOM);

@@ -61,6 +61,14 @@ public final class PerformanceViews {
         }
     }
 
+    /**
+     * One confirmed sales order counted in a sales-order goal: its order date (confirmedOn), its value before GST (what counts)
+     * and with GST, the customer and project, and the invoice made from it (if any).
+     */
+    public record OrderLineView(Long id, String number, LocalDate confirmedOn, String month, BigDecimal amount, BigDecimal total,
+                                String customerName, String projectCode, Long invoiceId, String invoiceNumber, String invoiceStatus) {
+    }
+
     /** One record of what was achieved towards a sales goal. */
     public record SalesEntryView(Long id, Long taskId, String taskTitle, BigDecimal amount, LocalDate fromDate, LocalDate toDate,
                                  List<String> invoiceNumbers, String description, Instant createdAt) {
@@ -84,7 +92,7 @@ public final class PerformanceViews {
                            Instant selfRatedAt, BigDecimal managerRating, String managerComment, String managerRatedBy,
                            Instant managerRatedAt, boolean canSelfRate, boolean canManagerRate, boolean canEdit,
                            GoalType type, BigDecimal targetAmount, BigDecimal achievedAmount, BigDecimal achievedPercent,
-                           List<SalesEntryView> salesEntries, boolean canRecord) {
+                           List<SalesEntryView> salesEntries, boolean canRecord, List<OrderLineView> orders) {
     }
 
     public record AchievementView(Long id, String title, String category, LocalDate achievedOn, String details,

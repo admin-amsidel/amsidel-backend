@@ -155,7 +155,8 @@ public class PartyService {
         Long scope = access.scope(me, brandId);
         Map<Long, List<SalesDoc>> docs = java.util.stream.Stream.concat(
                         salesRepository.list(scope, SalesDocKind.INVOICE, EVER_FROM, EVER_TO).stream(),
-                        salesRepository.list(scope, SalesDocKind.QUOTATION, EVER_FROM, EVER_TO).stream())
+                        java.util.stream.Stream.concat(salesRepository.list(scope, SalesDocKind.QUOTATION, EVER_FROM, EVER_TO).stream(),
+                                salesRepository.list(scope, SalesDocKind.SALES_ORDER, EVER_FROM, EVER_TO).stream()))
                 .collect(Collectors.groupingBy(d -> d.getCustomer().getId()));
         return customerRepository.forBrand(scope).stream()
                 .map(c -> view(c, docs.getOrDefault(c.getId(), List.of()))).toList();

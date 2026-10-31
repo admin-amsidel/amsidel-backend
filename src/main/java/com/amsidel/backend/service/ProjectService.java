@@ -135,6 +135,24 @@ public class ProjectService {
         return view(me, p);
     }
 
+    /**
+     * A sales order of the project was confirmed: the project moves to Confirmed. Only forward: a project already
+     * further along (started, completed) or cancelled stays as it is.
+     */
+    @Transactional
+    public void confirmedByOrder(AuthUser me, Project p, String orderNumber) {
+        ProjectStage confirmed = stages.find(ProjectStage.CONFIRMED);
+        ProjectStage now = stages.find(p.getStatus());
+        if (confirmed == null || p.isSettled() || (now != null && (!now.isOpen() || now.getSortOrder() >= confirmed.getSortOrder()))) {
+            return;
+        }
+        String before = p.getStatus();
+        status(p, confirmed.getCode());
+        p.setUpdatedBy(access.me(me));
+        projectRepository.saveAndFlush(p);
+        log(me, p, "STATUS", stages.name(before) + " → " + confirmed.getName() + " (sales order " + orderNumber + " confirmed)");
+    }
+
     /** Closed with the money done: locked for everyone but owners and admins (who may settle with money still due). */
     @Transactional
     public ProjectView settle(AuthUser me, Long id, String note) {
@@ -409,7 +427,7 @@ public class ProjectService {
         if (d == null) {
             return null;
         }
-        return (d.getKind() == SalesDocKind.INVOICE ? "Invoice " : "Quotation ") + (d.getNumber() == null ? "(draft)" : d.getNumber());
+        return SalesService.kindName(d.getKind()) + " " + (d.getNumber() == null ? "(draft)" : d.getNumber());
     }
 
     private static String team(Project p) {
@@ -429,11 +447,16 @@ public class ProjectService {
         return v == null ? null : v.setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
-    /** See ProjectMoney: the quoted figure is the accepted quotations, else the latest one not rejected. */
+    /**
+     * See ProjectMoney: the quoted figure is the confirmed sales orders, else the accepted quotations, else the latest
+     * quotation not rejected.
+     */
     static ProjectMoney money(Project p, List<SalesDoc> docs) {
         List<SalesDoc> quotes = docs.stream().filter(d -> d.getKind() == SalesDocKind.QUOTATION && d.getStatus() != SalesDocStatus.REJECTED).toList();
         List<SalesDoc> accepted = quotes.stream().filter(d -> d.getStatus() == SalesDocStatus.ACCEPTED).toList();
-        BigDecimal quoted = !accepted.isEmpty() ? PartyService.sum(accepted.stream().map(SalesDoc::getTotal).toList())
+        List<SalesDoc> orders = docs.stream().filter(d -> d.getKind() == SalesDocKind.SALES_ORDER && d.getStatus() == SalesDocStatus.ISSUED).toList();
+        BigDecimal quoted = !orders.isEmpty() ? PartyService.sum(orders.stream().map(SalesDoc::getTotal).toList())
+                : !accepted.isEmpty() ? PartyService.sum(accepted.stream().map(SalesDoc::getTotal).toList())
                 : quotes.isEmpty() ? BigDecimal.ZERO.setScale(2) : quotes.getLast().getTotal();
         List<SalesDoc> invoices = docs.stream().filter(d -> d.getKind() == SalesDocKind.INVOICE && d.getStatus() != SalesDocStatus.CANCELLED).toList();
         BigDecimal billed = PartyService.sum(invoices.stream().filter(d -> d.getStatus() == SalesDocStatus.ISSUED).map(SalesDoc::getTotal).toList());

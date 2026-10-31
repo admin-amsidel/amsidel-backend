@@ -81,6 +81,15 @@ public class Goal {
         return type == GoalType.SALES;
     }
 
+    /** Reached by the person's confirmed sales orders (worked out when read, never typed in). */
+    public boolean isOrders() {
+        return type == GoalType.SALES_ORDER;
+    }
+
+    /** Sales-order goals: the confirmed orders counted, filled in when the goal is read (not stored). */
+    @Transient
+    private List<SalesDoc> orders = List.of();
+
     /** 0.5-5 in half stars. */
     @Column(name = "self_rating", precision = 3, scale = 1)
     private java.math.BigDecimal selfRating;

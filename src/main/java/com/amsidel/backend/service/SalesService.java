@@ -28,8 +28,10 @@ import java.util.List;
 import static com.amsidel.backend.service.CatalogService.blank;
 
 /**
- * Quotations and invoices. A quotation gets its number (DWQTN-…) when it is made and can be changed until it is
- * accepted or rejected; "make invoice" copies it into a draft invoice. A draft invoice can be changed and can take
+ * Quotations, sales orders and invoices. A quotation gets its number (DWQTN-…) when it is made and can be changed until it is
+ * accepted or rejected; "make sales order" or "make invoice" copies it on. A sales order (DWSOR-…) is the customer's
+ * confirmed order, items removed or changed from the quotation: a draft can be changed; confirming it (issue) fixes
+ * it and moves its project to Confirmed; "make invoice" copies it into a draft invoice; no stock moves until then. A draft invoice can be changed and can take
  * advance payments; issuing it gives it its number (DWSLD-…) and takes its items out of stock (refused when not
  * enough). An issued invoice is never changed: it is cancelled (stock back, after any payments are refunded).
  */
@@ -47,6 +49,7 @@ public class SalesService {
     private final TradeAccess access;
     private final TradeHistoryLog history;
     private final com.amsidel.backend.repository.ProjectRepository projectRepository;
+    private final ProjectService projects;
 
     // ---- reading ----
 
@@ -71,13 +74,14 @@ public class SalesService {
 
     /** Whether I may delete it: owners and admins, and only what can be deleted at all. */
     private SalesView withDelete(AuthUser me, SalesView v) {
-        boolean deletable = (v.kind() == SalesDocKind.INVOICE ? v.status() == SalesDocStatus.DRAFT : v.invoiceId() == null)
+        boolean deletable = (v.kind() == SalesDocKind.INVOICE ? v.status() == SalesDocStatus.DRAFT
+                : v.kind() == SalesDocKind.SALES_ORDER ? v.status() == SalesDocStatus.DRAFT && v.invoiceId() == null : v.invoiceId() == null)
                 && v.payments().isEmpty();
         return new SalesView(v.id(), v.kind(), v.number(), v.status(), v.payStatus(), v.company(), v.customer(), v.docDate(), v.validUntil(),
                 v.quotationId(), v.quotationNumber(), v.invoiceId(), v.invoiceNumber(), v.lines(), v.totals(), v.costTotal(), v.margin(),
                 v.remarks(), v.terms(), v.payments(), v.createdByName(), v.createdAt(), v.issuedAt(), v.issuedByName(), v.cancelledAt(),
                 v.cancelReason(), v.editable(), v.createdByDesignation(), v.updatedByName(), v.updatedAt(), v.history(), v.projectId(),
-                v.projectCode(), v.projectName(), deletable && access.admin(me));
+                v.projectCode(), v.projectName(), deletable && access.admin(me), v.sourceKind(), v.madeKind());
     }
 
     // ---- writing ----
@@ -94,6 +98,8 @@ public class SalesService {
         fill(me, d, body);
         if (d.getKind() == SalesDocKind.QUOTATION) {
             d.setNumber(numbers.next(d.getBrand(), TradeNumbers.QUOTATION, d.getDocDate()));
+        } else if (d.getKind() == SalesDocKind.SALES_ORDER) {
+            d.setNumber(numbers.next(d.getBrand(), TradeNumbers.ORDER, d.getDocDate()));
         }
         docRepository.saveAndFlush(d);
         log(me, d, "CREATED", "For " + d.getCustomer().getName() + ": " + d.getLines().size() + " line" + (d.getLines().size() == 1 ? "" : "s")
@@ -108,10 +114,11 @@ public class SalesService {
         if (!editable(d)) {
             throw ApiException.conflict(d.getKind() == SalesDocKind.INVOICE
                     ? "An issued invoice cannot be changed; cancel it and make a new one"
+                    : d.getKind() == SalesDocKind.SALES_ORDER ? "A confirmed sales order cannot be changed; cancel it and make a new one"
                     : "This quotation is " + d.getStatus().name().toLowerCase() + "; it cannot be changed");
         }
         if (body.getKind() != d.getKind()) {
-            throw ApiException.badRequest("A quotation stays a quotation; use \"Make invoice\"");
+            throw ApiException.badRequest("A " + kindName(d.getKind()).toLowerCase() + " stays one; use \"Make sales order\" or \"Make invoice\"");
         }
         String linesBefore = linesText(d);
         BigDecimal totalBefore = d.getTotal();
@@ -157,23 +164,40 @@ public class SalesService {
         return withDelete(me, view(d));
     }
 
-    /** A draft invoice from a quotation (which becomes accepted). */
+    /** A draft invoice from a quotation (which becomes accepted) or from a confirmed sales order. */
     @Transactional
-    public SalesView makeInvoice(AuthUser me, Long quotationId) {
-        SalesDoc q = full(me, quotationId);
-        if (q.getKind() != SalesDocKind.QUOTATION) {
-            throw ApiException.badRequest("Only a quotation can be made into an invoice");
+    public SalesView makeInvoice(AuthUser me, Long sourceId) {
+        return copy(me, sourceId, SalesDocKind.INVOICE);
+    }
+
+    /** A draft sales order from a quotation (which becomes accepted): items can then be removed or changed. */
+    @Transactional
+    public SalesView makeOrder(AuthUser me, Long quotationId) {
+        return copy(me, quotationId, SalesDocKind.SALES_ORDER);
+    }
+
+    private SalesView copy(AuthUser me, Long sourceId, SalesDocKind into) {
+        SalesDoc q = full(me, sourceId);
+        boolean fromOrder = q.getKind() == SalesDocKind.SALES_ORDER;
+        if (into == SalesDocKind.SALES_ORDER ? q.getKind() != SalesDocKind.QUOTATION : q.getKind() == SalesDocKind.INVOICE) {
+            throw ApiException.badRequest(into == SalesDocKind.SALES_ORDER ? "Only a quotation can be made into a sales order"
+                    : "Only a quotation or a sales order can be made into an invoice");
         }
-        canWrite(me, SalesDocKind.INVOICE);
-        List<SalesDoc> made = docRepository.fromQuotation(quotationId);
+        canWrite(me, into);
+        List<SalesDoc> made = docRepository.fromQuotation(sourceId);
         if (!made.isEmpty()) {
-            throw ApiException.conflict("Invoice " + label(made.getFirst()) + " was already made from this quotation");
+            throw ApiException.conflict(kindName(made.getFirst().getKind()) + " " + label(made.getFirst()) + " was already made from this "
+                    + kindName(q.getKind()).toLowerCase());
         }
         if (q.getStatus() == SalesDocStatus.REJECTED) {
             throw ApiException.conflict("This quotation was rejected");
         }
+        if (fromOrder && q.getStatus() != SalesDocStatus.ISSUED) {
+            throw ApiException.conflict(q.getStatus() == SalesDocStatus.CANCELLED ? "This sales order is cancelled"
+                    : "Confirm the sales order first, then make the invoice");
+        }
         SalesDoc d = new SalesDoc();
-        d.setKind(SalesDocKind.INVOICE);
+        d.setKind(into);
         d.setBrand(q.getBrand());
         d.setStatus(SalesDocStatus.DRAFT);
         d.setCustomer(q.getCustomer());
@@ -209,18 +233,29 @@ public class SalesService {
         d.setTerms(q.getTerms());
         totals(d);
         d.setUpdatedBy(access.me(me));
-        q.setStatus(SalesDocStatus.ACCEPTED);
+        if (into == SalesDocKind.SALES_ORDER) {
+            d.setNumber(numbers.next(d.getBrand(), TradeNumbers.ORDER, d.getDocDate()));
+        }
+        if (!fromOrder) {
+            q.setStatus(SalesDocStatus.ACCEPTED);
+        }
         q.setUpdatedBy(access.me(me));
         docRepository.saveAndFlush(d);
-        log(me, q, "INVOICED", "Accepted; made into a draft invoice (total " + PayslipPdf.rupees(d.getTotal()) + ")");
-        log(me, d, "CREATED", "From quotation " + q.getNumber() + " for " + d.getCustomer().getName() + ", total " + PayslipPdf.rupees(d.getTotal()));
+        String made2 = into == SalesDocKind.SALES_ORDER ? "sales order " + d.getNumber() : "draft invoice";
+        log(me, q, into == SalesDocKind.SALES_ORDER ? "ORDERED" : "INVOICED",
+                (fromOrder ? "Made" : "Accepted; made") + " into a " + made2 + " (total " + PayslipPdf.rupees(d.getTotal()) + ")");
+        log(me, d, "CREATED", "From " + kindName(q.getKind()).toLowerCase() + " " + q.getNumber() + " for " + d.getCustomer().getName()
+                + ", total " + PayslipPdf.rupees(d.getTotal()));
         return withDelete(me, view(d));
     }
 
-    /** Gives the invoice its number and takes its items out of stock. */
+    /** Gives the invoice its number and takes its items out of stock; a sales order is confirmed (see confirm). */
     @Transactional
     public SalesView issue(AuthUser me, Long id) {
         SalesDoc d = full(me, id);
+        if (d.getKind() == SalesDocKind.SALES_ORDER) {
+            return confirm(me, d);
+        }
         canWrite(me, SalesDocKind.INVOICE);
         if (d.getKind() != SalesDocKind.INVOICE || d.getStatus() != SalesDocStatus.DRAFT) {
             throw ApiException.conflict("Only a draft invoice can be issued");
@@ -243,10 +278,47 @@ public class SalesService {
         return withDelete(me, view(d));
     }
 
-    /** An issued invoice: its items go back to stock. Payments must be refunded first. */
+    /** The customer confirmed the order: it is fixed (no more changes) and its project moves to Confirmed. No stock moves. */
+    private SalesView confirm(AuthUser me, SalesDoc d) {
+        canWrite(me, SalesDocKind.SALES_ORDER);
+        if (d.getStatus() != SalesDocStatus.DRAFT) {
+            throw ApiException.conflict("Only a draft sales order can be confirmed");
+        }
+        d.setStatus(SalesDocStatus.ISSUED);
+        d.setIssuedAt(Instant.now());
+        d.setIssuedBy(access.me(me));
+        d.setUpdatedBy(access.me(me));
+        docRepository.saveAndFlush(d);
+        log(me, d, "CONFIRMED", "Order confirmed, total " + PayslipPdf.rupees(d.getTotal())
+                + (d.getProject() == null ? "" : "; project " + d.getProject().getCode() + " confirmed"));
+        if (d.getProject() != null) {
+            projects.confirmedByOrder(me, d.getProject(), d.getNumber());
+        }
+        return withDelete(me, view(d));
+    }
+
+    /** An issued invoice: its items go back to stock. Payments must be refunded first. A confirmed sales order: called off. */
     @Transactional
     public SalesView cancel(AuthUser me, Long id, String reason) {
         SalesDoc d = full(me, id);
+        if (d.getKind() == SalesDocKind.SALES_ORDER) {
+            canWrite(me, SalesDocKind.SALES_ORDER);
+            if (d.getStatus() != SalesDocStatus.ISSUED) {
+                throw ApiException.conflict(d.getStatus() == SalesDocStatus.DRAFT ? "A draft is deleted, not cancelled"
+                        : "This sales order is already cancelled");
+            }
+            List<SalesDoc> made = docRepository.fromQuotation(id);
+            if (!made.isEmpty()) {
+                throw ApiException.conflict("Invoice " + label(made.getFirst()) + " was made from this order; cancel or delete it first");
+            }
+            d.setStatus(SalesDocStatus.CANCELLED);
+            d.setCancelledAt(Instant.now());
+            d.setCancelReason(reason.strip());
+            d.setUpdatedBy(access.me(me));
+            docRepository.saveAndFlush(d);
+            log(me, d, "CANCELLED", reason.strip());
+            return withDelete(me, view(d));
+        }
         canWrite(me, SalesDocKind.INVOICE);
         if (d.getKind() != SalesDocKind.INVOICE || d.getStatus() != SalesDocStatus.ISSUED) {
             throw ApiException.conflict(d.getStatus() == SalesDocStatus.DRAFT ? "A draft is deleted, not cancelled"
@@ -282,8 +354,11 @@ public class SalesService {
         if (d.getKind() == SalesDocKind.INVOICE && d.getStatus() != SalesDocStatus.DRAFT) {
             throw ApiException.conflict("An issued invoice is cancelled, not deleted");
         }
-        if (d.getKind() == SalesDocKind.QUOTATION && !docRepository.fromQuotation(id).isEmpty()) {
-            throw ApiException.conflict("An invoice was made from this quotation");
+        if (d.getKind() == SalesDocKind.SALES_ORDER && d.getStatus() != SalesDocStatus.DRAFT) {
+            throw ApiException.conflict("A confirmed sales order is cancelled, not deleted");
+        }
+        if (d.getKind() != SalesDocKind.INVOICE && !docRepository.fromQuotation(id).isEmpty()) {
+            throw ApiException.conflict("A sales order or invoice was made from this " + kindName(d.getKind()).toLowerCase());
         }
         if (!paymentRepository.forInvoice(id).isEmpty()) {
             throw ApiException.conflict("This invoice has payments; void or refund them, or keep it");
@@ -428,23 +503,46 @@ public class SalesService {
     }
 
     private void canRead(AuthUser me, SalesDocKind kind) {
-        access.require(me, "You cannot see " + (kind == SalesDocKind.INVOICE ? "invoices" : "quotations"),
-                kind == SalesDocKind.INVOICE ? Menus.PROD_INVOICES : Menus.PROD_QUOTES, Menus.PROD_CUSTOMERS, Menus.PROD_REPORTS);
+        access.require(me, "You cannot see " + plural(kind), menuOf(kind), Menus.PROD_CUSTOMERS, Menus.PROD_REPORTS);
     }
 
     private void canWrite(AuthUser me, SalesDocKind kind) {
-        access.require(me, "You cannot change " + (kind == SalesDocKind.INVOICE ? "invoices" : "quotations"),
-                kind == SalesDocKind.INVOICE ? Menus.PROD_INVOICES : Menus.PROD_QUOTES);
+        access.require(me, "You cannot change " + plural(kind), menuOf(kind));
+    }
+
+    private static String menuOf(SalesDocKind kind) {
+        return switch (kind) {
+            case QUOTATION -> Menus.PROD_QUOTES;
+            case SALES_ORDER -> Menus.PROD_ORDERS;
+            case INVOICE -> Menus.PROD_INVOICES;
+        };
+    }
+
+    /** "Quotation", "Sales order", "Invoice". */
+    static String kindName(SalesDocKind kind) {
+        return switch (kind) {
+            case QUOTATION -> "Quotation";
+            case SALES_ORDER -> "Sales order";
+            case INVOICE -> "Invoice";
+        };
+    }
+
+    private static String plural(SalesDocKind kind) {
+        return kindName(kind).toLowerCase() + "s";
     }
 
     private static boolean editable(SalesDoc d) {
-        return d.getKind() == SalesDocKind.INVOICE ? d.getStatus() == SalesDocStatus.DRAFT
-                : d.getStatus() == SalesDocStatus.DRAFT || d.getStatus() == SalesDocStatus.SENT;
+        return d.getKind() == SalesDocKind.QUOTATION ? d.getStatus() == SalesDocStatus.DRAFT || d.getStatus() == SalesDocStatus.SENT
+                : d.getStatus() == SalesDocStatus.DRAFT;
     }
 
     private void log(AuthUser me, SalesDoc d, String action, String details) {
-        history.record(me, d.getBrand(), d.getKind() == SalesDocKind.INVOICE ? TradeSubject.INVOICE : TradeSubject.QUOTATION, d.getId(),
-                (d.getKind() == SalesDocKind.INVOICE ? "Invoice " : "Quotation ") + label(d), action, details,
+        TradeSubject subject = switch (d.getKind()) {
+            case QUOTATION -> TradeSubject.QUOTATION;
+            case SALES_ORDER -> TradeSubject.SALES_ORDER;
+            case INVOICE -> TradeSubject.INVOICE;
+        };
+        history.record(me, d.getBrand(), subject, d.getId(), kindName(d.getKind()) + " " + label(d), action, details,
                 d.getProject() == null ? null : d.getProject().getId());
     }
 
@@ -464,7 +562,7 @@ public class SalesService {
     }
 
     static String payStatus(SalesDoc d) {
-        if (d.getKind() == SalesDocKind.QUOTATION || d.getStatus() == SalesDocStatus.CANCELLED) {
+        if (d.getKind() != SalesDocKind.INVOICE || d.getStatus() == SalesDocStatus.CANCELLED) {
             return null;
         }
         return d.getStatus() == SalesDocStatus.DRAFT && d.getPaid().signum() == 0 ? null
@@ -490,9 +588,10 @@ public class SalesService {
                     l.getTypeName(), l.getHsnCode(), l.getSize(), l.getDescription(), l.getUnit(), l.getQuantity(), l.getRate(),
                     l.getAmount(), l.getUnitCost(), below));
         }
-        SalesDoc invoice = d.getKind() == SalesDocKind.QUOTATION && d.getId() != null
+        // what was made from it (a quotation's sales order or invoice, an order's invoice)
+        SalesDoc invoice = d.getKind() != SalesDocKind.INVOICE && d.getId() != null
                 ? docRepository.fromQuotation(d.getId()).stream().findFirst().orElse(null) : null;
-        List<PaymentView> pays = d.getId() == null || d.getKind() == SalesDocKind.QUOTATION ? List.of()
+        List<PaymentView> pays = d.getId() == null || d.getKind() != SalesDocKind.INVOICE ? List.of()
                 : paymentRepository.forInvoice(d.getId()).stream().map(TradePayments::view).toList();
         BigDecimal margin = d.getSubtotal().subtract(d.getDiscount()).subtract(d.getCostTotal());
         return new SalesView(d.getId(), d.getKind(), d.getNumber(), d.getStatus(), payStatus(d), Company.of(d.getBrand()),
@@ -507,8 +606,9 @@ public class SalesService {
                 d.getIssuedBy() == null ? null : d.getIssuedBy().getName(), d.getCancelledAt(), d.getCancelReason(), editable(d),
                 d.getCreatedBy() == null || d.getCreatedBy().getDesignation() == null ? null : d.getCreatedBy().getDesignation().getName(),
                 d.getUpdatedBy() == null ? null : d.getUpdatedBy().getName(), d.getUpdatedAt(),
-                d.getId() == null ? List.of() : history.of(List.of(TradeSubject.QUOTATION, TradeSubject.INVOICE), d.getId()),
+                d.getId() == null ? List.of() : history.of(List.of(TradeSubject.QUOTATION, TradeSubject.SALES_ORDER, TradeSubject.INVOICE), d.getId()),
                 d.getProject() == null ? null : d.getProject().getId(), d.getProject() == null ? null : d.getProject().getCode(),
-                d.getProject() == null ? null : d.getProject().getName(), false);
+                d.getProject() == null ? null : d.getProject().getName(), false,
+                d.getQuotation() == null ? null : d.getQuotation().getKind(), invoice == null ? null : invoice.getKind());
     }
 }
