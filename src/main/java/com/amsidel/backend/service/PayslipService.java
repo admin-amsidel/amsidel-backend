@@ -54,6 +54,7 @@ public class PayslipService {
     private final EmployeeRepository employeeRepository;
     private final PayrollAccess access;
     private final PayrollService payrollService;
+    private final TeamAccess teamAccess;
 
     @Value("${app.leave.zone:Asia/Kolkata}")
     private String zone;
@@ -335,6 +336,52 @@ public class PayslipService {
             throw ApiException.conflict("A published payslip cannot be deleted; move it back to draft first");
         }
         payslipRepository.delete(p);
+    }
+
+    // ---- team pay: the people below me, as they see their own pay ----
+
+    /** One person Team pay can show. */
+    public record TeamPayPerson(Long id, String name, String empNumber, String designationName, Long brandId, String brandCode,
+                                String brandName) {
+    }
+
+    /**
+     * Everyone whose pay I may watch: the people reporting to me, directly or further down; for owners and admins
+     * everyone in their scope (TeamAccess). Not me (that is My pay).
+     */
+    @Transactional(readOnly = true)
+    public List<TeamPayPerson> teamPeople(AuthUser me) {
+        return teamAccess.team(me).stream()
+                .sorted(Comparator.comparing(Employee::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(e -> new TeamPayPerson(e.getId(), e.getName(), e.getEmpNumber(),
+                        e.getDesignation() == null ? null : e.getDesignation().getName(),
+                        e.getBrand() == null ? null : e.getBrand().getId(), e.getBrand() == null ? null : e.getBrand().getCode(),
+                        e.getBrand() == null ? null : e.getBrand().getName()))
+                .toList();
+    }
+
+    /** Their pay for the year, exactly as My pay shows it to them (published payslips only). */
+    @Transactional(readOnly = true)
+    public MyPay teamPay(AuthUser me, Long employeeId, Integer fy) {
+        return myPay(asThem(me, employeeId), fy);
+    }
+
+    @Transactional(readOnly = true)
+    public PayslipView teamPayslip(AuthUser me, Long employeeId, Long id) {
+        return myPayslip(asThem(me, employeeId), id);
+    }
+
+    /** The person, read as themselves, when they are below me (or in my scope). */
+    private AuthUser asThem(AuthUser me, Long employeeId) {
+        Employee e = employeeRepository.findWithBrandById(employeeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found: " + employeeId));
+        if (e.getId().equals(me.id())) {
+            throw ApiException.badRequest("Your own pay is under My pay");
+        }
+        if (!teamAccess.canView(me, e)) {
+            throw ApiException.forbidden("You can only see the pay of the people reporting to you");
+        }
+        return AuthUser.of(e);
     }
 
     // ---- the employee: own pay ----

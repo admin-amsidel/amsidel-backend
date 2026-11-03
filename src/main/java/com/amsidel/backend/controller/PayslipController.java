@@ -21,6 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -138,6 +139,33 @@ public class PayslipController {
     @GetMapping("/api/my-pay/payslips/{id}/pdf")
     public ResponseEntity<byte[]> myPayslipPdf(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
         return asPdf(service.myPayslip(me, id));
+    }
+
+    // ---- team pay (read-only) ----
+
+    @Checkpoint({Menus.TEAM_PAY})
+    @GetMapping("/api/team-pay/people")
+    public List<PayslipService.TeamPayPerson> teamPeople(@AuthenticationPrincipal AuthUser me) {
+        return service.teamPeople(me);
+    }
+
+    /** Their salary, published payslips and pay for the year, as they see it in My pay. */
+    @Checkpoint({Menus.TEAM_PAY})
+    @GetMapping("/api/team-pay/{employeeId}")
+    public MyPay teamPay(@AuthenticationPrincipal AuthUser me, @PathVariable Long employeeId, @RequestParam(required = false) Integer fy) {
+        return service.teamPay(me, employeeId, fy);
+    }
+
+    @Checkpoint({Menus.TEAM_PAY})
+    @GetMapping("/api/team-pay/{employeeId}/payslips/{id}")
+    public PayslipView teamPayslip(@AuthenticationPrincipal AuthUser me, @PathVariable Long employeeId, @PathVariable Long id) {
+        return service.teamPayslip(me, employeeId, id);
+    }
+
+    @Checkpoint({Menus.TEAM_PAY})
+    @GetMapping("/api/team-pay/{employeeId}/payslips/{id}/pdf")
+    public ResponseEntity<byte[]> teamPayslipPdf(@AuthenticationPrincipal AuthUser me, @PathVariable Long employeeId, @PathVariable Long id) {
+        return asPdf(service.teamPayslip(me, employeeId, id));
     }
 
     /** The brand's logo, or null for the default. */

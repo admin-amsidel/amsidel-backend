@@ -245,6 +245,35 @@ class PayrollTest {
                 "{\"effectiveFrom\":\"%s\",\"notes\":\"\",\"lines\":%s}".formatted(from, lines));
     }
 
+    @Test
+    void teamPayShowsThePeopleBelowMeAsTheySeeTheirPay() throws Exception {
+        String[] lead = employee("MANAGER", dw, "2025-04-01");
+        String other = employee("EMPLOYEE", dw, "2025-04-01")[0];
+        String report = String.valueOf((Object) JsonPath.read(body(json(post("/api/employees"), owner, """
+                {"name":"Team Report","userId":"pr.report%d","password":"ab@123","role":"EMPLOYEE","brandId":%d,"reportsToId":%s,
+                 "phone":"+91 98470 00000","joinedDate":"2025-04-01"}""".formatted(++seq, dw, lead[0])).andExpect(status().isCreated())), "$.id"));
+        json(put("/api/payroll/salaries/" + report + "?fy=2025"), owner,
+                "{\"effectiveFrom\":\"2025-04-01\",\"lines\":[%s]}".formatted(line("BASIC", "40000"))).andExpect(status().isOk());
+
+        // the Team pay menu is needed
+        mockMvc.perform(get("/api/team-pay/people").header("Authorization", auth(lead[1]))).andExpect(status().isForbidden());
+        json(put("/api/menu-access/EMPLOYEE/" + lead[0]), owner, "{\"checkpoints\":[\"7004\"]}").andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/team-pay/people").header("Authorization", auth(lead[1])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", hasItem(Integer.parseInt(report))))
+                .andExpect(jsonPath("$[*].id", not(hasItem(Integer.parseInt(other)))));
+        mockMvc.perform(get("/api/team-pay/" + report).param("fy", "2025").header("Authorization", auth(lead[1])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.salary.set").value(true))
+                .andExpect(jsonPath("$.salary.totals.monthlyGross").value(40000.0));
+        mockMvc.perform(get("/api/team-pay/" + other).header("Authorization", auth(lead[1]))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/team-pay/" + lead[0]).header("Authorization", auth(lead[1]))).andExpect(status().isBadRequest());
+        // the owner sees everyone
+        mockMvc.perform(get("/api/team-pay/people").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$[*].id", hasItems(Integer.parseInt(report), Integer.parseInt(other))));
+    }
+
     private String[] employee(String role, long brand, String joined) throws Exception {
         return employee(role, brand, joined, null);
     }

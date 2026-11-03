@@ -44,6 +44,8 @@ public final class Menus {
     /** Not a page: choosing a salary's tax regime (new, old or manual); without it a salary keeps its regime (Manual at first). */
     public static final String PAY_TAX_REGIME = "PAY_TAX_REGIME";
     public static final String MY_PAY = "MY_PAY";
+    /** Team pay: the pay of the people below me (everyone in scope for owners and admins), read-only. */
+    public static final String TEAM_PAY = "TEAM_PAY";
     // the product portal (paths under /portal/products)
     public static final String PROD_HOME = "PROD_HOME";
     public static final String PROD_ITEMS = "PROD_ITEMS";
@@ -163,6 +165,7 @@ public final class Menus {
             new Def(PAYSLIPS, "Monthly payslips", "Make, check and publish each month's payslips", 7003, "PAYROLL", "/portal/payroll/payslips", "pi-file"),
             // checkpoint 8000 kept from when it was a menu of its own, so existing access stays as it is
             new Def(MY_PAY, "My pay", "Own salary, payslips (PDF) and pay for the year", 8000, "PAYROLL", "/portal/my-pay", "pi-money-bill"),
+            new Def(TEAM_PAY, "Team pay", "The pay of the people reporting to you, as they see it in My pay: salary, published payslips (PDF) and pay for the year; owners and admins see everyone in their scope, by brand and person. Read-only", 7004, "PAYROLL", "/portal/payroll/team-pay", "pi-users"),
 
             new Def("ADMIN", "Administration", "Portal set-up", 9000, null, null, "pi-shield"),
             new Def(NEWS, "News & announcements", "Add, change and remove the news on the dashboard (and the offers on the website): discounts, promotions, birthdays, important notices", 9003, "ADMIN", "/portal/admin/news", "pi-megaphone"),
