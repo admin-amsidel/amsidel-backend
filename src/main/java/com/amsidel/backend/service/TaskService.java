@@ -11,6 +11,7 @@ import com.amsidel.backend.entity.*;
 import com.amsidel.backend.exception.ApiException;
 import com.amsidel.backend.exception.ResourceNotFoundException;
 import com.amsidel.backend.repository.BrandRepository;
+import com.amsidel.backend.repository.CustomerRepository;
 import com.amsidel.backend.repository.EmployeeRepository;
 import com.amsidel.backend.repository.WorkLogRepository;
 import com.amsidel.backend.repository.WorkTaskRepository;
@@ -37,6 +38,8 @@ public class TaskService {
     private final EmployeeRepository employeeRepository;
     private final BrandRepository brandRepository;
     private final WorkLogRepository logRepository;
+    private final CustomerRepository customerRepository;
+    private final PerformanceService performance;
 
     @Transactional(readOnly = true)
     public List<TaskResponse> list(AuthUser me, TaskStatus status) {
@@ -44,6 +47,19 @@ public class TaskService {
         return taskRepository.search(status).stream()
                 .filter(t -> inScope(me, t.getBrand()))
                 .map(t -> TaskResponse.from(t, hours.getOrDefault(t.getId(), BigDecimal.ZERO)))
+                .toList();
+    }
+
+    /**
+     * The customers a task may be for: every brand's for owners and group admins, their own brand's for a brand
+     * admin. Only what the Customer ID picker needs, so people with Tasks but not the Customers menu can choose one.
+     */
+    @Transactional(readOnly = true)
+    public List<TaskResponse.CustomerOption> customers(AuthUser me) {
+        Long scope = me.isOwner() || me.brandId() == null ? null : me.brandId();
+        return customerRepository.forBrand(scope).stream()
+                .map(c -> new TaskResponse.CustomerOption(c.getId(), c.getCode(), c.getName(), c.getPhone(),
+                        c.getBrand().getId(), c.getBrand().getCode(), c.isActive()))
                 .toList();
     }
 
@@ -58,7 +74,9 @@ public class TaskService {
         task.setCreatedBy(employeeRepository.findById(me.id())
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found: " + me.id())));
         apply(me, task, request);
-        return TaskResponse.from(taskRepository.save(task), BigDecimal.ZERO);
+        WorkTask saved = taskRepository.saveAndFlush(task);
+        performance.tasksChanged(saved.getAssignees().stream().map(Employee::getId).toList());
+        return TaskResponse.from(saved, BigDecimal.ZERO);
     }
 
     @Transactional
@@ -68,8 +86,26 @@ public class TaskService {
         if (!inScope(me, task.getBrand())) {
             throw ApiException.forbidden("You can only change tasks of your own brand");
         }
+        // those taken off the task too: their goal may lose it
+        Set<Long> people = new HashSet<>(task.getAssignees().stream().map(Employee::getId).toList());
         apply(me, task, request);
+        taskRepository.saveAndFlush(task);
+        task.getAssignees().forEach(e -> people.add(e.getId()));
+        performance.tasksChanged(people);
         return TaskResponse.from(task, hoursPerTask().getOrDefault(task.getId(), BigDecimal.ZERO));
+    }
+
+    /** The task with every work log entry against it, for those who see the task (the task's page). */
+    @Transactional(readOnly = true)
+    public TaskResponse.TaskLogs logs(AuthUser me, Long id) {
+        WorkTask task = taskRepository.findFull(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + id));
+        if (!inScope(me, task.getBrand())) {
+            throw ApiException.forbidden("You can only see tasks of your own brand");
+        }
+        List<TaskResponse.LogEntry> entries = logRepository.forTask(id).stream().map(TaskResponse.LogEntry::from).toList();
+        BigDecimal total = entries.stream().map(TaskResponse.LogEntry::hours).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new TaskResponse.TaskLogs(TaskResponse.from(task, total), entries);
     }
 
     /**
@@ -121,8 +157,26 @@ public class TaskService {
         task.setDescription(request.getDescription() == null || request.getDescription().isBlank() ? null : request.getDescription().trim());
         task.setStatus(request.getStatus() != null ? request.getStatus() : TaskStatus.OPEN);
         task.setBrand(brand);
+        task.setCustomer(customer(me, request.getCustomerId(), brand));
         task.getAssignees().clear();
         task.getAssignees().addAll(assignees);
+    }
+
+    /** The customer a task is for: one I may see, and of the task's brand when it has one; null = none. */
+    private Customer customer(AuthUser me, Long customerId, Brand brand) {
+        if (customerId == null) {
+            return null;
+        }
+        Customer c = customerRepository.findFull(customerId)
+                .orElseThrow(() -> ApiException.badRequest("Customer not found: " + customerId));
+        if (!inScope(me, c.getBrand())) {
+            throw ApiException.forbidden("You can only choose customers of your own brand");
+        }
+        if (brand != null && !brand.getId().equals(c.getBrand().getId())) {
+            throw ApiException.badRequest(c.getName() + " (" + c.getCode() + ") is a customer of " + c.getBrand().getName()
+                    + ", not of " + brand.getName());
+        }
+        return c;
     }
 
     /** TSK-0001, TSK-0002 ... (skips any taken by hand). */

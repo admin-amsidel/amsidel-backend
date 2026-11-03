@@ -7,6 +7,7 @@ package com.amsidel.backend.service;
 import com.amsidel.backend.entity.UserType;
 import com.amsidel.backend.dto.EmployeeRequest;
 import com.amsidel.backend.dto.EmployeeResponse;
+import com.amsidel.backend.dto.MyDetailsRequest;
 import com.amsidel.backend.entity.Brand;
 import com.amsidel.backend.entity.Designation;
 import com.amsidel.backend.entity.Employee;
@@ -158,6 +159,19 @@ public class EmployeeService {
         return employee;
     }
 
+    /** My own personal details (My profile); everything else on the record stays with the admins. */
+    @Transactional
+    public EmployeeResponse updateMine(AuthUser me, MyDetailsRequest request) {
+        Employee employee = find(me.id());
+        employee.setPhone(Phones.normalize(request.getPhone(), "Phone"));
+        employee.setPersonalEmail(lowerOrNull(request.getPersonalEmail()));
+        employee.setEmergencyContact(Phones.normalize(request.getEmergencyContact(), "Emergency contact"));
+        employee.setAddress(trimToNull(request.getAddress()));
+        employee.setDob(request.getDob());
+        employee.setBloodGroup(trimToNull(request.getBloodGroup()));
+        return EmployeeResponse.from(employeeRepository.saveAndFlush(employee));
+    }
+
     /** The employee, when {@code me} may change their record (and photo). */
     @Transactional(readOnly = true)
     public Employee findManageable(AuthUser me, Long id) {
@@ -229,6 +243,12 @@ public class EmployeeService {
         boolean unchanged = employee.getDesignation() != null && designationId.equals(employee.getDesignation().getId());
         if (!designation.isActive() && !unchanged) {
             throw ApiException.badRequest("Designation " + designation.getName() + " is no longer in use");
+        }
+        // a brand's designation is only for its own people (the brand is set before the designation)
+        Brand own = designation.getBrand();
+        if (own != null && (employee.getBrand() == null || !own.getId().equals(employee.getBrand().getId()))) {
+            throw ApiException.badRequest(designation.getName() + " is a designation of " + own.getName()
+                    + "; choose one of " + (employee.getBrand() == null ? "the group-wide designations" : employee.getBrand().getName() + "'s"));
         }
         return designation;
     }

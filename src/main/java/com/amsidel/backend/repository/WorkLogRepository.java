@@ -20,6 +20,10 @@ public interface WorkLogRepository extends JpaRepository<WorkLog, Long> {
             + " and w.workDate between :from and :to order by w.workDate, w.sequence")
     List<WorkLog> forEmployee(@Param("employeeId") Long employeeId, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
+    /** Everything logged against one task, with who logged it: newest day first. */
+    @Query("select w from WorkLog w join fetch w.employee where w.task.id = :taskId order by w.workDate desc, w.sequence desc")
+    List<WorkLog> forTask(@Param("taskId") Long taskId);
+
     /** Hours logged per task: rows of [task id, total hours]. */
     @Query("select w.task.id, sum(w.hours) from WorkLog w where w.task is not null group by w.task.id")
     List<Object[]> hoursPerTask();

@@ -15,9 +15,12 @@ import java.util.Optional;
 
 public interface WorkTaskRepository extends JpaRepository<WorkTask, Long> {
 
-    @Query("select distinct t from WorkTask t left join fetch t.assignees left join fetch t.brand"
+    @Query("select distinct t from WorkTask t left join fetch t.assignees left join fetch t.brand left join fetch t.customer"
             + " left join fetch t.createdBy where (:status is null or t.status = :status) order by t.createdAt desc")
     List<WorkTask> search(@Param("status") TaskStatus status);
+
+    /** Tasks for this customer (a customer that has any cannot be deleted). */
+    boolean existsByCustomerId(Long customerId);
 
     @Query("select t from WorkTask t left join fetch t.assignees where t.id = :id")
     Optional<WorkTask> findFull(@Param("id") Long id);
@@ -28,6 +31,10 @@ public interface WorkTaskRepository extends JpaRepository<WorkTask, Long> {
     /** Open tasks assigned to one person, by code. */
     @Query("select t from WorkTask t join t.assignees a where a.id = :employeeId and t.status = :status order by t.code")
     List<WorkTask> assignedTo(@Param("employeeId") Long employeeId, @Param("status") TaskStatus status);
+
+    /** Every task assigned to one person, whatever its status (the sub-tasks of their task worklog goal). */
+    @Query("select t from WorkTask t join t.assignees a where a.id = :employeeId order by t.code")
+    List<WorkTask> allAssignedTo(@Param("employeeId") Long employeeId);
 
     boolean existsByCodeIgnoreCase(String code);
 

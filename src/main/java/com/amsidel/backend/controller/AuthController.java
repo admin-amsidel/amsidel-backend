@@ -9,6 +9,8 @@ import com.amsidel.backend.dto.EmployeeResponse;
 import com.amsidel.backend.dto.LoginRequest;
 import com.amsidel.backend.dto.LoginResponse;
 import com.amsidel.backend.dto.MyAccess;
+import com.amsidel.backend.dto.MyDetailsRequest;
+import com.amsidel.backend.service.EmployeeService;
 import com.amsidel.backend.security.AuthUser;
 import com.amsidel.backend.dto.BankDetails;
 import com.amsidel.backend.service.AuthService;
@@ -32,6 +34,7 @@ public class AuthController {
     private final PhotoService photoService;
     private final MenuAccessService menuAccessService;
     private final BankDetailsService bankDetailsService;
+    private final EmployeeService employeeService;
 
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest request) {
@@ -53,6 +56,12 @@ public class AuthController {
     public LoginResponse changePassword(@AuthenticationPrincipal AuthUser me,
                                         @Valid @RequestBody ChangePasswordRequest request) {
         return authService.changePassword(me, request);
+    }
+
+    /** My own personal details: phone, personal email, emergency contact, address, date of birth, blood group. */
+    @PutMapping("/me/details")
+    public EmployeeResponse updateMyDetails(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody MyDetailsRequest request) {
+        return employeeService.updateMine(me, request);
     }
 
     /** My own PAN and salary account, read-only (set by admins or payroll). */

@@ -81,6 +81,11 @@ public class Goal {
         return type == GoalType.SALES;
     }
 
+    /** Sub-tasks are the person's work log tasks (one such goal per review). */
+    public boolean isWorklog() {
+        return type == GoalType.TASK_WORKLOG;
+    }
+
     /** Reached by the person's confirmed sales orders (worked out when read, never typed in). */
     public boolean isOrders() {
         return type == GoalType.SALES_ORDER;

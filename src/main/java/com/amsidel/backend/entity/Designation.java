@@ -30,15 +30,23 @@ public class Designation {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 100)
+    /**
+     * The brand whose ladder it belongs to (brands can rank their titles differently); null = group-wide, for every
+     * brand. Name and level are unique within the brand (or among the group-wide ones), checked by DesignationService.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "brand_id")
+    private Brand brand;
+
+    @Column(nullable = false, length = 100)
     private String name;
 
     /** Rank in the hierarchy, 1 = Trainee ... 10 = CEO; higher is more senior. */
     @Column(nullable = false)
     private int levelNumber;
 
-    /** Shown level, e.g. "4" or "6.1"; unique. */
-    @Column(nullable = false, unique = true, length = 10)
+    /** Shown level, e.g. "4" or "6.1"; unique within the brand (or among the group-wide ones). */
+    @Column(nullable = false, length = 10)
     private String levelCode;
 
     @Column(nullable = false)

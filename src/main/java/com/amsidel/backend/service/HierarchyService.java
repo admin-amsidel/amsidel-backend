@@ -50,23 +50,64 @@ public class HierarchyService {
     }
 
     /**
-     * Everyone for owners and group admins; anyone else with a brand gets their brand's people plus everyone above
-     * them, so the chart still reaches the top. Who may open it is the Org chart menu's checkpoint (MenuAccess).
-     * The web app builds the tree from reportsToId.
+     * One brand's chart: its active people, with reporting lines inside the brand (a manager in another brand is
+     * left out, so their reports sit at the top). Owners and group admins choose the brand (none = the group-level
+     * people, who have no brand); everyone else gets their own brand. Owners and admins see the whole brand; anyone
+     * else only their own hierarchy: their line up to the top and everyone below them. Who may open it is the
+     * Org chart menu's checkpoint (MenuAccess). The web app builds the tree from reportsToId.
      */
     @Transactional(readOnly = true)
-    public List<OrgNode> orgChart(AuthUser me) {
-        Long brandId = me.isOwner() || me.isGroupAdmin() ? null : me.brandId();
+    public List<OrgNode> orgChart(AuthUser me, Long brandId) {
+        boolean group = me.isOwner() || me.isGroupAdmin();
+        Long brand = group ? brandId : me.brandId();
         Map<Long, Employee> people = new LinkedHashMap<>();
-        for (Employee e : employeeRepository.search(brandId)) {
-            if (!e.isActive()) {
-                continue;
-            }
-            for (Employee up : chainUp(e)) {
-                people.putIfAbsent(up.getId(), up);
+        for (Employee e : employeeRepository.search(brand)) {
+            Long own = e.getBrand() == null ? null : e.getBrand().getId();
+            if (e.isActive() && Objects.equals(own, brand)) {
+                people.put(e.getId(), e);
             }
         }
-        return people.values().stream().map(OrgNode::from).toList();
+        if (!me.isOwner() && me.role() != Role.ADMIN) {
+            people.keySet().retainAll(hierarchyOf(me.id(), people));
+        }
+        return people.values().stream().map(e -> inBrand(OrgNode.from(e), people)).toList();
+    }
+
+    /** The person, everyone above them and everyone below them, among these people. */
+    private static Set<Long> hierarchyOf(Long personId, Map<Long, Employee> people) {
+        Set<Long> keep = new HashSet<>();
+        Employee person = people.get(personId);
+        if (person == null) {
+            return keep;
+        }
+        for (Employee up : chainUp(person)) {
+            if (!people.containsKey(up.getId())) {
+                break;
+            }
+            keep.add(up.getId());
+        }
+        Map<Long, List<Long>> reports = new HashMap<>();
+        for (Employee e : people.values()) {
+            if (e.getReportsTo() != null) {
+                reports.computeIfAbsent(e.getReportsTo().getId(), k -> new ArrayList<>()).add(e.getId());
+            }
+        }
+        Deque<Long> todo = new ArrayDeque<>(List.of(personId));
+        while (!todo.isEmpty()) {
+            for (Long r : reports.getOrDefault(todo.pop(), List.of())) {
+                if (keep.add(r)) {
+                    todo.push(r);
+                }
+            }
+        }
+        return keep;
+    }
+
+    /** A manager outside the chart is not drawn, so the box goes to the top. */
+    private static OrgNode inBrand(OrgNode n, Map<Long, Employee> people) {
+        return n.reportsToId() == null || people.containsKey(n.reportsToId()) ? n
+                : new OrgNode(n.id(), n.name(), n.empNumber(), n.designationName(), n.levelNumber(), n.levelCode(),
+                        n.brandCode(), null, n.photoPath(), n.photoUpdatedAt());
     }
 
     /** Photos of colleagues are visible to everyone signed in, for charts and lists. */

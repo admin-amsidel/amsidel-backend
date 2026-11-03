@@ -35,7 +35,7 @@ import java.util.List;
 @RequestMapping("/api/trade")
 @RequiredArgsConstructor
 @Checkpoint({Menus.PROD_HOME, Menus.PROD_ITEMS, Menus.PROD_TYPES, Menus.PROD_SUPPLIERS, Menus.PROD_PURCHASES,
-        Menus.PROD_CUSTOMERS, Menus.PROD_QUOTES, Menus.PROD_INVOICES, Menus.PROD_REPORTS, Menus.PROD_PROJECTS,
+        Menus.CUSTOMERS, Menus.PROD_QUOTES, Menus.PROD_INVOICES, Menus.PROD_REPORTS, Menus.PROD_PROJECTS,
         Menus.PROD_LEDGER, Menus.PROD_RECONCILE})
 public class TradeController {
 
@@ -61,7 +61,7 @@ public class TradeController {
     /** The brands I may work with: for every product-portal page (Customer & supplier mail and Pay bill too). */
     @GetMapping("/brands")
     @Checkpoint({Menus.PROD_HOME, Menus.PROD_ITEMS, Menus.PROD_TYPES, Menus.PROD_SUPPLIERS, Menus.PROD_PURCHASES,
-            Menus.PROD_CUSTOMERS, Menus.PROD_QUOTES, Menus.PROD_INVOICES, Menus.PROD_REPORTS, Menus.PROD_PROJECTS,
+            Menus.CUSTOMERS, Menus.PROD_QUOTES, Menus.PROD_INVOICES, Menus.PROD_REPORTS, Menus.PROD_PROJECTS,
             Menus.PROD_LEDGER, Menus.PROD_RECONCILE, Menus.PROD_MAIL, Menus.PROD_PAY, Menus.PROD_PROJECT_STATUS})
     @Transactional(readOnly = true)
     public List<BrandRef> brands(@AuthenticationPrincipal AuthUser me) {
@@ -168,6 +168,13 @@ public class TradeController {
     @PutMapping("/customers/{id}")
     public CustomerView saveCustomer(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody CustomerBody body) {
         return parties.saveCustomer(me, id, body);
+    }
+
+    /** A customer with nothing recorded against them (409 otherwise). */
+    @DeleteMapping("/customers/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteCustomer(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        parties.deleteCustomer(me, id);
     }
 
     // ---- quotations and invoices ----

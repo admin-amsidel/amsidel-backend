@@ -88,6 +88,8 @@ class MailTest {
     private String anu;
     private String ravi;
     private String noEmail;
+    /** A brand admin. */
+    private String admin;
     private String bounce;
 
     @BeforeAll
@@ -102,6 +104,7 @@ class MailTest {
         bounce = create("Bounce Back", "ml.bounce", "bounce@amsidel.com", dw);
         create("Mail Admin", "ml.admin", null, dw, "ADMIN");
         employee = token(changePin(token(login("ml.anu", "ab@123")), "ab@123", "cd@456"));
+        admin = token(changePin(token(login("ml.admin", "ab@123")), "ab@123", "cd@456"));
     }
 
     @BeforeEach
@@ -254,7 +257,6 @@ class MailTest {
                 .andExpect(jsonPath("$.contentType").value(org.hamcrest.Matchers.containsString("wordprocessingml")));
         String pdf = fileId(upload(owner, "a.pdf", "%PDF-1.7 x".getBytes()));
         // another sender cannot use it, and a removed file is gone
-        String admin = token(changePin(token(login("ml.admin", "ab@123")), "ab@123", "cd@456"));
         String body = "{\"employeeId\":%s,\"subject\":\"Hi\",\"body\":\"Text\",\"attachments\":[\"%s\"]}";
         mockMvc.perform(post("/api/mail/send").header("Authorization", auth(admin)).contentType(MediaType.APPLICATION_JSON)
                 .content(body.formatted(ravi, pdf))).andExpect(status().isBadRequest());
@@ -278,6 +280,50 @@ class MailTest {
                 .andExpect(jsonPath("$.sent").value(false))
                 .andExpect(jsonPath("$.error").value("550 5.1.1 Mailbox unavailable"));
         assertThat(mail.sent).isEmpty();
+    }
+
+    @Test
+    void staffMailTicksAndThePickLimit() throws Exception {
+        try {
+            // Staff mail with Choose people, but not Send by email
+            grant(anu, "[\"5000\",\"5004\"]");
+            send(employee, ravi, "Hello", "", "Text").andExpect(status().isForbidden());
+
+            grant(anu, "[\"5000\",\"5001\",\"5004\"]");
+            // no Add picture / Attach files: no files on the mail
+            upload(employee, "a.pdf", "%PDF-1.7 x".getBytes()).andExpect(status().isForbidden());
+            mockMvc.perform(post("/api/mail/send").header("Authorization", auth(employee)).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"employeeId\":%s,\"subject\":\"Hi\",\"body\":\"Text\",\"attachments\":[\"x\"]}".formatted(ravi)))
+                    .andExpect(status().isForbidden());
+            pickLimit(admin, 2).andExpect(status().isForbidden()); // a brand admin cannot change it
+            pickLimit(owner, 0).andExpect(status().isBadRequest());
+            pickLimit(owner, 2).andExpect(status().isOk()).andExpect(jsonPath("$.pickLimit").value(2));
+            mockMvc.perform(get("/api/mail/rules").header("Authorization", auth(employee)))
+                    .andExpect(jsonPath("$.pickLimit").value(2))
+                    .andExpect(jsonPath("$.canChangeLimit").value(false));
+            send(employee, ravi, "Hello", "", "Text").andExpect(status().isOk());
+            send(employee, bounce, "Hello", "", "Text").andExpect(status().isOk());
+            // a third person in the same send is too many; the same people again is fine
+            send(employee, noEmail, "Hello", "", "Text").andExpect(status().isConflict());
+            send(employee, ravi, "Hello", "", "Text").andExpect(status().isOk());
+            // the owner (every tick) is not limited
+            send(owner, noEmail, "Hello", "", "Text").andExpect(status().isOk());
+        } finally {
+            grant(anu, "[]");
+            pickLimit(owner, 5);
+        }
+    }
+
+    private void grant(String employeeId, String checkpoints) throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/menu-access/EMPLOYEE/" + employeeId)
+                        .header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkpoints\":" + checkpoints + "}"))
+                .andExpect(status().isOk());
+    }
+
+    private ResultActions pickLimit(String token, int limit) throws Exception {
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/mail/rules/pick-limit")
+                .header("Authorization", auth(token)).contentType(MediaType.APPLICATION_JSON).content("{\"pickLimit\":" + limit + "}"));
     }
 
     @Test

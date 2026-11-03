@@ -38,4 +38,7 @@ public interface MoneyEntryRepository extends JpaRepository<MoneyEntry, Long> {
 
     @Query("select e from MoneyEntry e where e.bankLine.id in :lineIds")
     List<MoneyEntry> forBankLines(@Param("lineIds") List<Long> lineIds);
+
+    /** Anything of this customer's (a customer that has any cannot be deleted). */
+    boolean existsByCustomerId(Long customerId);
 }

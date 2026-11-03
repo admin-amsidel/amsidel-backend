@@ -42,6 +42,7 @@ class HierarchyTest {
     private String lead;
     private String trainee;
     private String peer;
+    private long dw;
     private String traineeToken;
     private String leadToken;
 
@@ -50,7 +51,7 @@ class HierarchyTest {
         owner = token(changePin(token(login("owner", "Ams@2026")), "Ams@2026", "Own#2026"));
         List<Integer> brandIds = JsonPath.read(body(mockMvc.perform(get("/api/brands").header("Authorization", auth(owner)))),
                 "$[?(@.code == 'DW')].id");
-        long dw = brandIds.get(0);
+        dw = brandIds.get(0);
         String levels = body(mockMvc.perform(get("/api/designations").header("Authorization", auth(owner))));
 
         ceo = create("Chitra CEO", "chitra", "ADMIN", null, level(levels, "CEO"), null);
@@ -90,9 +91,17 @@ class HierarchyTest {
     void orgChartIsForOwnersAndAdmins() throws Exception {
         mockMvc.perform(get("/api/people/org-chart").header("Authorization", auth(traineeToken)))
                 .andExpect(status().isForbidden());
+        // one brand at a time: DW's people only, the head (whose manager has no brand) at the top
+        mockMvc.perform(get("/api/people/org-chart").param("brandId", String.valueOf(dw)).header("Authorization", auth(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].name", hasItems("Hari Head", "Lakshmi Lead", "Tom Trainee", "Priya Peer")))
+                .andExpect(jsonPath("$[?(@.name == 'Chitra CEO')]").isEmpty())
+                .andExpect(jsonPath("$[?(@.name == 'Hari Head')].reportsToId").value(contains((Object) null)));
+        // no brand: the group-level people
         mockMvc.perform(get("/api/people/org-chart").header("Authorization", auth(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].name", hasItems("Chitra CEO", "Hari Head", "Lakshmi Lead", "Tom Trainee", "Priya Peer")));
+                .andExpect(jsonPath("$[*].name", hasItems("Chitra CEO")))
+                .andExpect(jsonPath("$[?(@.name == 'Tom Trainee')]").isEmpty());
     }
 
     @Test

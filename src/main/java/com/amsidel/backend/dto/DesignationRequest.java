@@ -25,4 +25,7 @@ public class DesignationRequest {
     private String levelCode;
 
     private Boolean active;
+
+    /** The brand whose ladder it is on; empty = group-wide (every brand). */
+    private Long brandId;
 }

@@ -91,7 +91,36 @@ public class MenuBootstrap implements ApplicationRunner {
                     log.info("New menu {} given to {}", d.name(), role);
                 }
                 grantDesignations(d);
+                takeOver(d);
             });
+        }
+    }
+
+    /**
+     * A menu moved here from older checkpoints (Menus.TAKES_OVER): everyone who had one of them gets it; the rows
+     * of checkpoints whose menu is gone are removed (a parent that still exists keeps its rows).
+     */
+    private void takeOver(Menus.Def d) {
+        List<String> old = Menus.TAKES_OVER.getOrDefault(d.code(), List.of());
+        if (old.isEmpty()) {
+            return;
+        }
+        String checkpoint = String.valueOf(d.checkpoint());
+        Set<Integer> live = Menus.ALL.stream().map(Menus.Def::checkpoint).collect(Collectors.toSet());
+        List<MenuAccess> rows = accessRepository.findAll();
+        Set<String> given = new java.util.HashSet<>();
+        for (MenuAccess a : rows) {
+            if (!old.contains(a.getCheckpoint())) {
+                continue;
+            }
+            String subject = a.getSubjectType() + ":" + a.getSubjectKey();
+            if (given.add(subject)) {
+                accessRepository.save(MenuAccess.of(a.getSubjectType(), a.getSubjectKey(), checkpoint));
+                log.info("Menu {} given to {} {} (had checkpoint {})", d.name(), a.getSubjectType(), a.getSubjectKey(), a.getCheckpoint());
+            }
+            if (!live.contains(Integer.valueOf(a.getCheckpoint()))) {
+                accessRepository.delete(a);
+            }
         }
     }
 
@@ -108,7 +137,7 @@ public class MenuBootstrap implements ApplicationRunner {
     private void defaults() {
         grant("OWNER", List.of(MenuAccess.ALL));
         grant("ADMIN", List.of(MenuAccess.ALL));
-        grant("MANAGER", List.of("1001", "1002", "2001", "2002", "3001", "6001", "6002", "8000"));
+        grant("MANAGER", List.of("1001", "1002", "2001", "2002", "3001", "6001", "6002", "6004", "6005", "6006", "6007", "8000"));
         grant("EMPLOYEE", List.of("1001", "2001", "3001", "6001", "8000"));
         Menus.ALL.forEach(this::grantDesignations);
         log.info("Created the default menu access for each user type");

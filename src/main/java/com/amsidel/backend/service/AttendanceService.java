@@ -20,6 +20,7 @@ import com.amsidel.backend.exception.ResourceNotFoundException;
 import com.amsidel.backend.repository.AttendanceRepository;
 import com.amsidel.backend.repository.EmployeeRepository;
 import com.amsidel.backend.security.AuthUser;
+import com.amsidel.backend.security.Menus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -58,17 +59,19 @@ public class AttendanceService {
     private final EmployeeRepository employeeRepository;
     private final TeamAccess access;
     private final AttendancePhotoStore photos;
+    private final MenuAccessService menuAccess;
     private final ZoneId zone;
     private final double lowAccuracyMetres;
 
     public AttendanceService(AttendanceRepository attendanceRepository, EmployeeRepository employeeRepository,
-                             TeamAccess access, AttendancePhotoStore photos,
+                             TeamAccess access, AttendancePhotoStore photos, MenuAccessService menuAccess,
                              @Value("${app.attendance.zone}") ZoneId zone,
                              @Value("${app.attendance.low-accuracy-metres:200}") double lowAccuracyMetres) {
         this.attendanceRepository = attendanceRepository;
         this.employeeRepository = employeeRepository;
         this.access = access;
         this.photos = photos;
+        this.menuAccess = menuAccess;
         this.zone = zone;
         this.lowAccuracyMetres = lowAccuracyMetres;
     }
@@ -77,7 +80,12 @@ public class AttendanceService {
     public AttendanceToday today(AuthUser me) {
         LocalDate today = today();
         List<AttendanceRecord> entries = attendanceRepository.findDay(me.id(), today).stream().map(AttendanceRecord::from).toList();
-        return new AttendanceToday(today, zone.getId(), entries.isEmpty() ? null : AttendanceDaySummary.of(entries));
+        return new AttendanceToday(today, zone.getId(), entries.isEmpty() ? null : AttendanceDaySummary.of(entries), photoCapture(me));
+    }
+
+    /** False for people given Check in without photo: they check in with the time and GPS location only. */
+    private boolean photoCapture(AuthUser me) {
+        return !menuAccess.givenItself(me, Menus.ATT_NO_PHOTO);
     }
 
     @Transactional
@@ -98,9 +106,11 @@ public class AttendanceService {
         if (request.getWorkMode() == WorkMode.FIELD && place == null) {
             throw ApiException.badRequest("Enter the place or client you are visiting");
         }
-        // a field visit needs a live photo; at the office or at home it is optional
-        boolean hasPhoto = photo != null && photo.length > 0;
-        if (!hasPhoto && request.getWorkMode() == WorkMode.FIELD) {
+        // a field visit needs a live photo; at the office or at home it is optional. People who check in without a
+        // photo never send one (and one sent anyway is not kept): only the time and GPS location
+        boolean capture = photoCapture(me);
+        boolean hasPhoto = capture && photo != null && photo.length > 0;
+        if (capture && !hasPhoto && request.getWorkMode() == WorkMode.FIELD) {
             throw ApiException.badRequest("Take a photo to check in for a field visit");
         }
         byte[] jpeg = hasPhoto ? AttendancePhotoStore.clean(photo) : null;
@@ -137,7 +147,7 @@ public class AttendanceService {
             savePhoto(path, jpeg);
         }
         log.info("Check-in {} {} #{} {}{}{}", person.getEmpNumber(), today, entryNo, a.getWorkMode(), where.missing() ? " (no location)" : "",
-                hasPhoto ? "" : " (no photo)");
+                hasPhoto ? "" : capture ? " (no photo)" : " (time and GPS only)");
         return AttendanceRecord.from(a);
     }
 

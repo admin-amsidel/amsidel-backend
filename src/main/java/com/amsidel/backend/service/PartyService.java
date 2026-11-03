@@ -43,6 +43,12 @@ public class PartyService {
     private final ProductItemRepository itemRepository;
     private final SalesDocRepository salesRepository;
     private final PurchaseBillRepository purchaseRepository;
+    private final ProjectRepository projectRepository;
+    private final TradePaymentRepository paymentRepository;
+    private final OnlinePaymentRepository onlinePaymentRepository;
+    private final PaymentSourceRepository paymentSourceRepository;
+    private final MoneyEntryRepository moneyEntryRepository;
+    private final WorkTaskRepository workTaskRepository;
     private final TradeNumbers numbers;
     private final TradeAccess access;
     private final TradeHistoryLog history;
@@ -168,10 +174,17 @@ public class PartyService {
         return view(c, salesRepository.forCustomer(id));
     }
 
-    /** Customers can also be added from a quotation or an invoice. */
+    /**
+     * Adding needs Add customer, or the quotation, invoice or project menus (their New customer button); changing needs
+     * Change customer.
+     */
     @Transactional
     public CustomerView saveCustomer(AuthUser me, Long id, CustomerBody body) {
-        access.require(me, "You cannot change customers", Menus.PROD_CUSTOMERS, Menus.PROD_QUOTES, Menus.PROD_INVOICES);
+        if (id == null) {
+            access.require(me, "You cannot add customers", Menus.CUST_ADD, Menus.PROD_QUOTES, Menus.PROD_INVOICES, Menus.PROD_PROJECTS);
+        } else {
+            access.require(me, "You cannot change customers", Menus.CUST_EDIT);
+        }
         Customer c;
         if (id == null) {
             c = new Customer();
@@ -195,6 +208,8 @@ public class PartyService {
                     .add("Second phone", c.getPhone2(), phone2).add("Email", c.getEmail(), lower(body.getEmail()))
                     .add("Location", c.getLocation(), blank(body.getLocation())).add("Address", c.getAddress(), blank(body.getAddress()))
                     .add("GSTIN", c.getGstNumber(), upper(body.getGstNumber())).add("PAN", c.getPanNumber(), upper(body.getPanNumber()))
+                    .add("Bank account", c.getBankAccountNumber(), blank(body.getBankAccount()))
+                    .add("IFSC", c.getIfscCode(), upper(body.getIfsc())).add("UPI ID", c.getUpiId(), lower(body.getUpi()))
                     .add("Notes", c.getNotes(), blank(body.getNotes()))
                     .add("Active", c.isActive(), body.getActive() == null || body.getActive());
         }
@@ -206,6 +221,9 @@ public class PartyService {
         c.setAddress(blank(body.getAddress()));
         c.setGstNumber(upper(body.getGstNumber()));
         c.setPanNumber(upper(body.getPanNumber()));
+        c.setBankAccountNumber(blank(body.getBankAccount()));
+        c.setIfscCode(upper(body.getIfsc()));
+        c.setUpiId(lower(body.getUpi()));
         c.setNotes(blank(body.getNotes()));
         c.setActive(body.getActive() == null || body.getActive());
         c.setUpdatedBy(access.me(me));
@@ -216,6 +234,28 @@ public class PartyService {
             history.record(me, c.getBrand(), TradeSubject.CUSTOMER, c.getId(), c.getName() + " (" + c.getCode() + ")", "UPDATED", changes.toString());
         }
         return customer(me, c.getId());
+    }
+
+    /**
+     * Only a customer with nothing recorded against them: no quotation, sales order or invoice, project, payment or
+     * income / expense entry or work log task. Anyone else stays for the books; mark them inactive instead.
+     */
+    @Transactional
+    public void deleteCustomer(AuthUser me, Long id) {
+        access.require(me, "You cannot delete customers", Menus.CUST_DELETE);
+        Customer c = customerFull(me, id);
+        String what = salesRepository.existsByCustomerId(id) ? "quotations or invoices"
+                : projectRepository.existsByCustomerId(id) ? "projects"
+                : paymentRepository.existsByCustomerId(id) || onlinePaymentRepository.existsByCustomerId(id)
+                        || paymentSourceRepository.existsByCustomerId(id) ? "payments"
+                : moneyEntryRepository.existsByCustomerId(id) ? "income or expense entries"
+                : workTaskRepository.existsByCustomerId(id) ? "work log tasks"
+                : null;
+        if (what != null) {
+            throw ApiException.conflict(c.getName() + " has " + what + ", so cannot be deleted. Mark the customer inactive instead.");
+        }
+        history.record(me, c.getBrand(), TradeSubject.CUSTOMER, c.getId(), c.getName() + " (" + c.getCode() + ")", "DELETED", c.getPhone());
+        customerRepository.delete(c);
     }
 
     Customer customerFull(AuthUser me, Long id) {
@@ -233,7 +273,8 @@ public class PartyService {
         int quotations = (int) docs.stream().filter(d -> d.getKind() == SalesDocKind.QUOTATION).count();
         LocalDate last = docs.stream().map(SalesDoc::getDocDate).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
         return new CustomerView(c.getId(), BrandRef.of(c.getBrand()), c.getCode(), c.getName(), c.getPhone(), c.getPhone2(),
-                c.getEmail(), c.getLocation(), c.getAddress(), c.getGstNumber(), c.getPanNumber(), c.getNotes(), c.isActive(),
+                c.getEmail(), c.getLocation(), c.getAddress(), c.getGstNumber(), c.getPanNumber(),
+                c.getBankAccountNumber(), c.getIfscCode(), c.getUpiId(), c.getNotes(), c.isActive(),
                 new Balance(billed, paid, billed.subtract(paid).subtract(writtenOff)), quotations, invoices.size(), last,
                 c.getUpdatedBy() == null ? null : c.getUpdatedBy().getName(), c.getUpdatedAt());
     }

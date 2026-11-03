@@ -50,9 +50,10 @@ public final class TradeDtos {
 
     // ---- projects ----
 
-    public record PersonRef(Long id, String name, String designation) {
+    public record PersonRef(Long id, String name, String empNumber, String designation) {
         public static PersonRef of(Employee e) {
-            return e == null ? null : new PersonRef(e.getId(), e.getName(), e.getDesignation() == null ? null : e.getDesignation().getName());
+            return e == null ? null : new PersonRef(e.getId(), e.getName(), e.getEmpNumber(),
+                    e.getDesignation() == null ? null : e.getDesignation().getName());
         }
     }
 
@@ -300,6 +301,16 @@ public final class TradeDtos {
         @Pattern(regexp = PAN, message = "PAN is 5 letters, 4 digits and a letter, e.g. ABCDE1234F")
         private String panNumber;
 
+        // bank and UPI: optional, checked like a supplier's
+        @Pattern(regexp = "^$|^[0-9]{6,20}$", message = "Bank account number: 6 to 20 digits")
+        private String bankAccount;
+
+        @Pattern(regexp = "^$|^[A-Za-z]{4}0[A-Za-z0-9]{6}$", message = "IFSC is 11 characters, e.g. HDFC0001234")
+        private String ifsc;
+
+        @Pattern(regexp = "^$|^[A-Za-z0-9._-]{2,256}@[A-Za-z]{2,64}$", message = "UPI ID looks like name@bank")
+        private String upi;
+
         @Size(max = 500)
         private String notes;
 
@@ -308,6 +319,7 @@ public final class TradeDtos {
 
     public record CustomerView(Long id, BrandRef brand, String code, String name, String phone, String phone2,
                                String email, String location, String address, String gstNumber, String panNumber,
+                               String bankAccount, String ifsc, String upi,
                                String notes, boolean active, Balance balance, int quotations, int invoices,
                                LocalDate lastDocDate, String updatedByName, Instant updatedAt) {
     }

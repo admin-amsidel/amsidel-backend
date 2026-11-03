@@ -5,7 +5,7 @@
 package com.amsidel.backend.controller;
 
 import com.amsidel.backend.dto.DesignationRequest;
-import com.amsidel.backend.entity.Designation;
+import com.amsidel.backend.dto.DesignationView;
 import com.amsidel.backend.service.DesignationService;
 import jakarta.validation.Valid;
 import com.amsidel.backend.security.Checkpoint;
@@ -25,14 +25,14 @@ public class DesignationController {
     private final DesignationService designationService;
 
     @GetMapping
-    public List<Designation> list() {
+    public List<DesignationView> list() {
         return designationService.findAll();
     }
 
     @Checkpoint({Menus.DESIGNATIONS})
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Designation create(@Valid @RequestBody DesignationRequest request) {
+    public DesignationView create(@Valid @RequestBody DesignationRequest request) {
         return designationService.create(request);
     }
 
@@ -46,7 +46,7 @@ public class DesignationController {
 
     @Checkpoint({Menus.DESIGNATIONS})
     @PutMapping("/{id}")
-    public Designation update(@PathVariable Long id, @Valid @RequestBody DesignationRequest request) {
+    public DesignationView update(@PathVariable Long id, @Valid @RequestBody DesignationRequest request) {
         return designationService.update(id, request);
     }
 }

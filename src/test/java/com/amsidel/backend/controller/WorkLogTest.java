@@ -22,6 +22,7 @@ import java.time.ZoneId;
 import java.util.List;
 
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -230,6 +231,62 @@ class WorkLogTest {
         month(trainee, null, day.minusDays(2), day.plusDays(2))
                 .andExpect(jsonPath("$.leave[0].typeCode").value("LWP"))
                 .andExpect(jsonPath("$.leave[0].status").value("PENDING"));
+    }
+
+    @Test
+    void aTasksPageListsEveryoneElsesWorkLogAgainstIt() throws Exception {
+        String id = String.valueOf((Object) JsonPath.read(body(task(owner, "MSC-401", "Site survey", "OPEN", traineeId)
+                .andExpect(status().isCreated())), "$.id"));
+        log(trainee, TODAY.minusDays(21), "MSC-401", "2", "Measured the ground floor").andExpect(status().isCreated());
+        log(trainee, TODAY.minusDays(20), "MSC-401", "3.5", "Measured the first floor").andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/tasks/" + id + "/logs").header("Authorization", auth(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.task.code").value("MSC-401"))
+                .andExpect(jsonPath("$.task.loggedHours").value(5.5))
+                .andExpect(jsonPath("$.entries.length()").value(2))
+                // newest day first, with who logged it
+                .andExpect(jsonPath("$.entries[0].workDate").value(TODAY.minusDays(20).toString()))
+                .andExpect(jsonPath("$.entries[0].hours").value(3.5))
+                .andExpect(jsonPath("$.entries[0].description").value("Measured the first floor"))
+                .andExpect(jsonPath("$.entries[0].employeeName").value("Tom Trainee"))
+                .andExpect(jsonPath("$.entries[0].empNumber").exists());
+        // only for people with Tasks
+        mockMvc.perform(get("/api/tasks/" + id + "/logs").header("Authorization", auth(trainee))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aTaskCanBeForACustomer() throws Exception {
+        String customer = String.valueOf((Object) JsonPath.read(body(mockMvc.perform(post("/api/trade/customers")
+                .header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%d,\"name\":\"Task Customer\",\"phone\":\"9847066601\"}".formatted(dw)))
+                .andExpect(status().isCreated())), "$.id"));
+        String code = JsonPath.read(body(mockMvc.perform(get("/api/trade/customers/" + customer).header("Authorization", auth(owner)))), "$.code");
+        // the picker lists it, without the Customers menu being needed
+        mockMvc.perform(get("/api/tasks/customers").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$[?(@.code == '%s')].name".formatted(code)).value(hasItem("Task Customer")));
+
+        String json = "{\"code\":\"CUST-1\",\"title\":\"Measure windows\",\"status\":\"OPEN\",\"brandId\":%d,\"customerId\":%s,\"assigneeIds\":[]}"
+                .formatted(dw, customer);
+        mockMvc.perform(post("/api/tasks").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.customerId").value(Integer.parseInt(customer)))
+                .andExpect(jsonPath("$.customerCode").value(code))
+                .andExpect(jsonPath("$.customerName").value("Task Customer"));
+        mockMvc.perform(get("/api/tasks").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$[?(@.code == 'CUST-1')].customerCode").value(hasItem(code)));
+
+        // a customer of another brand does not go on this brand's task
+        String otherBrand = String.valueOf((Object) JsonPath.read(body(mockMvc.perform(post("/api/brands").header("Authorization", auth(owner))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"WK\",\"name\":\"Worklog Brand\"}"))
+                .andExpect(status().isCreated())), "$.id"));
+        mockMvc.perform(post("/api/tasks").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"CUST-2\",\"title\":\"x\",\"status\":\"OPEN\",\"brandId\":%s,\"customerId\":%s,\"assigneeIds\":[]}"
+                                .formatted(otherBrand, customer)))
+                .andExpect(status().isBadRequest());
+        // and a customer with a task stays
+        mockMvc.perform(delete("/api/trade/customers/" + customer).header("Authorization", auth(owner)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error", containsString("work log tasks")));
     }
 
     // ---- helpers ----

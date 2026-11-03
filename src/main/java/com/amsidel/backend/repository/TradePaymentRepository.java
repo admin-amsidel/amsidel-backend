@@ -32,4 +32,7 @@ public interface TradePaymentRepository extends JpaRepository<TradePayment, Long
     @Query("select p from TradePayment p join fetch p.brand left join fetch p.invoice left join fetch p.purchaseBill"
             + " where p.id = :id")
     Optional<TradePayment> findFull(@Param("id") Long id);
+
+    /** Anything of this customer's (a customer that has any cannot be deleted). */
+    boolean existsByCustomerId(Long customerId);
 }

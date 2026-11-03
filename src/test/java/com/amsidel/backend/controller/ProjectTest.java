@@ -61,7 +61,7 @@ class ProjectTest {
                 .content("{\"name\":\"Priya Sales\",\"userId\":\"pj.priya\",\"password\":\"ab@123\",\"role\":\"MANAGER\",\"brandId\":%d,\"phone\":\"9847000001\",\"joinedDate\":\"2026-01-05\"}"
                         .formatted(dw))).andExpect(status().isCreated()));
         mockMvc.perform(put("/api/menu-access/EMPLOYEE/" + staffId).header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"checkpoints\":[\"11500\",\"11302\",\"11303\",\"11301\"]}")).andExpect(status().isOk());
+                .content("{\"checkpoints\":[\"11500\",\"11302\",\"11303\",\"13000\"]}")).andExpect(status().isOk());
         staff = token(changePin(token(login("pj.priya", "ab@123")), "ab@123", "cd@456"));
         customer = idOf(json(post("/api/trade/customers"), owner, "{\"brandId\":%d,\"name\":\"Varghese Villa\",\"phone\":\"9847033333\"}".formatted(dw)));
         other = idOf(json(post("/api/trade/customers"), owner, "{\"brandId\":%d,\"name\":\"Someone Else\",\"phone\":\"9847044444\"}".formatted(dw)));

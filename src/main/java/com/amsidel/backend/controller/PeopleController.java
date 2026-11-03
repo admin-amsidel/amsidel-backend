@@ -37,8 +37,8 @@ public class PeopleController {
 
     @Checkpoint({Menus.ORG_CHART})
     @GetMapping("/org-chart")
-    public List<OrgNode> orgChart(@AuthenticationPrincipal AuthUser me) {
-        return hierarchyService.orgChart(me);
+    public List<OrgNode> orgChart(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Long brandId) {
+        return hierarchyService.orgChart(me, brandId);
     }
 
     @GetMapping("/{id}/photo")

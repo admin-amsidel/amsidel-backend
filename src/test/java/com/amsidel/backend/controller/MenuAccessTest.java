@@ -23,6 +23,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -148,6 +149,56 @@ class MenuAccessTest {
     }
 
     @Test
+    void theCustomerPageButtonsAreTheirOwnTicks() throws Exception {
+        String vinu = create("Vinu Sales", "ma.vinu", "EMPLOYEE", "Team Member");
+        String token = signIn("ma.vinu");
+        // Customers (and Quotations, Invoices) alone do not give the New quotation / New invoice buttons
+        save(owner, "EMPLOYEE", vinu, "[\"13000\",\"11302\",\"11303\"]").andExpect(status().isOk());
+        access(token).andExpect(jsonPath("$.codes", not(hasItem("CUST_NEW_QUOTE"))))
+                .andExpect(jsonPath("$.codes", not(hasItem("CUST_NEW_INVOICE"))));
+        // each is given by itself
+        save(owner, "EMPLOYEE", vinu, "[\"13000\",\"13002\",\"11302\",\"11303\"]").andExpect(status().isOk());
+        access(token).andExpect(jsonPath("$.codes", hasItem("CUST_NEW_INVOICE")))
+                .andExpect(jsonPath("$.codes", not(hasItem("CUST_NEW_QUOTE"))))
+                // Customers stays one page, with the button under it
+                .andExpect(jsonPath("$.menus[?(@.code == 'CUSTOMERS')].path").value(hasItem("/portal/customers")))
+                .andExpect(jsonPath("$.menus[?(@.code == 'CUSTOMERS')].children[*].code").value(containsInAnyOrder("CUST_NEW_INVOICE")));
+    }
+
+    @Test
+    void addingChangingAndDeletingCustomersAreTheirOwnTicks() throws Exception {
+        String rani = create("Rani Customers", "ma.rani", "EMPLOYEE", "Team Member");
+        String token = signIn("ma.rani");
+        String body = "{\"name\":\"Tick Customer\",\"phone\":\"9847055501\"}";
+        // Customers alone: view only
+        save(owner, "EMPLOYEE", rani, "[\"13000\"]").andExpect(status().isOk());
+        mockMvc.perform(get("/api/trade/customers").header("Authorization", auth(token))).andExpect(status().isOk());
+        customer(token, post("/api/trade/customers"), body).andExpect(status().isForbidden());
+
+        // Add customer
+        save(owner, "EMPLOYEE", rani, "[\"13000\",\"13003\"]").andExpect(status().isOk());
+        String id = idOf(customer(token, post("/api/trade/customers"), body).andExpect(status().isCreated()));
+        String change = "{\"name\":\"Tick Customer Two\",\"phone\":\"9847055501\"}";
+        customer(token, put("/api/trade/customers/" + id), change).andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/trade/customers/" + id).header("Authorization", auth(token))).andExpect(status().isForbidden());
+
+        // Change customer, then Delete customer
+        save(owner, "EMPLOYEE", rani, "[\"13000\",\"13004\"]").andExpect(status().isOk());
+        customer(token, put("/api/trade/customers/" + id), change).andExpect(status().isOk());
+        save(owner, "EMPLOYEE", rani, "[\"13000\",\"13005\"]").andExpect(status().isOk());
+        mockMvc.perform(delete("/api/trade/customers/" + id).header("Authorization", auth(token))).andExpect(status().isNoContent());
+
+        // Quotations still add a customer from a quotation (its New customer button), without the Customers ticks
+        save(owner, "EMPLOYEE", rani, "[\"11302\"]").andExpect(status().isOk());
+        customer(token, post("/api/trade/customers"), "{\"name\":\"From A Quote\",\"phone\":\"9847055502\"}").andExpect(status().isCreated());
+    }
+
+    private ResultActions customer(String token, org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
+                                   String json) throws Exception {
+        return mockMvc.perform(request.header("Authorization", auth(token)).contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
+    @Test
     void nobodyGetsInWithoutAnyPermission() throws Exception {
         create("Nina None", "ma.nina", "EMPLOYEE", null);
         String nina = signIn("ma.nina");
@@ -199,7 +250,7 @@ class MenuAccessTest {
 
         mockMvc.perform(get("/api/menu-access/menus").header("Authorization", auth(owner)))
                 .andExpect(jsonPath("$[?(@.code == 'ATTENDANCE')].checkpoint").value(hasItem(1000)))
-                .andExpect(jsonPath("$[?(@.code == 'ATTENDANCE')].children[*].checkpoint").value(containsInAnyOrder(1001, 1002)));
+                .andExpect(jsonPath("$[?(@.code == 'ATTENDANCE')].children[*].checkpoint").value(containsInAnyOrder(1001, 1002, 1003)));
         mockMvc.perform(get("/api/menu-access").header("Authorization", auth(owner)))
                 .andExpect(jsonPath("$[?(@.subjectKey == 'ADMIN')].checkpoints[0]").value(hasItem("*")));
     }

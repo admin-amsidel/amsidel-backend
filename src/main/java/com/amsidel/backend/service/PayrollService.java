@@ -155,10 +155,14 @@ public class PayrollService {
             n.setFyStartYear(fy);
             return n;
         });
-        // income tax: worked out under the new or old regime; typed in (Manual) only by someone allowed to
-        // no regime sent: keep the salary's; a new one is typed in by someone allowed to, else the new regime
-        TaxRegime regime = body.getTaxRegime() != null ? body.getTaxRegime() : s.getId() != null ? s.regime()
-                : menuAccess.can(me, Menus.PAY_TAX_MANUAL) ? TaxRegime.MANUAL : TaxRegime.NEW;
+        // income tax: worked out under the new or old regime, or typed in (Manual, the default) by someone allowed to;
+        // only someone with Tax regime selection changes the regime (no regime sent: the salary's, Manual for a new one)
+        TaxRegime current = s.getId() != null ? s.regime() : TaxRegime.MANUAL;
+        TaxRegime regime = body.getTaxRegime() != null ? body.getTaxRegime() : current;
+        if (regime != current && !menuAccess.can(me, Menus.PAY_TAX_REGIME)) {
+            throw ApiException.forbidden("Choosing the tax regime needs the Tax regime selection access; this salary stays "
+                    + current.name().charAt(0) + current.name().substring(1).toLowerCase(Locale.ROOT));
+        }
         BigDecimal declared = body.getTaxDeclared() != null ? body.getTaxDeclared().setScale(2, RoundingMode.HALF_UP) : s.getTaxDeclared();
         PayComponent tds = taxComponent(components.values());
         if (tds != null) {
@@ -166,7 +170,7 @@ public class PayrollService {
                     .findFirst().orElse(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
             if (regime == TaxRegime.MANUAL) {
                 BigDecimal asked = amounts.getOrDefault(tds.getId(), BigDecimal.ZERO);
-                boolean changed = s.regime() != TaxRegime.MANUAL || s.getId() == null || asked.compareTo(before) != 0;
+                boolean changed = asked.compareTo(before) != 0;
                 if (changed && !menuAccess.can(me, Menus.PAY_TAX_MANUAL)) {
                     throw ApiException.forbidden("Typing the income tax by hand needs the Manual income tax access; choose the new or old regime");
                 }
@@ -338,13 +342,13 @@ public class PayrollService {
 
     private TaxView taxView(AuthUser me, int fy, LocalDate from, SalaryStructure s, Map<Long, BigDecimal> amounts) {
         Map<Long, PayComponent> components = componentRepository.findAll().stream().collect(Collectors.toMap(PayComponent::getId, Function.identity()));
-        TaxRegime regime = s == null ? TaxRegime.NEW : s.regime();
+        TaxRegime regime = s == null ? TaxRegime.MANUAL : s.regime();
         BigDecimal declared = s == null ? null : s.getTaxDeclared();
         IncomeTax.Calc newer = taxFor(TaxRegime.NEW, fy, from, amounts, components, null);
         IncomeTax.Calc older = taxFor(TaxRegime.OLD, fy, from, amounts, components, declared);
         PayComponent tds = taxComponent(components.values());
         return new TaxView(regime, declared, regime == TaxRegime.NEW ? newer : regime == TaxRegime.OLD ? older : null, newer, older,
-                menuAccess.can(me, Menus.PAY_TAX_MANUAL), tds == null ? null : tds.getName());
+                menuAccess.can(me, Menus.PAY_TAX_MANUAL), menuAccess.can(me, Menus.PAY_TAX_REGIME), tds == null ? null : tds.getName());
     }
 
     /** Both regimes for a salary still being typed. */

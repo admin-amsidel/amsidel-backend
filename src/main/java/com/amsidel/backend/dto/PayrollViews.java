@@ -71,7 +71,7 @@ public final class PayrollViews {
      */
     public record TaxView(com.amsidel.backend.entity.TaxRegime regime, BigDecimal declared, com.amsidel.backend.service.IncomeTax.Calc chosen,
                           com.amsidel.backend.service.IncomeTax.Calc newRegime, com.amsidel.backend.service.IncomeTax.Calc oldRegime,
-                          boolean canManual, String taxComponentName) {
+                          boolean canManual, boolean canChooseRegime, String taxComponentName) {
     }
 
     /** The payroll list for a year, with what it all costs. */

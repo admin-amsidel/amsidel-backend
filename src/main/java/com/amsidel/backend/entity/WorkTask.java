@@ -57,6 +57,11 @@ public class WorkTask {
             inverseJoinColumns = @JoinColumn(name = "employee_id"))
     private Set<Employee> assignees = new LinkedHashSet<>();
 
+    /** Optional: the customer the work is for (of the task's brand, when it has one). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "customer_id")
+    private Customer customer;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by")
     private Employee createdBy;

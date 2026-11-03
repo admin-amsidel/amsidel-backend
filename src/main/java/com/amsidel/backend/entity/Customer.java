@@ -15,7 +15,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.Instant;
 
 /**
- * Someone a brand sells to; the first phone number is unique in the brand.
+ * Someone a brand sells to; the first phone number is unique in the brand. Bank and UPI details are optional.
  */
 @Entity
 @Table(name = "customers",
@@ -61,6 +61,16 @@ public class Customer {
 
     @Column(length = 10)
     private String panNumber;
+
+    /** Optional: for refunds and money paid back to the customer. */
+    @Column(length = 30)
+    private String bankAccountNumber;
+
+    @Column(length = 11)
+    private String ifscCode;
+
+    @Column(length = 80)
+    private String upiId;
 
     @Column(length = 500)
     private String notes;

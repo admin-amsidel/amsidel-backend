@@ -29,7 +29,10 @@ import static com.amsidel.backend.dto.PerformanceViews.one;
  * Yearly performance: review cycles (date to date); in each, a person's self intro and skills (validated by their
  * manager), goals with weighted sub-tasks set by their manager, self and manager ratings (1-5), and achievements.
  * A goal is General (progress moved by hand, rated by the person) or Sales (a target amount; the person records what
- * they achieved, and the progress and self rating follow achieved / target).
+ * they achieved, and the progress and self rating follow achieved / target). A Task worklog goal (one per review) has
+ * the person's work log tasks as sub-tasks, added as tasks are assigned: each shows the hours they logged, and is
+ * marked complete with a self rating and description, then reviewed by the manager; the goal's progress and ratings
+ * follow its sub-tasks. Which types a manager may choose follows their Goal type ticks under Performance.
  * "Manager" is anyone above the person in the reporting line, or an owner/admin in scope (TeamAccess). A closed
  * cycle is read-only.
  */
@@ -46,13 +49,16 @@ public class PerformanceService {
     private final TeamAccess access;
     private final MenuAccessService menuAccess;
     private final SalesDocRepository salesDocs;
+    private final WorkTaskRepository workTasks;
+    private final WorkLogRepository workLogs;
     private final ZoneId zone;
 
     public PerformanceService(ReviewCycleRepository cycleRepository, ReviewRepository reviewRepository,
                               SkillRepository skillRepository, GoalRepository goalRepository,
                               AchievementRepository achievementRepository, EmployeeRepository employeeRepository,
                               BrandRepository brandRepository, TeamAccess access, MenuAccessService menuAccess,
-                              SalesDocRepository salesDocs, @Value("${app.leave.zone}") ZoneId zone) {
+                              SalesDocRepository salesDocs, WorkTaskRepository workTasks, WorkLogRepository workLogs,
+                              @Value("${app.leave.zone}") ZoneId zone) {
         this.cycleRepository = cycleRepository;
         this.reviewRepository = reviewRepository;
         this.skillRepository = skillRepository;
@@ -63,6 +69,8 @@ public class PerformanceService {
         this.access = access;
         this.menuAccess = menuAccess;
         this.salesDocs = salesDocs;
+        this.workTasks = workTasks;
+        this.workLogs = workLogs;
         this.zone = zone;
     }
 
@@ -106,7 +114,8 @@ public class PerformanceService {
         List<SkillView> skills = review.map(r -> skillRepository.forReview(r.getId()).stream().map(SkillView::of).toList())
                 .orElse(List.of());
         List<Goal> goals = review.map(r -> goalRepository.forReview(r.getId())).orElse(List.of());
-        List<GoalView> goalViews = goals.stream().map(g -> view(g, rights, today)).toList();
+        Map<Long, List<WorkLog>> logs = goals.stream().anyMatch(Goal::isWorklog) ? logsOf(person.getId(), goals) : Map.of();
+        List<GoalView> goalViews = goals.stream().map(g -> view(g, rights, today, logs)).toList();
         List<AchievementView> achievements = achievementRepository
                 .forEmployee(person.getId(), cycle.getStartDate(), cycle.getEndDate()).stream().map(AchievementView::of).toList();
         return new ReviewView(CycleView.of(cycle), Person.of(person), rights, review.map(Review::getSelfIntro).orElse(null),
@@ -133,7 +142,9 @@ public class PerformanceService {
             List<Goal> goals = r == null ? List.of() : goalsByReview.getOrDefault(r.getId(), List.of());
             goals.forEach(this::readOrders);
             List<Skill> skills = r == null ? List.of() : skillRepository.forReview(r.getId());
-            int toRate = (int) goals.stream().filter(g -> g.getSelfRating() != null && g.getManagerRating() == null).count();
+            int toRate = (int) goals.stream().filter(g -> g.isWorklog()
+                    ? g.getTasks().stream().anyMatch(t -> t.getCompletedAt() != null && t.getManagerRating() == null)
+                    : g.getSelfRating() != null && g.getManagerRating() == null).count();
             int toValidate = (int) skills.stream().filter(s -> s.getManagerLevel() == null).count();
             rows.add(new TeamRow(Person.of(e), totals(goals), skills.size(), toValidate, toRate));
         }
@@ -232,10 +243,18 @@ public class PerformanceService {
         Employee person = person(employeeId);
         requireManager(me, person, cycle);
         Review review = reviewRepository.find(cycle.getId(), person.getId()).orElseGet(() -> newReview(cycle, person));
+        requireType(me, body.getType() == null ? GoalType.GENERAL : body.getType());
+        if (body.getType() == GoalType.TASK_WORKLOG && review.getId() != null
+                && goalRepository.forReview(review.getId()).stream().anyMatch(Goal::isWorklog)) {
+            throw ApiException.conflict(person.getName() + " already has the Task worklog goal in this cycle");
+        }
         Goal g = new Goal();
         g.setReview(review);
         g.setCreatedBy(employeeRepository.getReferenceById(me.id()));
         apply(g, body, cycle);
+        if (g.isWorklog()) {
+            syncWorklog(g);
+        }
         return view(goalRepository.save(g), new Rights(false, true), today());
     }
 
@@ -246,12 +265,24 @@ public class PerformanceService {
         boolean admin = isAdminOver(me, g.getReview().getEmployee());
         if (!admin) {
             requireManager(me, g.getReview().getEmployee(), cycle);
-            if (g.getManagerRating() != null) {
+            // a task worklog goal's ratings come from its sub-tasks, which keep coming: it stays editable
+            if (g.getManagerRating() != null && !g.isWorklog()) {
                 throw ApiException.conflict("This goal is already rated and can no longer change");
+            }
+        }
+        GoalType type = body.getType() == null ? GoalType.GENERAL : body.getType();
+        GoalType was = g.getType() == null ? GoalType.GENERAL : g.getType();
+        if (type != was) {
+            requireType(me, type);
+            if (was == GoalType.TASK_WORKLOG || type == GoalType.TASK_WORKLOG) {
+                throw ApiException.conflict("A Task worklog goal stays one, and another goal cannot become one: remove it and set a new goal");
             }
         }
         // ratings, comments and progress stay as they are
         apply(g, body, cycle);
+        if (g.isWorklog()) {
+            syncWorklog(g);
+        }
         return view(g, new Rights(false, !cycle.isClosed(), admin), today());
     }
 
@@ -263,7 +294,8 @@ public class PerformanceService {
             throw ApiException.conflict("Achievements are recorded against this goal; it cannot be removed");
         }
         if (g.getSelfRating() != null) {
-            throw ApiException.conflict("This goal is already rated and cannot be removed");
+            throw ApiException.conflict(g.isWorklog() ? "Sub-tasks of this goal are completed and rated; it cannot be removed"
+                    : "This goal is already rated and cannot be removed");
         }
         goalRepository.delete(g);
     }
@@ -303,8 +335,9 @@ public class PerformanceService {
         if (!review.getEmployee().getId().equals(me.id())) {
             throw ApiException.forbidden("Only the person can rate their own goal");
         }
-        if (g.isSales() || g.isOrders()) {
-            throw ApiException.badRequest(g.isOrders() ? "A sales-order goal's self rating is worked out from your confirmed orders"
+        if (g.isSales() || g.isOrders() || g.isWorklog()) {
+            throw ApiException.badRequest(g.isWorklog() ? "Rate each task when you mark it complete"
+                    : g.isOrders() ? "A sales-order goal's self rating is worked out from your confirmed orders"
                     : "A sales goal's self rating is worked out from the amounts you record");
         }
         requireOpen(review.getCycle());
@@ -325,6 +358,9 @@ public class PerformanceService {
     public GoalView managerRate(AuthUser me, Long goalId, PerformanceRequests.Rating body) {
         Goal g = goal(goalId);
         requireManager(me, g.getReview().getEmployee(), g.getReview().getCycle());
+        if (g.isWorklog()) {
+            throw ApiException.badRequest("Review each completed task of a Task worklog goal");
+        }
         readOrders(g);
         if (!selfDone(g, today())) {
             throw ApiException.badRequest(g.isSales() || g.isOrders() ? "Wait for the first achievement (or the goal's end date)"
@@ -474,8 +510,9 @@ public class PerformanceService {
     }
 
     private static void requireGeneral(Goal g) {
-        if (g.isSales() || g.isOrders()) {
-            throw ApiException.badRequest(g.isOrders() ? "A sales-order goal's progress comes from the confirmed orders"
+        if (g.isSales() || g.isOrders() || g.isWorklog()) {
+            throw ApiException.badRequest(g.isWorklog() ? "A Task worklog goal's progress comes from the tasks marked complete"
+                    : g.isOrders() ? "A sales-order goal's progress comes from the confirmed orders"
                     : "A sales goal's progress comes from the amounts recorded");
         }
     }
@@ -514,6 +551,208 @@ public class PerformanceService {
                 d.getCustomer().getName(), d.getProject() == null ? null : d.getProject().getCode(),
                 invoice == null ? null : invoice.getId(), invoice == null ? null : (invoice.getNumber() == null ? "(draft)" : invoice.getNumber()),
                 invoice == null ? null : invoice.getStatus().name());
+    }
+
+    // ---- task worklog goals: the person's work log tasks as sub-tasks ----
+
+    /**
+     * The person marks a sub-task complete, with their stars and a description, or opens it again (until it is
+     * reviewed). Completing closes the work log task (for everyone on it); opening it again opens the task again.
+     */
+    @Transactional
+    public GoalView completeTask(AuthUser me, Long goalId, Long taskId, PerformanceRequests.Completion body) {
+        Goal g = goal(goalId);
+        GoalTask t = worklogTask(g, taskId);
+        if (!g.getReview().getEmployee().getId().equals(me.id())) {
+            throw ApiException.forbidden("Only the person marks their own tasks complete");
+        }
+        requireOpen(g.getReview().getCycle());
+        if (t.getManagerRating() != null) {
+            throw ApiException.conflict("Your manager has already reviewed this task");
+        }
+        if (Boolean.TRUE.equals(body.getCompleted())) {
+            if (body.getRating() == null) {
+                throw ApiException.badRequest("Rate how the task went (your stars) to complete it");
+            }
+            t.setCompletedAt(t.getCompletedAt() == null ? Instant.now() : t.getCompletedAt());
+            t.setSelfRating(stars(body.getRating()));
+            t.setSelfComment(blankToNull(body.getComment()));
+            // the work log task is done: it closes, so nothing more is logged against it
+            t.getWorkTask().setStatus(TaskStatus.CLOSED);
+        } else {
+            t.setCompletedAt(null);
+            t.setSelfRating(null);
+            t.setSelfComment(null);
+            // opened again: the work log task opens again too
+            t.getWorkTask().setStatus(TaskStatus.OPEN);
+        }
+        rollUp(g);
+        return view(g, new Rights(true, false), today());
+    }
+
+    /** The manager reviews a completed sub-task: stars and feedback. */
+    @Transactional
+    public GoalView reviewTask(AuthUser me, Long goalId, Long taskId, PerformanceRequests.Rating body) {
+        Goal g = goal(goalId);
+        GoalTask t = worklogTask(g, taskId);
+        requireManager(me, g.getReview().getEmployee(), g.getReview().getCycle());
+        if (t.getCompletedAt() == null) {
+            throw ApiException.badRequest("The person marks the task complete first");
+        }
+        if (body.getComment() == null || body.getComment().isBlank()) {
+            throw ApiException.badRequest("Write your feedback with the rating");
+        }
+        t.setManagerRating(stars(body.getRating()));
+        t.setManagerComment(body.getComment().strip());
+        t.setManagerRatedBy(employeeRepository.getReferenceById(me.id()));
+        t.setManagerRatedAt(Instant.now());
+        rollUp(g);
+        return view(g, new Rights(false, true), today());
+    }
+
+    /**
+     * After a work log task is saved: the task worklog goals (in open cycles) of the people it is assigned to, and
+     * of those just taken off it, follow their tasks.
+     */
+    @Transactional
+    public void tasksChanged(Collection<Long> employeeIds) {
+        if (employeeIds.isEmpty()) {
+            return;
+        }
+        for (Goal g : goalRepository.openWorklogGoals(employeeIds)) {
+            syncWorklog(g);
+        }
+    }
+
+    /**
+     * The goal's sub-tasks follow the work log tasks assigned to the person: a newly assigned task is added; one taken
+     * off them goes, unless they logged hours on it in the goal's dates or completed it. Sub-tasks share the goal
+     * equally; a completed one counts as done.
+     */
+    private void syncWorklog(Goal g) {
+        Long personId = g.getReview().getEmployee().getId();
+        List<WorkTask> assigned = workTasks.allAssignedTo(personId);
+        Set<Long> logged = workLogs.forEmployee(personId, g.getStartDate(), g.getEndDate()).stream()
+                .filter(w -> w.getTask() != null).map(w -> w.getTask().getId()).collect(Collectors.toSet());
+        Set<Long> have = new HashSet<>();
+        g.getTasks().removeIf(t -> {
+            Long id = t.getWorkTask() == null ? null : t.getWorkTask().getId();
+            boolean keep = id != null && (assigned.stream().anyMatch(a -> a.getId().equals(id)) || logged.contains(id) || t.getCompletedAt() != null);
+            if (keep) {
+                have.add(id);
+            }
+            return !keep;
+        });
+        for (WorkTask w : assigned) {
+            if (have.add(w.getId())) {
+                GoalTask t = new GoalTask();
+                t.setGoal(g);
+                t.setWorkTask(w);
+                g.getTasks().add(t);
+            }
+        }
+        g.getTasks().sort(Comparator.comparing(t -> t.getWorkTask().getCode()));
+        int order = 0;
+        for (GoalTask t : g.getTasks()) {
+            t.setTitle(cut(t.getWorkTask().getCode() + " · " + t.getWorkTask().getTitle(), 150));
+            t.setStartDate(g.getStartDate());
+            t.setEndDate(g.getEndDate());
+            t.setSortOrder(order++);
+        }
+        rollUp(g);
+    }
+
+    /** Equal shares, a completed sub-task 100% done; the goal's ratings are the average of its sub-tasks'. */
+    private static void rollUp(Goal g) {
+        List<GoalTask> tasks = g.getTasks();
+        int given = 0;
+        for (int i = 0; i < tasks.size(); i++) {
+            GoalTask t = tasks.get(i);
+            t.setWeightage(i == tasks.size() - 1 ? 100 - given : 100 / tasks.size());
+            given += t.getWeightage();
+            t.setProgress(t.getCompletedAt() != null ? 100 : 0);
+        }
+        g.setProgress(0);
+        BigDecimal self = average(tasks.stream().map(GoalTask::getSelfRating).filter(Objects::nonNull).toList());
+        g.setSelfRating(self);
+        g.setSelfRatedAt(tasks.stream().map(GoalTask::getCompletedAt).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null));
+        g.setManagerRating(average(tasks.stream().map(GoalTask::getManagerRating).filter(Objects::nonNull).toList()));
+        GoalTask last = tasks.stream().filter(t -> t.getManagerRatedAt() != null)
+                .max(Comparator.comparing(GoalTask::getManagerRatedAt)).orElse(null);
+        g.setManagerRatedAt(last == null ? null : last.getManagerRatedAt());
+        g.setManagerRatedBy(last == null ? null : last.getManagerRatedBy());
+        g.setManagerComment(null);
+        g.setSelfComment(null);
+    }
+
+    /** The average in half stars; null for none. */
+    private static BigDecimal average(List<BigDecimal> ratings) {
+        if (ratings.isEmpty()) {
+            return null;
+        }
+        double avg = ratings.stream().mapToDouble(BigDecimal::doubleValue).average().orElse(0);
+        return BigDecimal.valueOf(Math.max(0.5, Math.round(avg * 2) / 2.0)).setScale(1, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static GoalTask worklogTask(Goal g, Long taskId) {
+        if (!g.isWorklog()) {
+            throw ApiException.badRequest("Only the tasks of a Task worklog goal are completed and reviewed one by one");
+        }
+        return g.getTasks().stream().filter(x -> x.getId().equals(taskId)).findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Sub-task not found: " + taskId));
+    }
+
+    /** The person's work log entries within their task worklog goals' dates, by work log task. */
+    private Map<Long, List<WorkLog>> logsOf(Long personId, List<Goal> goals) {
+        List<Goal> worklog = goals.stream().filter(Goal::isWorklog).toList();
+        if (worklog.isEmpty()) {
+            return Map.of();
+        }
+        LocalDate from = worklog.stream().map(Goal::getStartDate).min(Comparator.naturalOrder()).orElseThrow();
+        LocalDate to = worklog.stream().map(Goal::getEndDate).max(Comparator.naturalOrder()).orElseThrow();
+        return workLogs.forEmployee(personId, from, to).stream().filter(w -> w.getTask() != null)
+                .collect(Collectors.groupingBy(w -> w.getTask().getId()));
+    }
+
+    private GoalView worklogView(Goal g, Rights rights, Map<Long, List<WorkLog>> logs) {
+        List<TaskView> tasks = new ArrayList<>();
+        for (GoalTask t : g.getTasks()) {
+            WorkTask w = t.getWorkTask();
+            List<WorklogEntry> entries = logs.getOrDefault(w.getId(), List.of()).stream()
+                    .filter(l -> !l.getWorkDate().isBefore(g.getStartDate()) && !l.getWorkDate().isAfter(g.getEndDate()))
+                    .sorted(Comparator.comparing(WorkLog::getWorkDate).reversed().thenComparing(WorkLog::getSequence, Comparator.reverseOrder()))
+                    .map(l -> new WorklogEntry(l.getWorkDate(), l.getHours(), l.getDescription()))
+                    .toList();
+            BigDecimal hours = entries.stream().map(WorklogEntry::hours).reduce(BigDecimal.ZERO, BigDecimal::add);
+            boolean reviewed = t.getManagerRating() != null;
+            tasks.add(new TaskView(t.getId(), t.getTitle(), t.getWeightage(), t.getStartDate(), t.getEndDate(), t.getProgress(), null, null,
+                    new WorklogTask(w.getId(), w.getCode(), w.getTitle(), w.getStatus().name(), entries, hours, t.getCompletedAt(),
+                            t.getSelfRating(), t.getSelfComment(), t.getManagerRating(), t.getManagerComment(),
+                            t.getManagerRatedBy() == null ? null : t.getManagerRatedBy().getName(), t.getManagerRatedAt(),
+                            rights.self() && !reviewed, rights.manager() && t.getCompletedAt() != null)));
+        }
+        return new GoalView(g.getId(), g.getTitle(), g.getDescription(), g.getWeightage(), g.getStartDate(), g.getEndDate(),
+                one(progressOf(g)), tasks, g.getSelfRating(), null, g.getSelfRatedAt(), g.getManagerRating(), null,
+                g.getManagerRatedBy() == null ? null : g.getManagerRatedBy().getName(), g.getManagerRatedAt(),
+                false, false, rights.admin() || rights.manager(), GoalType.TASK_WORKLOG, null, null, null,
+                List.of(), false, List.of());
+    }
+
+    /** May I set a goal of this type? (Goal type ticks under Performance; owners and admins have all.) */
+    private void requireType(AuthUser me, GoalType type) {
+        String code = switch (type) {
+            case GENERAL -> Menus.PERF_TYPE_GENERAL;
+            case SALES -> Menus.PERF_TYPE_SALES;
+            case SALES_ORDER -> Menus.PERF_TYPE_ORDERS;
+            case TASK_WORKLOG -> Menus.PERF_TYPE_WORKLOG;
+        };
+        if (!menuAccess.can(me, code)) {
+            throw ApiException.forbidden("You may not set goals of this type. Ask your admin for \"Goal type\" under Performance in Menu access.");
+        }
+    }
+
+    private static String cut(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max - 1) + "…";
     }
 
     // ---- achievements ----
@@ -654,6 +893,10 @@ public class PerformanceService {
         GoalType type = body.getType() == null ? GoalType.GENERAL : body.getType();
         boolean sales = type == GoalType.SALES;
         boolean orders = type == GoalType.SALES_ORDER;
+        boolean worklog = type == GoalType.TASK_WORKLOG;
+        if (worklog && !tasks.isEmpty()) {
+            throw ApiException.badRequest("A Task worklog goal's sub-tasks are the work log tasks assigned to the person; they are added on their own");
+        }
         if (orders) {
             if (body.getTargetAmount() == null) {
                 throw ApiException.badRequest("Give the goal's target amount");
@@ -723,6 +966,14 @@ public class PerformanceService {
         g.setWeightage(body.getWeightage());
         g.setStartDate(body.getStartDate());
         g.setEndDate(body.getEndDate());
+        if (worklog) {
+            // its sub-tasks follow the work log tasks (syncWorklog)
+            for (GoalTask t : g.getTasks()) {
+                t.setStartDate(g.getStartDate());
+                t.setEndDate(g.getEndDate());
+            }
+            return;
+        }
 
         // sub-tasks: kept ones keep their progress, the rest are replaced
         Map<Long, GoalTask> existing = g.getTasks().stream().filter(t -> t.getId() != null)
@@ -749,7 +1000,15 @@ public class PerformanceService {
     }
 
     private GoalView view(Goal g, Rights rights, LocalDate today) {
+        return view(g, rights, today, g.isWorklog() ? logsOf(g.getReview().getEmployee().getId(), List.of(g)) : Map.of());
+    }
+
+    /** logs: the person's work log entries in their task worklog goals' dates, by work log task. */
+    private GoalView view(Goal g, Rights rights, LocalDate today, Map<Long, List<WorkLog>> logs) {
         readOrders(g);
+        if (g.isWorklog()) {
+            return worklogView(g, rights, logs);
+        }
         boolean ended = !today.isBefore(g.getEndDate());
         boolean sales = g.isSales();
         boolean orders = g.isOrders();

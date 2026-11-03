@@ -23,4 +23,7 @@ public interface OnlinePaymentRepository extends JpaRepository<OnlinePayment, Lo
     @Query("select o from OnlinePayment o join fetch o.brand b join fetch o.customer join fetch o.invoice left join fetch o.requestedBy"
             + " where (:brandId is null or b.id = :brandId) and o.createdAt >= :from and o.createdAt < :to order by o.createdAt desc, o.id desc")
     List<OnlinePayment> inRange(@Param("brandId") Long brandId, @Param("from") Instant from, @Param("to") Instant to);
+
+    /** Anything of this customer's (a customer that has any cannot be deleted). */
+    boolean existsByCustomerId(Long customerId);
 }

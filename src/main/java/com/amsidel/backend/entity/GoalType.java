@@ -14,5 +14,10 @@ public enum GoalType {
     GENERAL,
     SALES,
     /** A target amount reached by the confirmed sales orders of the projects the person is allocated to (each order a line, by month). */
-    SALES_ORDER
+    SALES_ORDER,
+    /**
+     * One goal per person and cycle whose sub-tasks are the work log tasks assigned to them (added as they are
+     * assigned); each shows the hours they logged against it, is marked complete with a self rating, then reviewed.
+     */
+    TASK_WORKLOG
 }

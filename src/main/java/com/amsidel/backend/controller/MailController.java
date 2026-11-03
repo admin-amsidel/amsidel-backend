@@ -8,16 +8,20 @@ import com.amsidel.backend.dto.MailFile;
 import com.amsidel.backend.dto.MailResult;
 import com.amsidel.backend.dto.MailSendRequest;
 import com.amsidel.backend.dto.MailSetup;
+import com.amsidel.backend.exception.ApiException;
 import com.amsidel.backend.security.AuthUser;
 import com.amsidel.backend.security.Checkpoint;
 import com.amsidel.backend.security.Menus;
 import com.amsidel.backend.service.MailFileStore;
 import com.amsidel.backend.service.MailService;
+import com.amsidel.backend.service.StaffMailRules;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Map;
 
 /** Staff mail: needs the Staff mail menu. */
 @RestController
@@ -28,10 +32,27 @@ public class MailController {
 
     private final MailService mailService;
     private final MailFileStore files;
+    private final StaffMailRules rules;
 
     @GetMapping("/setup")
     public MailSetup setup() {
         return mailService.setup();
+    }
+
+    /** How many people Choose people may reach in one send, and whether I may change that. */
+    @GetMapping("/rules")
+    public StaffMailRules.Rules rules(@AuthenticationPrincipal AuthUser me) {
+        return rules.rules(me);
+    }
+
+    /** Owners and group admins: the Choose people limit. */
+    @PutMapping("/rules/pick-limit")
+    public StaffMailRules.Rules setPickLimit(@AuthenticationPrincipal AuthUser me, @RequestBody Map<String, Integer> body) {
+        Integer limit = body.get("pickLimit");
+        if (limit == null) {
+            throw ApiException.badRequest("pickLimit is required");
+        }
+        return rules.setPickLimit(me, limit);
     }
 
     /** My sign-off for staff mail: the saved one, or the standard one (saved = false). */
@@ -50,12 +71,15 @@ public class MailController {
     /** One personal mail to one employee; 200 with sent=false when this person's mail could not go out. */
     @PostMapping("/send")
     public MailResult send(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody MailSendRequest request) {
+        rules.checkEmail(me, request.getEmployeeId(), request.getImages() != null && !request.getImages().isEmpty(),
+                request.getAttachments() != null && !request.getAttachments().isEmpty());
         return mailService.send(me, request);
     }
 
     /** An attachment or a picture for the message, uploaded once before sending (kept a few hours). */
     @PostMapping("/files")
     public MailFile upload(@AuthenticationPrincipal AuthUser me, @RequestParam("file") MultipartFile file) {
+        rules.checkUpload(me);
         return files.put(me, file);
     }
 

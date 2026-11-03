@@ -90,6 +90,15 @@ public class MenuAccessService {
         return codes;
     }
 
+    /**
+     * Was this given to the person itself (to them, their user type or designation), not just through "*" or being an
+     * owner? For ticks that change how something works rather than open it, such as Check in without photo.
+     */
+    public boolean givenItself(AuthUser me, String code) {
+        Set<String> mine = codesOf(me);
+        return mine != null && mine.contains(code);
+    }
+
     /** May this person open any of these menus? */
     public boolean can(AuthUser me, String... codes) {
         Set<String> mine = codesOf(me);

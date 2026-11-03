@@ -160,12 +160,17 @@ class PayrollTest {
         String[] hr = employee("EMPLOYEE", dw, "2025-04-01", "8.2");
         String emp = employee("EMPLOYEE", dw, "2025-04-01")[0];
         String lines = "[" + line("BASIC", "150000") + "," + line("PT", "200") + "," + line("TDS", "5000") + "]";
-        // payroll staff without the Manual income tax access: the new regime works it out (the typed 5,000 is not kept)
-        // 18 lakh a year - 75,000 = 17.25 lakh: 60,000 + 60,000 + 25,000 = 1,45,000 + cess 5,800 = 1,50,800 = 12,567 a month
+        // a new salary is Manual: payroll staff without the Manual income tax access cannot type the tax
         json(put("/api/payroll/salaries/" + emp + "?fy=2025"), hr[1], "{\"effectiveFrom\":\"2025-04-01\",\"lines\":%s}".formatted(lines))
+                .andExpect(status().isForbidden());
+        // with Tax regime selection they choose the new regime, which works it out (the typed 5,000 is not kept)
+        // 18 lakh a year - 75,000 = 17.25 lakh: 60,000 + 60,000 + 25,000 = 1,45,000 + cess 5,800 = 1,50,800 = 12,567 a month
+        json(put("/api/payroll/salaries/" + emp + "?fy=2025"), hr[1],
+                "{\"effectiveFrom\":\"2025-04-01\",\"taxRegime\":\"NEW\",\"lines\":%s}".formatted(lines))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tax.regime").value("NEW"))
                 .andExpect(jsonPath("$.tax.canManual").value(false))
+                .andExpect(jsonPath("$.tax.canChooseRegime").value(true))
                 .andExpect(jsonPath("$.tax.chosen.annualTax").value(150800.0))
                 .andExpect(jsonPath("$.lines[?(@.code == 'TDS')].monthly").value(hasItem(12567.0)));
         json(put("/api/payroll/salaries/" + emp + "?fy=2025"), hr[1],
@@ -194,6 +199,20 @@ class PayrollTest {
         String raise = "[" + line("BASIC", "160000") + "," + line("PT", "200") + "," + line("TDS", "5000") + "]";
         json(put("/api/payroll/salaries/" + emp + "?fy=2025"), hr[1], "{\"effectiveFrom\":\"2025-04-01\",\"lines\":%s}".formatted(raise))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.tax.regime").value("MANUAL"));
+
+        // Salaries without Tax regime selection: a new salary is Manual and stays so
+        String[] clerkOf = employee("EMPLOYEE", dw, "2025-04-01");
+        String clerkToken = clerkOf[1];
+        json(put("/api/menu-access/EMPLOYEE/" + clerkOf[0]), owner, "{\"checkpoints\":[\"7001\"]}").andExpect(status().isOk());
+        String other = employee("EMPLOYEE", dw, "2025-04-01")[0];
+        String noTax = "[" + line("BASIC", "50000") + "]";
+        json(put("/api/payroll/salaries/" + other + "?fy=2025"), clerkToken,
+                "{\"effectiveFrom\":\"2025-04-01\",\"taxRegime\":\"NEW\",\"lines\":%s}".formatted(noTax))
+                .andExpect(status().isForbidden());
+        json(put("/api/payroll/salaries/" + other + "?fy=2025"), clerkToken, "{\"effectiveFrom\":\"2025-04-01\",\"lines\":%s}".formatted(noTax))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tax.regime").value("MANUAL"))
+                .andExpect(jsonPath("$.tax.canChooseRegime").value(false));
 
         // the preview while typing: both regimes
         json(post("/api/payroll/tax-preview?fy=2025"), hr[1], "{\"effectiveFrom\":\"2025-04-01\",\"monthlyGross\":150000,\"monthlyProfessionalTax\":200,\"declared\":200000}")

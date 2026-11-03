@@ -503,7 +503,7 @@ public class SalesService {
     }
 
     private void canRead(AuthUser me, SalesDocKind kind) {
-        access.require(me, "You cannot see " + plural(kind), menuOf(kind), Menus.PROD_CUSTOMERS, Menus.PROD_REPORTS);
+        access.require(me, "You cannot see " + plural(kind), menuOf(kind), Menus.CUSTOMERS, Menus.PROD_REPORTS);
     }
 
     private void canWrite(AuthUser me, SalesDocKind kind) {

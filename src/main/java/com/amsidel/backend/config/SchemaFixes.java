@@ -130,6 +130,29 @@ public class SchemaFixes implements ApplicationRunner {
             }
         }
         newsPublic();
+        designationsPerBrand();
+    }
+
+    /**
+     * Designation names and levels were unique in the whole group; now each brand has its own ladder, so the same name
+     * or level may be on several (DesignationService checks they are unique within one). The old one-column unique
+     * rules go once; ddl update never drops them.
+     */
+    private void designationsPerBrand() {
+        for (String column : List.of("name", "level_code")) {
+            try {
+                List<Map<String, Object>> rules = jdbc.queryForList(
+                        "select con.conname as name from pg_constraint con join pg_class rel on rel.oid = con.conrelid"
+                                + " where rel.relname = 'designations' and con.contype = 'u' and pg_get_constraintdef(con.oid) = ?",
+                        "UNIQUE (" + column + ")");
+                for (Map<String, Object> r : rules) {
+                    jdbc.execute("alter table designations drop constraint if exists \"" + r.get("name") + "\"");
+                    log.info("Designation {} is now unique per brand, not in the whole group", column.replace('_', ' '));
+                }
+            } catch (RuntimeException e) {
+                log.warn("Could not free designations.{} for brand ladders: {}", column, e.getMessage());
+            }
+        }
     }
 
     /**

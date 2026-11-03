@@ -40,6 +40,18 @@ public class TaskController {
         return taskService.list(me, status);
     }
 
+    /** The customers a task may be for (the Customer ID picker); no Customers menu needed. */
+    @GetMapping("/customers")
+    public List<TaskResponse.CustomerOption> customers(@AuthenticationPrincipal AuthUser me) {
+        return taskService.customers(me);
+    }
+
+    /** The task's page: the task and every work log entry against it (who, day, hours, what was done). */
+    @GetMapping("/{id}/logs")
+    public TaskResponse.TaskLogs logs(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        return taskService.logs(me, id);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public TaskResponse create(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody TaskRequest request) {

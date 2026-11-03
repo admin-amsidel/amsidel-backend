@@ -41,6 +41,7 @@ import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -224,6 +225,37 @@ class AttendanceTest {
                 .andExpect(jsonPath("$.day").doesNotExist());
         postJson(other, "/api/attendance/check-out", "{}").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("You have not checked in today"));
+    }
+
+    @Test
+    void checkInWithoutPhotoTakesOnlyTimeAndGps() throws Exception {
+        String gopiId = create("Gopi Gps", "at.gopi", "EMPLOYEE", null);
+        String meenaId = create("Meena Attendance", "at.meena", "EMPLOYEE", null);
+        // Gopi: Check in plus Check in without photo; Meena: the whole Attendance menu, which does not give the own tick
+        giveMenus("/api/menu-access/EMPLOYEE/" + gopiId, "{\"checkpoints\":[\"1001\",\"1003\"]}");
+        giveMenus("/api/menu-access/EMPLOYEE/" + meenaId, "{\"checkpoints\":[\"1000\"]}");
+        String gopi = signIn("at.gopi");
+        String meena = signIn("at.meena");
+
+        mockMvc.perform(get("/api/attendance/today").header("Authorization", auth(gopi))).andExpect(jsonPath("$.photoCapture").value(false));
+        mockMvc.perform(get("/api/attendance/today").header("Authorization", auth(meena))).andExpect(jsonPath("$.photoCapture").value(true));
+        // owners have every menu ("*") but keep the photo
+        mockMvc.perform(get("/api/attendance/today").header("Authorization", auth(owner))).andExpect(jsonPath("$.photoCapture").value(true));
+
+        // even a field visit goes without a photo, with the time and GPS location; a photo sent anyway is not kept
+        checkIn(gopi, null, "FIELD", "10.0159", "76.3419", "12").andExpect(status().isCreated())
+                .andExpect(jsonPath("$.hasPhoto").value(false))
+                .andExpect(jsonPath("$.checkIn.latitude").value(10.0159))
+                .andExpect(jsonPath("$.checkIn.at").exists());
+        postJson(gopi, "/api/attendance/check-out", "{}").andExpect(status().isOk());
+        checkIn(gopi, photo("png"), "OFFICE", "10", "76", "10").andExpect(status().isCreated()).andExpect(jsonPath("$.hasPhoto").value(false));
+        // Meena still needs the photo for a field visit
+        checkIn(meena, null, "FIELD", "10", "76", "10").andExpect(status().isBadRequest());
+    }
+
+    private void giveMenus(String path, String json) throws Exception {
+        mockMvc.perform(put(path).header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isOk());
     }
 
     @Test

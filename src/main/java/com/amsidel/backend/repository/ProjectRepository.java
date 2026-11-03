@@ -26,4 +26,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     /** The project a customer's status link points to. */
     @Query("select p from Project p join fetch p.brand join fetch p.customer where p.shareToken = :token")
     Optional<Project> findByShareToken(@Param("token") String token);
+
+    /** Anything of this customer's (a customer that has any cannot be deleted). */
+    boolean existsByCustomerId(Long customerId);
 }

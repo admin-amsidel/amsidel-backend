@@ -152,6 +152,22 @@ public class PerformanceController {
         return service.taskProgress(me, goalId, taskId, body.getProgress());
     }
 
+    /** Task worklog goals: the person marks a task complete (stars and a description) or opens it again. */
+    @Checkpoint({Menus.PERF_MY})
+    @PutMapping("/goals/{goalId}/tasks/{taskId}/completion")
+    public GoalView completeTask(@AuthenticationPrincipal AuthUser me, @PathVariable Long goalId, @PathVariable Long taskId,
+                                 @Valid @RequestBody PerformanceRequests.Completion body) {
+        return service.completeTask(me, goalId, taskId, body);
+    }
+
+    /** Task worklog goals: the manager reviews a completed task. */
+    @Checkpoint({Menus.PERF_TEAM})
+    @PutMapping("/goals/{goalId}/tasks/{taskId}/review")
+    public GoalView reviewTask(@AuthenticationPrincipal AuthUser me, @PathVariable Long goalId, @PathVariable Long taskId,
+                               @Valid @RequestBody PerformanceRequests.Rating body) {
+        return service.reviewTask(me, goalId, taskId, body);
+    }
+
     /** Sales goals: the person records what they achieved; progress and self rating follow. */
     @Checkpoint({Menus.PERF_MY})
     @PostMapping("/goals/{goalId}/sales-entries")

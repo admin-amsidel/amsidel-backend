@@ -25,4 +25,7 @@ public interface PaymentSourceRepository extends JpaRepository<PaymentSource, Lo
     Optional<PaymentSource> findByTransactionIdIgnoreCase(String transactionId);
 
     List<PaymentSource> findByOnlinePaymentIdIn(java.util.Collection<Long> onlinePaymentIds);
+
+    /** Anything of this customer's (a customer that has any cannot be deleted). */
+    boolean existsByCustomerId(Long customerId);
 }

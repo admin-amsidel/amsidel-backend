@@ -128,6 +128,18 @@ public final class PerformanceRequests {
         private String comment;
     }
 
+    /** Task worklog: the person marks a sub-task complete (with their stars and a description) or opens it again. */
+    @Data
+    public static class Completion {
+        @NotNull
+        private Boolean completed;
+        /** 0.5-5 in half stars; needed to complete. */
+        @DecimalMin("0.5") @DecimalMax("5.0")
+        private BigDecimal rating;
+        @Size(max = 2000)
+        private String comment;
+    }
+
     /** What the person achieved towards a sales goal: amount, period, invoice numbers and a note. */
     @Data
     public static class SalesEntryBody {

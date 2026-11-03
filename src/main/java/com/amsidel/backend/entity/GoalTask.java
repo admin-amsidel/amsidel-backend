@@ -50,4 +50,34 @@ public class GoalTask {
 
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
+
+    // ---- task worklog goals: the work log task, marked complete with a self rating, then reviewed ----
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "work_task_id")
+    private WorkTask workTask;
+
+    /** When the person marked it complete; null = not complete. */
+    @Column(name = "completed_at")
+    private java.time.Instant completedAt;
+
+    /** 0.5-5 in half stars. */
+    @Column(name = "self_rating", precision = 3, scale = 1)
+    private java.math.BigDecimal selfRating;
+
+    @Column(name = "self_comment", length = 2000)
+    private String selfComment;
+
+    @Column(name = "manager_rating", precision = 3, scale = 1)
+    private java.math.BigDecimal managerRating;
+
+    @Column(name = "manager_comment", length = 2000)
+    private String managerComment;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "manager_rated_by_id")
+    private Employee managerRatedBy;
+
+    @Column(name = "manager_rated_at")
+    private java.time.Instant managerRatedAt;
 }

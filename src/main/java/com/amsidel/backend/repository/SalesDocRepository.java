@@ -54,4 +54,7 @@ public interface SalesDocRepository extends JpaRepository<SalesDoc, Long> {
             + " where d.kind = com.amsidel.backend.entity.SalesDocKind.SALES_ORDER and d.status = com.amsidel.backend.entity.SalesDocStatus.ISSUED"
             + " and m.id = :employeeId and d.docDate between :from and :to order by d.docDate, d.id")
     List<SalesDoc> confirmedOrdersFor(@Param("employeeId") Long employeeId, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /** Anything of this customer's (a customer that has any cannot be deleted). */
+    boolean existsByCustomerId(Long customerId);
 }

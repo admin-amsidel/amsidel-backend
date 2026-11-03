@@ -35,6 +35,9 @@ public class TaskRequest {
     /** Empty = a group-wide task. */
     private Long brandId;
 
+    /** Optional: the customer the work is for. */
+    private Long customerId;
+
     /** Employees who may log hours against it. */
     private List<Long> assigneeIds = new ArrayList<>();
 }

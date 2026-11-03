@@ -245,7 +245,8 @@ class AuthFlowTest {
     void designationsAndReportingLines() throws Exception {
         String list = mockMvc.perform(get("/api/designations").header("Authorization", auth(ownerToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(12))
+                // the 12 group-wide levels come first (brand ladders, if any, after them)
+                .andExpect(jsonPath("$[?(@.brandId == null)]", org.hamcrest.Matchers.hasSize(12)))
                 .andExpect(jsonPath("$[0].name").value("Trainee"))
                 .andExpect(jsonPath("$[5].levelCode").value("6.1"))
                 .andExpect(jsonPath("$[6].levelCode").value("6.2"))
@@ -298,6 +299,42 @@ class AuthFlowTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Odd\",\"levelNumber\":3,\"levelCode\":\"4.5\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void eachBrandHasItsOwnDesignationLadder() throws Exception {
+        long other = com.jayway.jsonpath.JsonPath.<Integer>read(mockMvc.perform(post("/api/brands").header("Authorization", auth(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"LD\",\"name\":\"Ladder Brand\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.id");
+        String dwSales = "{\"name\":\"Sales Executive\",\"levelNumber\":3,\"levelCode\":\"3.7\",\"brandId\":%d}";
+        String created = mockMvc.perform(post("/api/designations").header("Authorization", auth(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON).content(dwSales.formatted(dwBrandId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.brandId").value((int) dwBrandId))
+                .andExpect(jsonPath("$.brandCode").value("DW"))
+                .andReturn().getResponse().getContentAsString();
+        int dwSalesId = com.jayway.jsonpath.JsonPath.read(created, "$.id");
+        // the same title and level on another brand's ladder, ranked its own way
+        mockMvc.perform(post("/api/designations").header("Authorization", auth(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON).content(dwSales.formatted(other)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.brandCode").value("LD"));
+        mockMvc.perform(post("/api/designations").header("Authorization", auth(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Sales Executive\",\"levelNumber\":5,\"levelCode\":\"5.7\",\"brandId\":%d}".formatted(other)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(get("/api/designations").header("Authorization", auth(ownerToken)))
+                .andExpect(jsonPath("$[?(@.name == 'Sales Executive')].brandCode",
+                        org.hamcrest.Matchers.containsInAnyOrder("DW", "LD")));
+
+        // a DW designation is only for DW people
+        String json = employeeJson("Ladder Person", "ladder.p", "ab@123", "EMPLOYEE", other, true)
+                .replace("\"role\"", "\"designationId\":" + dwSalesId + ",\"role\"");
+        mockMvc.perform(post("/api/employees").header("Authorization", auth(ownerToken)).contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("is a designation of")));
+        mockMvc.perform(post("/api/employees").header("Authorization", auth(ownerToken)).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.replace("\"brandId\":" + other, "\"brandId\":" + dwBrandId)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.designationName").value("Sales Executive"));
     }
 
     @Test

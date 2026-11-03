@@ -21,6 +21,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -267,7 +268,7 @@ class PerformanceTest {
     void salesOrderGoalsCountTheOrdersOfTheProjectsThePersonIsAllocatedTo() throws Exception {
         String[] emp = employee();
         String[] other = employee();
-        json(put("/api/menu-access/EMPLOYEE/" + emp[0]), owner, "{\"checkpoints\":[\"11304\",\"11301\",\"6001\"]}").andExpect(status().isOk());
+        json(put("/api/menu-access/EMPLOYEE/" + emp[0]), owner, "{\"checkpoints\":[\"11304\",\"13000\",\"6001\"]}").andExpect(status().isOk());
         String customer = idOf(json(post("/api/trade/customers"), owner, "{\"brandId\":%d,\"name\":\"Goal Villa\",\"phone\":\"9847099999\"}".formatted(dw)));
         // her project (she is an allocated employee), and someone else's
         String mine = idOf(json(post("/api/trade/projects"), owner,
@@ -385,6 +386,99 @@ class PerformanceTest {
         String general = idOf(goal(lead, emp[0], "General", 40, from, to));
         json(post("/api/performance/goals/" + general + "/sales-entries"), emp[1], entry.formatted(null, 1000, from, to, "X"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void taskWorklogGoalFollowsTheAssignedTasksAndTheirLogs() throws Exception {
+        String[] emp = employee();
+        String code = "WL-" + seq;
+        String task = idOf(json(post("/api/tasks"), owner, workTask(code, "Kumar windows", emp[0])).andExpect(status().isCreated()));
+        json(post("/api/worklog/entries"), emp[1], """
+                {"workDate":"%s","taskId":"%s","hours":2.5,"description":"Measured openings"}""".formatted(TODAY.minusDays(2), code))
+                .andExpect(status().isCreated());
+        json(post("/api/worklog/entries"), emp[1], """
+                {"workDate":"%s","taskId":"%s","hours":1,"description":"Fixed frames"}""".formatted(TODAY.minusDays(1), code))
+                .andExpect(status().isCreated());
+
+        // one Task worklog goal per person: its sub-tasks are their tasks, with the hours they logged
+        String body = """
+                {"title":"Task worklog","type":"TASK_WORKLOG","weightage":30,"startDate":"%s","endDate":"%s","tasks":[]}"""
+                .formatted(TODAY.minusMonths(1), TODAY.plusMonths(1));
+        String g = idOf(json(post("/api/performance/cycles/" + cycle + "/employees/" + emp[0] + "/goals"), lead, body)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("TASK_WORKLOG"))
+                .andExpect(jsonPath("$.tasks", hasSize(1)))
+                .andExpect(jsonPath("$.tasks[0].worklog.code").value(code))
+                .andExpect(jsonPath("$.tasks[0].worklog.totalHours").value(3.5))
+                .andExpect(jsonPath("$.tasks[0].worklog.logs[0].description").value("Fixed frames")));
+        json(post("/api/performance/cycles/" + cycle + "/employees/" + emp[0] + "/goals"), lead, body.replace("30", "10"))
+                .andExpect(status().isConflict());
+
+        // a task assigned later is added on its own
+        String later = idOf(json(post("/api/tasks"), owner, workTask(code + "B", "Lulu site", emp[0])).andExpect(status().isCreated()));
+        String review = body(mockMvc.perform(get("/api/performance/cycles/" + cycle + "/me").header("Authorization", auth(emp[1]))));
+        List<Integer> subs = JsonPath.read(review, "$.goals[?(@.id == " + g + ")].tasks[*].id");
+        assertThat(subs).hasSize(2);
+        int first = JsonPath.<List<Integer>>read(review, "$.goals[?(@.id == " + g + ")].tasks[?(@.worklog.code == '" + code + "')].id").get(0);
+
+        // the manager reviews only after the person completes it, with their stars
+        json(put("/api/performance/goals/" + g + "/tasks/" + first + "/review"), lead, "{\"rating\":4,\"comment\":\"Good\"}")
+                .andExpect(status().isBadRequest());
+        json(put("/api/performance/goals/" + g + "/tasks/" + first + "/completion"), emp[1], "{\"completed\":true}")
+                .andExpect(status().isBadRequest());
+        json(put("/api/performance/goals/" + g + "/tasks/" + first + "/completion"), lead, "{\"completed\":true,\"rating\":4}")
+                .andExpect(status().isForbidden());
+        json(put("/api/performance/goals/" + g + "/tasks/" + first + "/completion"), emp[1],
+                "{\"completed\":true,\"rating\":4.5,\"comment\":\"Done on time\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.progress").value(50.0))
+                .andExpect(jsonPath("$.selfRating").value(4.5))
+                .andExpect(jsonPath("$.tasks[?(@.id == " + first + ")].worklog.taskStatus").value(hasItem("CLOSED")));
+        // completed: the work log task is closed, so no more hours go on it
+        json(post("/api/worklog/entries"), emp[1], """
+                {"workDate":"%s","taskId":"%s","hours":1,"description":"More"}""".formatted(TODAY, code))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Task " + code + " is closed"));
+        // opened again (before the review): the task opens again; completed once more, it closes
+        json(put("/api/performance/goals/" + g + "/tasks/" + first + "/completion"), emp[1], "{\"completed\":false}")
+                .andExpect(jsonPath("$.tasks[?(@.id == " + first + ")].worklog.taskStatus").value(hasItem("OPEN")));
+        json(put("/api/performance/goals/" + g + "/tasks/" + first + "/completion"), emp[1],
+                "{\"completed\":true,\"rating\":4.5,\"comment\":\"Done on time\"}")
+                .andExpect(jsonPath("$.tasks[?(@.id == " + first + ")].worklog.taskStatus").value(hasItem("CLOSED")));
+        json(put("/api/performance/goals/" + g + "/tasks/" + first + "/review"), lead, "{\"rating\":4,\"comment\":\"Good work\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.managerRating").value(4.0))
+                .andExpect(jsonPath("$.tasks[?(@.id == " + first + ")].worklog.managerComment").value(hasItem("Good work")));
+        // reviewed: it can no longer be opened again
+        json(put("/api/performance/goals/" + g + "/tasks/" + first + "/completion"), emp[1], "{\"completed\":false}")
+                .andExpect(status().isConflict());
+
+        // taken off a task with nothing logged: it leaves the goal; a completed one stays
+        json(put("/api/tasks/" + later), owner, workTask(code + "B", "Lulu site")).andExpect(status().isOk());
+        json(put("/api/tasks/" + task), owner, workTask(code, "Kumar windows")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/performance/cycles/" + cycle + "/me").header("Authorization", auth(emp[1])))
+                .andExpect(jsonPath("$.goals[?(@.id == " + g + ")].tasks[*].worklog.code", contains(code)));
+    }
+
+    @Test
+    void goalTypesFollowTheirTicks() throws Exception {
+        String[] emp = employee();
+        String body = """
+                {"title":"Orders","type":"SALES_ORDER","targetAmount":1000,"weightage":10,"startDate":"%s","endDate":"%s","tasks":[]}"""
+                .formatted(TODAY, TODAY.plusDays(10));
+        // a team lead given only Team performance and General goals
+        json(put("/api/menu-access/EMPLOYEE/" + leadId), owner, "{\"checkpoints\":[\"6001\",\"6002\",\"6004\"]}").andExpect(status().isOk());
+        try {
+            json(post("/api/performance/cycles/" + cycle + "/employees/" + emp[0] + "/goals"), lead, body).andExpect(status().isForbidden());
+            goal(lead, emp[0], "General one", 10, TODAY, TODAY.plusDays(10)).andExpect(status().isCreated());
+        } finally {
+            json(put("/api/menu-access/EMPLOYEE/" + leadId), owner, "{\"checkpoints\":[]}").andExpect(status().isOk());
+        }
+    }
+
+    private String workTask(String code, String title, String... assignees) {
+        return "{\"code\":\"%s\",\"title\":\"%s\",\"status\":\"OPEN\",\"brandId\":%d,\"assigneeIds\":[%s]}"
+                .formatted(code, title, dw, String.join(",", assignees));
     }
 
     /** A new employee below the lead: {id, token}. */

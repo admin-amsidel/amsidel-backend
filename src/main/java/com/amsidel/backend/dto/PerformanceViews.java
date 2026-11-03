@@ -53,12 +53,35 @@ public final class PerformanceViews {
         }
     }
 
-    /** A sub-task; for a sales goal also its target and what was achieved towards it (progress follows the two). */
+    /**
+     * A sub-task; for a sales goal also its target and what was achieved towards it (progress follows the two);
+     * for a task worklog goal, worklog: the work log task with the person's hours, completion and ratings.
+     */
     public record TaskView(Long id, String title, int weightage, LocalDate startDate, LocalDate endDate, int progress,
-                           BigDecimal targetAmount, BigDecimal achievedAmount) {
+                           BigDecimal targetAmount, BigDecimal achievedAmount, WorklogTask worklog) {
+        public TaskView(Long id, String title, int weightage, LocalDate startDate, LocalDate endDate, int progress,
+                        BigDecimal targetAmount, BigDecimal achievedAmount) {
+            this(id, title, weightage, startDate, endDate, progress, targetAmount, achievedAmount, null);
+        }
+
         public static TaskView of(GoalTask t) {
             return new TaskView(t.getId(), t.getTitle(), t.getWeightage(), t.getStartDate(), t.getEndDate(), t.getProgress(), null, null);
         }
+    }
+
+    /** One day's entry the person logged against the task. */
+    public record WorklogEntry(LocalDate date, BigDecimal hours, String description) {
+    }
+
+    /**
+     * A task worklog sub-task: the work log task (code, title, status), the person's entries against it in the
+     * goal's dates and their hours added up; completed with a self rating and description, then the manager's
+     * review. canComplete: the person may mark it complete or open it again; canReview: the manager may review it.
+     */
+    public record WorklogTask(Long workTaskId, String code, String taskTitle, String taskStatus, List<WorklogEntry> logs,
+                              BigDecimal totalHours, Instant completedAt, BigDecimal selfRating, String selfComment,
+                              BigDecimal managerRating, String managerComment, String managerRatedBy, Instant managerRatedAt,
+                              boolean canComplete, boolean canReview) {
     }
 
     /**

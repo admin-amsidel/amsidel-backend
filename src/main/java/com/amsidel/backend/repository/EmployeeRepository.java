@@ -50,6 +50,11 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     long countByDesignation_Id(Long designationId);
 
+    /** People with this designation who are not of this brand (group-level people included). */
+    @Query("select count(e) from Employee e left join e.brand b where e.designation.id = :designationId"
+            + " and (b.id is null or b.id <> :brandId)")
+    long countWithDesignationOutsideBrand(@Param("designationId") Long designationId, @Param("brandId") Long brandId);
+
     List<Employee> findByUserType_Id(Long userTypeId);
 
     /** [userTypeId, count] for the types in use. */
