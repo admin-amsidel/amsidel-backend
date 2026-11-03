@@ -36,8 +36,8 @@ import java.util.stream.Collectors;
 @Service
 public class ChatService {
 
-    /** Online = the chat window asked within this time. */
-    private static final Duration ONLINE = Duration.ofSeconds(45);
+    /** Online = the chat window asked within this time (a minimised window checks every 30 seconds). */
+    private static final Duration ONLINE = Duration.ofSeconds(70);
     private static final Duration TYPING = Duration.ofSeconds(6);
 
     private final ChatConversationRepository conversations;
@@ -45,6 +45,7 @@ public class ChatService {
     private final ChatMessageRepository messages;
     private final EmployeeRepository employees;
     private final MenuAccessService menuAccess;
+    private final ChatSignals signals;
     private final int retentionDays;
 
     private final Map<Long, Instant> lastSeen = new ConcurrentHashMap<>();
@@ -53,12 +54,14 @@ public class ChatService {
     private final Map<Long, String> names = new ConcurrentHashMap<>();
 
     public ChatService(ChatConversationRepository conversations, ChatMemberRepository members, ChatMessageRepository messages,
-                       EmployeeRepository employees, MenuAccessService menuAccess, @Value("${app.chat.retention-days:7}") int retentionDays) {
+                       EmployeeRepository employees, MenuAccessService menuAccess, ChatSignals signals,
+                       @Value("${app.chat.retention-days:7}") int retentionDays) {
         this.conversations = conversations;
         this.members = members;
         this.messages = messages;
         this.employees = employees;
         this.menuAccess = menuAccess;
+        this.signals = signals;
         this.retentionDays = retentionDays;
     }
 
@@ -95,9 +98,29 @@ public class ChatService {
 
     // ---- the window's poll ----
 
+    /**
+     * The minimised window's check (it never asks for a full /sync): my change version, from memory. Only when it
+     * differs from since (the one the window has; none on its first look) is my unread count read, one query, for
+     * the chat button's badge.
+     */
+    public Changes changes(AuthUser me, String since) {
+        canChat(me);
+        lastSeen.put(me.id(), Instant.now());
+        signals.checking(me.id());
+        String version = signals.version(me.id());
+        if (version.equals(since)) {
+            return new Changes(version, null);
+        }
+        int unread = messages.unread(me.id()).stream().mapToInt(row -> ((Number) row[1]).intValue()).sum();
+        return new Changes(version, unread);
+    }
+
     @Transactional(readOnly = true)
     public Sync sync(AuthUser me, long after) {
         canChat(me);
+        signals.syncing(me.id());
+        // read before the chats, so a change while this runs shows as a new version next time
+        String version = signals.version(me.id());
         lastSeen.put(me.id(), Instant.now());
         List<ConversationView> list = conversationsOf(me);
         Set<Long> ids = list.stream().map(ConversationView::id).collect(Collectors.toSet());
@@ -119,7 +142,7 @@ public class ChatService {
         }
         List<Long> onlineNow = lastSeen.entrySet().stream().filter(x -> x.getValue().isAfter(now.minus(ONLINE))).map(Map.Entry::getKey).toList();
         int unread = list.stream().mapToInt(ConversationView::unread).sum();
-        return new Sync(list, fresh, typingNow, onlineNow, unread, retentionDays, now);
+        return new Sync(list, fresh, typingNow, onlineNow, unread, retentionDays, now, version);
     }
 
     /** My chats, newest activity first. */
@@ -200,6 +223,7 @@ public class ChatService {
         messages.save(m);
         mine.getConversation().setLastMessageAt(m.getCreatedAt());
         mine.setLastReadMessageId(m.getId());
+        changedFor(conversationId);
         Map<Long, Instant> t = typing.get(conversationId);
         if (t != null) {
             t.remove(me.id());
@@ -216,6 +240,8 @@ public class ChatService {
         long upTo = Math.min(messageId, messages.lastId(conversationId));
         if (upTo > mine.getLastReadMessageId()) {
             mine.setLastReadMessageId(upTo);
+            // my unread count, and the others' read ticks
+            changedFor(conversationId);
         }
     }
 
@@ -253,6 +279,7 @@ public class ChatService {
             conversations.save(c);
             join(c, employees.getReferenceById(me.id()));
             join(c, other);
+            signals.changed(List.of(me.id(), other.getId()));
         }
         conversations.flush();
         return viewOf(me, c.getId());
@@ -261,6 +288,9 @@ public class ChatService {
     @Transactional
     public ConversationView group(AuthUser me, GroupBody body) {
         canChat(me);
+        if (!menuAccess.can(me, Menus.CHAT_GROUP_CREATE)) {
+            throw ApiException.forbidden("Starting group chats needs the Start group chats access; ask your admin");
+        }
         ChatConversation c = new ChatConversation();
         c.setType(ChatConversation.Type.GROUP);
         c.setName(body.getName().strip());
@@ -272,13 +302,17 @@ public class ChatService {
             join(c, e);
         }
         members.flush();
+        changedFor(c.getId());
         return viewOf(me, c.getId());
     }
 
-    /** Anyone in a group adds people to it. */
+    /** Anyone in a group with the Add people to groups access adds people to it. */
     @Transactional
     public ConversationView addMembers(AuthUser me, Long conversationId, MembersBody body) {
         canChat(me);
+        if (!menuAccess.can(me, Menus.CHAT_GROUP_ADD)) {
+            throw ApiException.forbidden("Adding people to a group needs the Add people to groups access; ask your admin");
+        }
         ChatConversation c = member(me, conversationId).getConversation();
         if (c.getType() != ChatConversation.Type.GROUP) {
             throw ApiException.badRequest("People are added to groups only; start a group instead");
@@ -289,6 +323,7 @@ public class ChatService {
             }
         }
         members.flush();
+        changedFor(conversationId);
         return viewOf(me, conversationId);
     }
 
@@ -303,6 +338,8 @@ public class ChatService {
         }
         members.delete(mine);
         members.flush();
+        signals.changed(List.of(me.id()));
+        changedFor(conversationId);
         if (members.inConversations(List.of(conversationId)).isEmpty()) {
             conversations.delete(c);
         }
@@ -327,6 +364,11 @@ public class ChatService {
         m.setJoinedAt(Instant.now());
         m.setLastReadMessageId(c.getId() == null ? 0 : messages.lastId(c.getId()));
         members.save(m);
+    }
+
+    /** Everyone in this chat sees a new change version. */
+    private void changedFor(Long conversationId) {
+        signals.changed(members.inConversations(List.of(conversationId)).stream().map(m -> m.getEmployee().getId()).toList());
     }
 
     public int retentionDays() {

@@ -27,13 +27,15 @@ public class ChatCleanup {
     private final ChatMessageRepository messages;
     private final ChatMemberRepository members;
     private final ChatConversationRepository conversations;
+    private final com.amsidel.backend.service.ChatSignals signals;
     private final int retentionDays;
 
     public ChatCleanup(ChatMessageRepository messages, ChatMemberRepository members, ChatConversationRepository conversations,
-                       @Value("${app.chat.retention-days:7}") int retentionDays) {
+                       com.amsidel.backend.service.ChatSignals signals, @Value("${app.chat.retention-days:7}") int retentionDays) {
         this.messages = messages;
         this.members = members;
         this.conversations = conversations;
+        this.signals = signals;
         this.retentionDays = Math.max(1, retentionDays);
     }
 
@@ -50,6 +52,9 @@ public class ChatCleanup {
         int gone = messages.deleteOlderThan(before);
         members.deleteOfEmptyDirect(before);
         int chats = conversations.deleteEmptyDirect(before);
+        if (gone + chats > 0) {
+            signals.changedForAll();
+        }
         return new int[] {gone, chats};
     }
 }

@@ -98,6 +98,12 @@ class ChatTest {
         mockMvc.perform(get("/api/chat/sync").header("Authorization", auth(anu)))
                 .andExpect(jsonPath("$.conversations[0].othersRead").value(0));
 
+        // the minimised window's check: Anu's version moves when Ravi reads (her read tick), not otherwise
+        String before = JsonPath.read(body(mockMvc.perform(get("/api/chat/changes").header("Authorization", auth(anu)))), "$.version");
+        // the same version: no unread count (nothing read from the database); a first look has it
+        mockMvc.perform(get("/api/chat/changes").param("since", before).header("Authorization", auth(anu)))
+                .andExpect(jsonPath("$.version").value(before)).andExpect(jsonPath("$.unreadTotal").doesNotExist());
+        mockMvc.perform(get("/api/chat/changes").header("Authorization", auth(anu))).andExpect(jsonPath("$.unreadTotal").isNumber());
         // typing shows to the other side; reading clears the unread and gives Anu the tick
         mockMvc.perform(post("/api/chat/conversations/" + direct + "/typing").header("Authorization", auth(ravi))).andExpect(status().isNoContent());
         mockMvc.perform(get("/api/chat/sync").header("Authorization", auth(anu)))
@@ -107,10 +113,19 @@ class ChatTest {
         mockMvc.perform(get("/api/chat/sync").header("Authorization", auth(ravi))).andExpect(jsonPath("$.unreadTotal").value(0));
         mockMvc.perform(get("/api/chat/sync").header("Authorization", auth(anu)))
                 .andExpect(jsonPath("$.conversations[0].othersRead").value(Integer.parseInt(first)));
+        mockMvc.perform(get("/api/chat/changes").header("Authorization", auth(anu))).andExpect(jsonPath("$.version").value(org.hamcrest.Matchers.not(before)));
 
-        // a group with the owner; whoever is in it adds people; the last messages page oldest first
+        // Team chat alone: one-to-one only; starting groups and adding people are their own ticks
+        json(post("/api/chat/conversations/group"), anu, "{\"name\":\"Kochi site team\",\"memberIds\":[%s]}".formatted(raviId))
+                .andExpect(status().isForbidden());
+        json(put("/api/menu-access/EMPLOYEE/" + anuId), owner, "{\"checkpoints\":[\"12000\",\"12001\",\"1001\"]}").andExpect(status().isOk());
+        json(put("/api/menu-access/EMPLOYEE/" + raviId), owner, "{\"checkpoints\":[\"12000\",\"12002\",\"1001\"]}").andExpect(status().isOk());
+
+        // a group with the owner; whoever is in it with the tick adds people; the last messages page oldest first
         String group = idOf(json(post("/api/chat/conversations/group"), anu, "{\"name\":\"Kochi site team\",\"memberIds\":[%s]}".formatted(raviId))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.members.length()").value(2)));
+        json(post("/api/chat/conversations/" + group + "/members"), anu, "{\"memberIds\":[%s]}".formatted(ownerId()))
+                .andExpect(status().isForbidden());
         json(post("/api/chat/conversations/" + group + "/members"), ravi, "{\"memberIds\":[%s]}".formatted(ownerId()))
                 .andExpect(jsonPath("$.members.length()").value(3));
         json(post("/api/chat/conversations/" + group + "/members"), ravi, "{\"memberIds\":[%s]}".formatted(noChatId)).andExpect(status().isBadRequest());

@@ -32,6 +32,12 @@ public class ChatController {
         return chat.sync(me, after);
     }
 
+    /** The minimised window's check: my change version (no database), and my unread count only when it moved. */
+    @GetMapping("/changes")
+    public Changes changes(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) String since) {
+        return chat.changes(me, since);
+    }
+
     @GetMapping("/people")
     public List<Person> people(@AuthenticationPrincipal AuthUser me) {
         return chat.people(me);

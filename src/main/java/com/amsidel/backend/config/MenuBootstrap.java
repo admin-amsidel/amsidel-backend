@@ -87,8 +87,9 @@ public class MenuBootstrap implements ApplicationRunner {
         for (String code : added) {
             Menus.ALL.stream().filter(d -> d.code().equals(code)).findFirst().ifPresent(d -> {
                 for (String role : Menus.NEW_MENU_ROLES.getOrDefault(code, List.of())) {
-                    accessRepository.save(MenuAccess.of(AccessSubject.ROLE, role, String.valueOf(d.checkpoint())));
-                    log.info("New menu {} given to {}", d.name(), role);
+                    if (grantOnce(AccessSubject.ROLE, role, String.valueOf(d.checkpoint()))) {
+                        log.info("New menu {} given to {}", d.name(), role);
+                    }
                 }
                 grantDesignations(d);
                 takeOver(d);
@@ -114,8 +115,7 @@ public class MenuBootstrap implements ApplicationRunner {
                 continue;
             }
             String subject = a.getSubjectType() + ":" + a.getSubjectKey();
-            if (given.add(subject)) {
-                accessRepository.save(MenuAccess.of(a.getSubjectType(), a.getSubjectKey(), checkpoint));
+            if (given.add(subject) && grantOnce(a.getSubjectType(), a.getSubjectKey(), checkpoint)) {
                 log.info("Menu {} given to {} {} (had checkpoint {})", d.name(), a.getSubjectType(), a.getSubjectKey(), a.getCheckpoint());
             }
             if (!live.contains(Integer.valueOf(a.getCheckpoint()))) {
@@ -128,8 +128,9 @@ public class MenuBootstrap implements ApplicationRunner {
     private void grantDesignations(Menus.Def d) {
         for (String levelCode : Menus.NEW_MENU_DESIGNATIONS.getOrDefault(d.code(), List.of())) {
             designationRepository.findAll().stream().filter(x -> levelCode.equals(x.getLevelCode())).findFirst().ifPresent(x -> {
-                accessRepository.save(MenuAccess.of(AccessSubject.DESIGNATION, String.valueOf(x.getId()), String.valueOf(d.checkpoint())));
-                log.info("New menu {} given to {}", d.name(), x.getName());
+                if (grantOnce(AccessSubject.DESIGNATION, String.valueOf(x.getId()), String.valueOf(d.checkpoint()))) {
+                    log.info("New menu {} given to {}", d.name(), x.getName());
+                }
             });
         }
     }
@@ -144,6 +145,19 @@ public class MenuBootstrap implements ApplicationRunner {
     }
 
     private void grant(String role, List<String> checkpoints) {
-        checkpoints.forEach(c -> accessRepository.save(MenuAccess.of(AccessSubject.ROLE, role, c)));
+        checkpoints.forEach(c -> grantOnce(AccessSubject.ROLE, role, c));
+    }
+
+    /**
+     * Saves the grant unless it is already there; false when it was. A menu can look new while its grants are still
+     * stored (e.g. an older build that did not know the menu ran on this database and took the menu out, but not the
+     * grants), so a grant is never saved twice.
+     */
+    private boolean grantOnce(AccessSubject type, String key, String checkpoint) {
+        if (accessRepository.existsBySubjectTypeAndSubjectKeyAndCheckpoint(type, key, checkpoint)) {
+            return false;
+        }
+        accessRepository.saveAndFlush(MenuAccess.of(type, key, checkpoint));
+        return true;
     }
 }

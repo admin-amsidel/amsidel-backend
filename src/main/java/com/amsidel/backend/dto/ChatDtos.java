@@ -39,8 +39,16 @@ public final class ChatDtos {
      * What the window asks for every few seconds: my chats, messages newer than the last one it has, who is typing
      * (conversation id -> names) and who is online. retentionDays: how long messages are kept.
      */
+    /** version: my change version when this was read (see Changes). */
     public record Sync(List<ConversationView> conversations, List<MessageView> messages, Map<Long, List<String>> typing,
-                       List<Long> online, int unreadTotal, int retentionDays, Instant serverTime) {
+                       List<Long> online, int unreadTotal, int retentionDays, Instant serverTime, String version) {
+    }
+
+    /**
+     * The minimised window's check: version moves when something in my chats changes; unreadTotal comes only then
+     * (null = the same as before).
+     */
+    public record Changes(String version, Integer unreadTotal) {
     }
 
     @Data

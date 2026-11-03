@@ -63,6 +63,10 @@ public final class Menus {
     public static final String PROD_PAY = "PROD_PAY";
     /** Not a page: the team chat window in the portal. */
     public static final String CHAT = "CHAT";
+    /** Not a page: starting group chats in Team chat. */
+    public static final String CHAT_GROUP_CREATE = "CHAT_GROUP_CREATE";
+    /** Not a page: adding people to a group chat I am in. */
+    public static final String CHAT_GROUP_ADD = "CHAT_GROUP_ADD";
     /** Not a page: the Manual UPI (office) option on Pay bill. */
     public static final String PROD_PAY_MANUAL = "PROD_PAY_MANUAL";
     /** Checking and approving stock received by scanning item QR labels: opens the Scan stock in page. */
@@ -100,7 +104,8 @@ public final class Menus {
     /** Sub-menus that a tick on their parent menu does not give: each needs its own tick. */
     public static final java.util.Set<String> OWN_TICK = java.util.Set.of(PROD_STOCK_APPROVE, ATT_NO_PHOTO, CUST_NEW_QUOTE, CUST_NEW_INVOICE,
             CUST_ADD, CUST_EDIT, CUST_DELETE, MAIL_EMAIL, MAIL_WHATSAPP, MAIL_ALL, MAIL_PICK, MAIL_PICTURE, MAIL_ATTACH,
-            PERF_TYPE_GENERAL, PERF_TYPE_SALES, PERF_TYPE_ORDERS, PERF_TYPE_WORKLOG, PAY_TAX_REGIME);
+            PERF_TYPE_GENERAL, PERF_TYPE_SALES, PERF_TYPE_ORDERS, PERF_TYPE_WORKLOG, PAY_TAX_REGIME,
+            CHAT_GROUP_CREATE, CHAT_GROUP_ADD);
     /** Any page of the product portal. */
     public static final String[] PRODUCT_PORTAL = {PROD_HOME, PROD_ITEMS, PROD_TYPES, PROD_SUPPLIERS, PROD_PURCHASES,
             PROD_QUOTES, PROD_ORDERS, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL, PROD_PAY, PROD_PAY_MANUAL, PROD_PROJECT_STATUS, PROD_STOCK_APPROVE};
@@ -187,6 +192,9 @@ public final class Menus {
             new Def(PROD_MAIL, "Customer & supplier mail", "Personal mail and WhatsApp messages to customers and suppliers, like staff mail; the office is copied on every mail", 11700, null, "/portal/products/mail", "pi-envelope"),
             new Def(PROD_PAY, "Pay bill", "Customers pay their bills online by card or UPI through the brand's Razorpay account; payment history and refunds", 11800, null, "/portal/products/pay", "pi-credit-card"),
             new Def(CHAT, "Team chat", "The chat window in the portal: one-to-one and group chats with colleagues, admins and owners who have this too; messages are cleared after the set number of days", 12000, null, null, "pi-comments"),
+            // group chats, each its own tick (Team chat alone: one-to-one chats, and the groups others add you to)
+            new Def(CHAT_GROUP_CREATE, "Start group chats", "Team chat: start a group chat with a name and its people; its own tick", 12001, CHAT, null, "pi-users"),
+            new Def(CHAT_GROUP_ADD, "Add people to groups", "Team chat: add people to a group chat you are in; its own tick", 12002, CHAT, null, "pi-user-plus"),
             new Def(PROD_PAY_MANUAL, "Manual UPI (office)", "On Pay bill: a customer pays at the office to the brand's UPI QR code, and the staff record the UPI reference; given on top of Pay bill (its own tick: giving Pay bill does not give it)", 11801, null, null, "pi-qrcode"),
             new Def(PROD_REPORTS, "Reports", "Sales, purchases, stock and payments by customer, bill, supplier, product and item; supplier spend charts", 11400, null, "/portal/products/reports", "pi-chart-line"),
 
@@ -208,7 +216,7 @@ public final class Menus {
      * Quotations / Invoices (or the whole Sales menu), so those people keep them. Adding, changing and deleting
      * customers came with Customers (13000, before that 11301 / 11300), so those people keep them too. The staff mail
      * ticks came with Staff mail (5000), the goal types with Team performance (6002) or the whole Performance menu, and
-     * choosing the tax regime with Salaries (7001) or the whole Payroll menu.
+     * choosing the tax regime with Salaries (7001) or the whole Payroll menu, and the group chat ticks with Team chat (12000).
      */
     public static final java.util.Map<String, List<String>> TAKES_OVER = java.util.Map.ofEntries(
             java.util.Map.entry(CUSTOMERS, List.of("11301", "11300")),
@@ -227,7 +235,9 @@ public final class Menus {
             java.util.Map.entry(PERF_TYPE_SALES, List.of("6002", "6000")),
             java.util.Map.entry(PERF_TYPE_ORDERS, List.of("6002", "6000")),
             java.util.Map.entry(PERF_TYPE_WORKLOG, List.of("6002", "6000")),
-            java.util.Map.entry(PAY_TAX_REGIME, List.of("7001", "7000")));
+            java.util.Map.entry(PAY_TAX_REGIME, List.of("7001", "7000")),
+            java.util.Map.entry(CHAT_GROUP_CREATE, List.of("12000")),
+            java.util.Map.entry(CHAT_GROUP_ADD, List.of("12000")));
 
     /** Given to anyone with people reporting to them, whatever their user type or menu access. */
     public static final List<String> FOR_TEAM_LEADS = List.of(PERF_TEAM, PERF_TYPE_GENERAL);

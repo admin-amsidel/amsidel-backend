@@ -16,4 +16,6 @@ public interface MenuAccessRepository extends JpaRepository<MenuAccess, Long> {
     @Modifying
     @Query("delete from MenuAccess a where a.subjectType = :type and a.subjectKey = :key")
     void deleteSubject(@Param("type") AccessSubject type, @Param("key") String key);
+
+    boolean existsBySubjectTypeAndSubjectKeyAndCheckpoint(AccessSubject subjectType, String subjectKey, String checkpoint);
 }
