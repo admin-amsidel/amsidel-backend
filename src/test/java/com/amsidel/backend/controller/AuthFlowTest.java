@@ -141,12 +141,23 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.error").value(startsWith("Too many wrong attempts")));
         // even the right PIN is refused while locked
         login("biju", "cd@456").andExpect(jsonPath("$.error").value(startsWith("Too many wrong attempts")));
+        // it stays locked (no time limit) and shows so to the admin
+        mockMvc.perform(get("/api/employees/" + id).header("Authorization", auth(ownerToken)))
+                .andExpect(jsonPath("$.locked").value(true))
+                .andExpect(jsonPath("$.lockedAt").isNotEmpty());
 
         mockMvc.perform(post("/api/employees/" + id + "/reset-password").header("Authorization", auth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"newPassword\":\"ef@789\"}"))
                 .andExpect(status().isNoContent());
         login("biju", "ef@789").andExpect(status().isOk())
-                .andExpect(jsonPath("$.user.mustChangePassword").value(true));
+                .andExpect(jsonPath("$.user.mustChangePassword").value(true))
+                .andExpect(jsonPath("$.user.locked").value(false));
+        // wrong PINs count only in a row: a right one in between starts again
+        for (int i = 0; i < 4; i++) {
+            login("biju", "zz@000").andExpect(jsonPath("$.error").value("Wrong user ID or PIN"));
+        }
+        login("biju", "ef@789").andExpect(status().isOk());
+        login("biju", "zz@000").andExpect(jsonPath("$.error").value("Wrong user ID or PIN"));
     }
 
     @Test

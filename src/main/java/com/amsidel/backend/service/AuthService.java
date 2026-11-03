@@ -19,33 +19,31 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 
+@lombok.extern.slf4j.Slf4j
 @Service
 public class AuthService {
 
     private static final String WRONG_LOGIN = "Wrong user ID or PIN";
+    private static final String LOCKED = "Too many wrong attempts: your account is locked. Ask your admin to set a temporary PIN to release it.";
 
     private final EmployeeRepository employeeRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final int maxFailedAttempts;
-    private final Duration lockDuration;
     /** Checked against when the user ID does not exist, so both cases take the same time. */
     private final String dummyHash;
 
     public AuthService(EmployeeRepository employeeRepository,
                        PasswordEncoder passwordEncoder,
                        TokenService tokenService,
-                       @Value("${app.login.max-failed-attempts}") int maxFailedAttempts,
-                       @Value("${app.login.lock-duration}") Duration lockDuration) {
+                       @Value("${app.login.max-failed-attempts}") int maxFailedAttempts) {
         this.employeeRepository = employeeRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.maxFailedAttempts = maxFailedAttempts;
-        this.lockDuration = lockDuration;
         this.dummyHash = passwordEncoder.encode("no-such-user-1!");
     }
 
@@ -53,7 +51,11 @@ public class AuthService {
         return userId == null ? null : userId.trim().toLowerCase(Locale.ROOT);
     }
 
-    /** Failed attempts must be saved even though the request fails, hence noRollbackFor. */
+    /**
+     * Failed attempts must be saved even though the request fails, hence noRollbackFor. After max-failed-attempts
+     * wrong PINs in a row the account locks until an admin sets a temporary PIN; a right PIN in between starts the
+     * count again.
+     */
     @Transactional(noRollbackFor = ApiException.class)
     public LoginResponse login(LoginRequest request) {
         Employee employee = employeeRepository.findByUserId(normalizeUserId(request.getUserId())).orElse(null);
@@ -63,16 +65,18 @@ public class AuthService {
         }
 
         Instant now = Instant.now();
-        if (employee.getLockedUntil() != null && employee.getLockedUntil().isAfter(now)) {
-            throw ApiException.unauthorized(lockedMessage());
+        // even the right PIN is refused while locked (checked before it, so a locked account cannot be guessed at)
+        if (employee.getLockedAt() != null || (employee.getLockedUntil() != null && employee.getLockedUntil().isAfter(now))) {
+            throw ApiException.unauthorized(LOCKED);
         }
 
         if (!passwordEncoder.matches(request.getPassword(), employee.getPasswordHash())) {
             int attempts = employee.getFailedAttempts() + 1;
             if (attempts >= maxFailedAttempts) {
                 employee.setFailedAttempts(0);
-                employee.setLockedUntil(now.plus(lockDuration));
-                throw ApiException.unauthorized(lockedMessage());
+                employee.setLockedAt(now);
+                log.warn("Sign-in locked for {} after {} wrong PINs in a row; an admin must reset the PIN", employee.getUserId(), attempts);
+                throw ApiException.unauthorized(LOCKED);
             }
             employee.setFailedAttempts(attempts);
             throw ApiException.unauthorized(WRONG_LOGIN);
@@ -121,7 +125,5 @@ public class AuthService {
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found: " + me.id()));
     }
 
-    private String lockedMessage() {
-        return "Too many wrong attempts. Try again after " + lockDuration.toMinutes() + " minutes.";
-    }
+
 }

@@ -37,6 +37,7 @@ import java.util.Set;
  * owners manage everyone; an admin manages managers and employees of their own brand
  * (every brand when the admin has none). Only owners create owners and admins.
  */
+@lombok.extern.slf4j.Slf4j
 @Service
 @RequiredArgsConstructor
 public class EmployeeService {
@@ -134,7 +135,7 @@ public class EmployeeService {
         }
     }
 
-    /** Sets a temporary PIN, unlocks the account and signs the person out everywhere. */
+    /** Sets a temporary PIN, releases a locked account and signs the person out everywhere. */
     @Transactional
     public void resetPassword(AuthUser me, Long id, String newPassword) {
         Employee employee = find(id);
@@ -146,6 +147,10 @@ public class EmployeeService {
         employee.setMustChangePassword(true);
         employee.setFailedAttempts(0);
         employee.setLockedUntil(null);
+        if (employee.getLockedAt() != null) {
+            log.info("Sign-in released for {} by {} (temporary PIN)", employee.getUserId(), me.userId());
+        }
+        employee.setLockedAt(null);
         employee.setPasswordChangedAt(Instant.now());
     }
 

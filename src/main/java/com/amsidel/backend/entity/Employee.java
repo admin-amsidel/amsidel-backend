@@ -136,7 +136,14 @@ public class Employee {
     @Column(nullable = false)
     private int failedAttempts;
 
+    /** Old timed lock (before locks waited for an admin); still honoured until it runs out. */
     private Instant lockedUntil;
+
+    /**
+     * Locked after too many wrong PINs in a row: no sign-in at all until an admin sets a temporary PIN (Reset PIN),
+     * which releases the account. Null = not locked.
+     */
+    private Instant lockedAt;
 
     /** Tokens issued before this moment are rejected (a PIN change or reset logs out other devices). */
     private Instant passwordChangedAt;

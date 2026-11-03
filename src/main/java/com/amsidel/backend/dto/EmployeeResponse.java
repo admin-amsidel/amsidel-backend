@@ -41,6 +41,8 @@ public record EmployeeResponse(
         boolean active,
         boolean mustChangePassword,
         boolean locked,
+        /** When the account locked after too many wrong PINs (it stays locked until a temporary PIN is set). */
+        Instant lockedAt,
         Instant lastLoginAt,
         Long userTypeId,
         String userTypeName) {
@@ -77,7 +79,8 @@ public record EmployeeResponse(
                 e.getEmergencyContact(),
                 e.isActive(),
                 e.isMustChangePassword(),
-                e.getLockedUntil() != null && e.getLockedUntil().isAfter(Instant.now()),
+                e.getLockedAt() != null || (e.getLockedUntil() != null && e.getLockedUntil().isAfter(Instant.now())),
+                e.getLockedAt(),
                 e.getLastLoginAt(),
                 e.getUserType() == null ? null : e.getUserType().getId(),
                 e.getUserType() == null ? null : e.getUserType().getName());
