@@ -47,7 +47,8 @@ import java.util.regex.Pattern;
  * **bold** words and "# " heading lines, and ends with the sender's own signature. Nothing about the mail is stored;
  * each send returns whether it went out, and the portal shows that on screen.
  * Customer and supplier mail (TradeMailService) goes out the same way, through deliver(). Every mail is also copied
- * (CC) to the office address (app.mail.always-cc), so the office keeps track of what is sent.
+ * (CC) to the office address of the person's brand (the Email config screens; app.mail.always-cc by default), so the
+ * office keeps track of what is sent.
  * No database connection is held while talking to the mail server.
  */
 @Slf4j
@@ -72,6 +73,7 @@ public class MailService {
     private final EmployeeService employeeService;
     private final EmployeeRepository employeeRepository;
     private final MailFileStore files;
+    private final BrandMailSenders brandSenders;
     private final String host;
     private final boolean signInReady;
     private final String from;
@@ -80,7 +82,7 @@ public class MailService {
     private final String alwaysCc;
 
     public MailService(ObjectProvider<JavaMailSender> mailSender, EmployeeService employeeService,
-                       EmployeeRepository employeeRepository, MailFileStore files,
+                       EmployeeRepository employeeRepository, MailFileStore files, BrandMailSenders brandSenders,
                        @Value("${spring.mail.host:}") String host,
                        @Value("${spring.mail.username:}") String username,
                        @Value("${spring.mail.password:}") String password,
@@ -91,6 +93,7 @@ public class MailService {
         this.employeeService = employeeService;
         this.employeeRepository = employeeRepository;
         this.files = files;
+        this.brandSenders = brandSenders;
         this.host = host;
         // a mail server that needs a sign-in (Gmail) is not ready until its password is given
         this.signInReady = !StringUtils.hasText(username) || StringUtils.hasText(password);
@@ -144,7 +147,7 @@ public class MailService {
     }
 
     /** Sends one personal mail; problems with this one person come back as a failed result, not an error. */
-    public MailResult send(AuthUser me, MailSendRequest request) {
+    public MailResult send(AuthUser me, MailSendRequest request, MailLimitsService.MailLook look, String officeCopy, long brandKey) {
         Employee to = employeeService.findVisible(me, request.getEmployeeId());
         String name = to.getName().trim();
         String email = to.getCompanyEmail() == null ? null : to.getCompanyEmail().trim();
@@ -153,7 +156,7 @@ public class MailService {
             return MailResult.failed(to.getId(), name, email, "Not an active employee");
         }
         return deliver(me, request, to.getId(), name, email, "No office email on record", "Staff mail", to.getEmpNumber(),
-                "Sent from the Amsidel Company Portal");
+                look, officeCopy, brandKey);
     }
 
     /** The files of the message exist and are not too large together; 400 for the whole send when not. */
@@ -170,11 +173,12 @@ public class MailService {
     /**
      * Sends one personal mail to one person (an employee, a customer or a supplier) in the portal's design: their name
      * after "Dear", the sender's signature, the pictures and attachments, the CC/BCC, and always a copy to the office
-     * address. noEmail: the reason shown when the person has no address; kind and who: for the log; footer: the line
-     * under the mail.
+     * address of the person's brand (officeCopy), through the brand's own Brevo account or else the default one.
+     * noEmail: the reason shown when the person has no address; kind and who: for the log; look: the lines at the top
+     * and the bottom of the mail.
      */
     public MailResult deliver(AuthUser me, MailContent request, Long id, String name, String email, String noEmail,
-                              String kind, String who, String footer) {
+                              String kind, String who, MailLimitsService.MailLook look, String officeCopy, long brandKey) {
         // a missing or too large file is a problem with the message, not with this person: 400 for the whole send
         List<Picture> pictures = pictures(me, request);
         List<MailFileStore.Stored> attached = attachments(me, request);
@@ -187,9 +191,13 @@ public class MailService {
             return MailResult.failed(id, name, null, noEmail);
         }
         email = email.trim();
-        if (!ready()) {
+        BrandMailSenders.Route route = brandSenders.route(brandKey).orElse(null);
+        if (route == null && !ready()) {
             return MailResult.failed(id, name, email, "Mail is not set up on the server");
         }
+        JavaMailSender out = route != null ? route.sender() : mailSender.getObject();
+        String fromAddress = route != null ? route.from() : from;
+        String fromLabel = route != null && StringUtils.hasText(route.fromName()) ? route.fromName() : fromName;
 
         Employee sender = employeeRepository.findWithBrandById(me.id()).orElse(null);
         String subject = fill(request.getSubject(), name).trim();
@@ -200,11 +208,11 @@ public class MailService {
                 : standardSignature(sender);
         signature = fill(signature, name);
         try {
-            MimeMessage message = mailSender.getObject().createMimeMessage();
+            MimeMessage message = out.createMimeMessage();
             MimeMessageHelper mail = new MimeMessageHelper(message, true, "UTF-8");
-            mail.setFrom(from, fromName);
+            mail.setFrom(fromAddress, fromLabel);
             mail.setTo(email);
-            for (String cc : copies(request.getCc(), email)) {
+            for (String cc : copies(request.getCc(), email, officeCopy)) {
                 mail.addCc(cc);
             }
             for (String bcc : addresses(request.getBcc())) {
@@ -214,7 +222,7 @@ public class MailService {
                 mail.setReplyTo(sender.getCompanyEmail().trim());
             }
             mail.setSubject(subject);
-            mail.setText(plain(greeting, text, signature, pictures), html(greeting, text, signature, pictures, footer));
+            mail.setText(plain(greeting, text, signature, pictures), html(greeting, text, signature, pictures, look));
             // after setText: the pictures belong to the HTML part
             for (Picture p : pictures) {
                 mail.addInline(p.cid(), new ByteArrayResource(p.file().bytes()), p.file().contentType());
@@ -222,7 +230,7 @@ public class MailService {
             for (MailFileStore.Stored f : attached) {
                 mail.addAttachment(f.name(), new ByteArrayResource(f.bytes()), f.contentType());
             }
-            mailSender.getObject().send(message);
+            out.send(message);
             log.info("{} '{}' sent to {} by {}", kind, subject, who, me.userId());
             return MailResult.sent(id, name, email);
         } catch (MailException | MessagingException | UnsupportedEncodingException e) {
@@ -232,11 +240,11 @@ public class MailService {
     }
 
     /** The CC addresses given, plus the office address (unless the mail already goes to it, or it is given already). */
-    List<String> copies(List<String> cc, String to) {
+    List<String> copies(List<String> cc, String to, String officeCopy) {
         List<String> out = new ArrayList<>(addresses(cc));
-        if (StringUtils.hasText(alwaysCc) && !alwaysCc.equalsIgnoreCase(to)
-                && out.stream().noneMatch(a -> a.equalsIgnoreCase(alwaysCc))) {
-            out.add(alwaysCc);
+        if (StringUtils.hasText(officeCopy) && !officeCopy.equalsIgnoreCase(to)
+                && out.stream().noneMatch(a -> a.equalsIgnoreCase(officeCopy))) {
+            out.add(officeCopy);
         }
         return out;
     }
@@ -367,11 +375,11 @@ public class MailService {
     }
 
     /** Light blue: a pale blue page, a white card with a blue band on top, dark grey text. */
-    private static String html(String greeting, String text, String signature, List<Picture> pictures, String footer) {
+    private static String html(String greeting, String text, String signature, List<Picture> pictures, MailLimitsService.MailLook look) {
         return """
                 <!doctype html><html><body style="margin:0;padding:24px 12px;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:%s">
                 <table role="presentation" width="100%%" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #d6e4f5;border-radius:10px;border-collapse:separate;overflow:hidden">
-                <tr><td style="background:#e3eefa;border-bottom:3px solid #2f74c0;color:%s;padding:16px 24px;font-size:14px;font-weight:700;letter-spacing:4px">AMSIDEL</td></tr>
+                <tr><td style="background:#e3eefa;border-bottom:3px solid #2f74c0;color:%s;padding:16px 24px;font-size:14px;font-weight:700;letter-spacing:4px">%s</td></tr>
                 <tr><td style="padding:24px;font-size:15px;line-height:1.6;color:%s">
                 <p style="margin:0 0 16px">Dear %s,</p>
                 <div>%s</div>
@@ -379,8 +387,8 @@ public class MailService {
                 </td></tr>
                 <tr><td style="padding:12px 24px;background:#f5f9fe;border-top:1px solid #dbe7f5;font-size:12px;color:%s">%s</td></tr>
                 </table></body></html>
-                """.formatted(INK, BLUE, INK, escape(greeting), rich(place(escape(text), pictures, MailService::pictureHtml, "")),
-                MUTED, rich(escape(signature)), MUTED, escape(footer));
+                """.formatted(INK, BLUE, escape(look.header()), INK, escape(greeting), rich(place(escape(text), pictures, MailService::pictureHtml, "")),
+                MUTED, rich(escape(signature)), MUTED, escape(look.footer()));
     }
 
     private static String escape(String s) {

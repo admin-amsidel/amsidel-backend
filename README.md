@@ -223,6 +223,10 @@ in the database; a restart drops them and the portal asks to attach again), and 
 the first goes (unmarked ones come after the text), shown with the caption under it. Pictures and attachments go by
 email only, not WhatsApp. Brevo counts every CC/BCC copy towards the daily limit.
 
+A brand can have its **own Brevo account** (SMTP login, SMTP key, From address and name) under the Email config screens,
+used for both staff email and customer & supplier email to that brand's people. Brands without one use the default
+account below. The key is saved in `mail_brand_account` and never sent back to the browser.
+
 Mail is sent through **Brevo** (`smtp-relay.brevo.com:2525`; Render's free plan blocks 25, 465 and 587, login `bf6436001@smtp-brevo.com`; free plan about
 300 mails a day). Give the Brevo **SMTP key** as `MAIL_PASSWORD`; until then `/api/mail/setup` says not ready and the
 portal shows mail as not set up. `MAIL_FROM` (default `info.amsidel@gmail.com`) must be a sender verified in Brevo

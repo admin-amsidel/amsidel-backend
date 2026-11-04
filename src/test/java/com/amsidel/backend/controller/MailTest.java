@@ -31,8 +31,10 @@ import org.springframework.test.web.servlet.ResultActions;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -69,13 +71,45 @@ class MailTest {
         }
     }
 
+    /** A brand's Brevo account that keeps its mails too; the key "wrong" is refused. */
+    static class FakeBrandSenders extends com.amsidel.backend.service.BrandMailSenders {
+        final Map<String, FakeMailSender> byLogin = new java.util.concurrent.ConcurrentHashMap<>();
+
+        FakeBrandSenders(com.amsidel.backend.repository.MailBrandAccountRepository accounts) {
+            super(accounts, "smtp-relay.brevo.com", 2525);
+        }
+
+        @Override
+        protected JavaMailSenderImpl build(String login, String key) {
+            FakeMailSender s = new FakeMailSender() {
+                @Override
+                public void testConnection() throws jakarta.mail.MessagingException {
+                    if ("wrong".equals(key)) {
+                        throw new jakarta.mail.AuthenticationFailedException("535 Authentication failed");
+                    }
+                }
+            };
+            byLogin.put(login, s);
+            return s;
+        }
+    }
+
     @TestConfiguration
     static class FakeMail {
         @Bean
         FakeMailSender javaMailSender() {
             return new FakeMailSender();
         }
+
+        @Bean
+        @org.springframework.context.annotation.Primary
+        FakeBrandSenders fakeBrandSenders(com.amsidel.backend.repository.MailBrandAccountRepository accounts) {
+            return new FakeBrandSenders(accounts);
+        }
     }
+
+    @Autowired
+    private FakeBrandSenders brandSenders;
 
     @Autowired
     private MockMvc mockMvc;
@@ -88,6 +122,7 @@ class MailTest {
     private String anu;
     private String ravi;
     private String noEmail;
+    private long dw;
     /** A brand admin. */
     private String admin;
     private String bounce;
@@ -97,7 +132,7 @@ class MailTest {
         owner = token(changePin(token(login("owner", "Ams@2026")), "Ams@2026", "Own#2026"));
         List<Integer> brandIds = JsonPath.read(body(mockMvc.perform(get("/api/brands").header("Authorization", auth(owner)))),
                 "$[?(@.code == 'DW')].id");
-        long dw = brandIds.get(0);
+        dw = brandIds.get(0);
         anu = create("Anu Thomas", "ml.anu", "anu@amsidel.com", dw);
         ravi = create("Ravi Kumar", "ml.ravi", "ravi@amsidel.com", dw);
         noEmail = create("No Mail", "ml.none", null, dw);
@@ -295,12 +330,18 @@ class MailTest {
             mockMvc.perform(post("/api/mail/send").header("Authorization", auth(employee)).contentType(MediaType.APPLICATION_JSON)
                     .content("{\"employeeId\":%s,\"subject\":\"Hi\",\"body\":\"Text\",\"attachments\":[\"x\"]}".formatted(ravi)))
                     .andExpect(status().isForbidden());
-            pickLimit(admin, 2).andExpect(status().isForbidden()); // a brand admin cannot change it
-            pickLimit(owner, 0).andExpect(status().isBadRequest());
-            pickLimit(owner, 2).andExpect(status().isOk()).andExpect(jsonPath("$.pickLimit").value(2));
+            // the limits need Staff email config
+            limits(employee, dw, 2, null).andExpect(status().isForbidden());
+            mockMvc.perform(get("/api/mail/config").header("Authorization", auth(employee))).andExpect(status().isForbidden());
+            // a brand admin sets their own brand's, not another's or the group's
+            limits(admin, null, 2, null).andExpect(status().isForbidden());
+            limits(admin, dw, 2, null).andExpect(status().isOk());
+            limits(owner, dw, 0, null).andExpect(status().isBadRequest());
+            // the person sees only their own brand's
             mockMvc.perform(get("/api/mail/rules").header("Authorization", auth(employee)))
-                    .andExpect(jsonPath("$.pickLimit").value(2))
-                    .andExpect(jsonPath("$.canChangeLimit").value(false));
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].brandCode").value("DW"))
+                    .andExpect(jsonPath("$[0].pickLimit").value(2));
             send(employee, ravi, "Hello", "", "Text").andExpect(status().isOk());
             send(employee, bounce, "Hello", "", "Text").andExpect(status().isOk());
             // a third person in the same send is too many; the same people again is fine
@@ -310,8 +351,237 @@ class MailTest {
             send(owner, noEmail, "Hello", "", "Text").andExpect(status().isOk());
         } finally {
             grant(anu, "[]");
-            pickLimit(owner, 5);
+            limits(owner, dw, 5, null);
         }
+    }
+
+    @Test
+    void theDailyLimitOfABrandCountsWhatWentOutAndBindsEveryone() throws Exception {
+        int before = sentToday();
+        try {
+            // room for one more today
+            limits(owner, dw, 5, before + 1).andExpect(status().isOk())
+                    .andExpect(jsonPath("$[?(@.brandId == %d)].leftToday".formatted(dw)).value(hasItem(1)));
+            // not sent: not counted
+            send(owner, noEmail, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(false));
+            send(owner, bounce, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(false));
+            assertThat(sentToday()).isEqualTo(before);
+
+            send(owner, ravi, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(true));
+            assertThat(sentToday()).isEqualTo(before + 1);
+            // the limit is reached, for the owner too; nothing goes out, and it stays counted once
+            mail.sent.clear();
+            send(owner, anu, "Hello", "", "Text").andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.startsWith("Today's staff email limit for DW is reached")));
+            assertThat(mail.sent).isEmpty();
+            assertThat(sentToday()).isEqualTo(before + 1);
+            // raised: it goes
+            limits(owner, dw, 5, before + 2).andExpect(status().isOk());
+            send(owner, anu, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(true));
+        } finally {
+            limits(owner, dw, 5, null);
+        }
+    }
+
+    @Test
+    void theOfficeCopyIsSetPerBrandForEachKindOfMail() throws Exception {
+        String customer = idOf(mockMvc.perform(post("/api/trade/customers").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%d,\"name\":\"Copy Home\",\"phone\":\"9847055555\",\"email\":\"copy@example.com\"}".formatted(dw))));
+        try {
+            limitsAt("/api/mail/config", owner, dw, 5, null, "hr@dw.example").andExpect(status().isOk())
+                    .andExpect(jsonPath("$[?(@.brandId == %d)].alwaysCc".formatted(dw)).value(hasItem("hr@dw.example")));
+            limitsAt("/api/trade/mail/config", owner, dw, 5, null, "sales@dw.example").andExpect(status().isOk());
+            limitsAt("/api/mail/config", owner, dw, 5, null, "not-an-address").andExpect(status().isBadRequest());
+
+            send(owner, ravi, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(true));
+            assertThat(mail.sent.getLast().getRecipients(Message.RecipientType.CC)).extracting(Address::toString).containsExactly("hr@dw.example");
+            tradeSend(owner, "CUSTOMER", customer).andExpect(jsonPath("$.sent").value(true));
+            assertThat(mail.sent.getLast().getRecipients(Message.RecipientType.CC)).extracting(Address::toString).containsExactly("sales@dw.example");
+
+            // cleared: the default office address again
+            limitsAt("/api/trade/mail/config", owner, dw, 5, null, "").andExpect(status().isOk())
+                    .andExpect(jsonPath("$[?(@.brandId == %d)].alwaysCc".formatted(dw)).value(hasItem("info.amsidel@gmail.com")))
+                    .andExpect(jsonPath("$[?(@.brandId == %d)].ccOverride".formatted(dw)).value(hasItem(org.hamcrest.Matchers.nullValue())));
+            tradeSend(owner, "CUSTOMER", customer).andExpect(jsonPath("$.sent").value(true));
+            assertThat(mail.sent.getLast().getRecipients(Message.RecipientType.CC)).extracting(Address::toString).containsExactly("info.amsidel@gmail.com");
+        } finally {
+            limitsAt("/api/mail/config", owner, dw, 5, null, null);
+            limitsAt("/api/trade/mail/config", owner, dw, 5, null, null);
+        }
+    }
+
+    @Test
+    void customerAndSupplierMailHasItsOwnTicksLimitsAndCount() throws Exception {
+        String customer = idOf(mockMvc.perform(post("/api/trade/customers").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%d,\"name\":\"Tick Home\",\"phone\":\"9847066666\",\"email\":\"tick@example.com\"}".formatted(dw))));
+        String other = idOf(mockMvc.perform(post("/api/trade/customers").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%d,\"name\":\"Other Home\",\"phone\":\"9847077777\",\"email\":\"other@example.com\"}".formatted(dw))));
+        String supplier = idOf(mockMvc.perform(post("/api/trade/suppliers").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%d,\"name\":\"Tick Frames\",\"phone\":\"9847088888\",\"email\":\"frames@example.com\"}".formatted(dw))));
+        try {
+            // the menu alone sends nothing
+            grant(anu, "[\"11700\"]");
+            tradeSend(employee, "CUSTOMER", customer).andExpect(status().isForbidden());
+            // by email, to all customers: customers yes, suppliers no; no files; no config
+            grant(anu, "[\"11700\",\"13101\",\"13103\"]");
+            tradeSend(employee, "CUSTOMER", customer).andExpect(jsonPath("$.sent").value(true));
+            tradeSend(employee, "SUPPLIER", supplier).andExpect(status().isForbidden());
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/api/trade/mail/files")
+                            .file(new org.springframework.mock.web.MockMultipartFile("file", "a.pdf", "application/pdf", "%PDF-1.7 x".getBytes()))
+                            .header("Authorization", auth(employee)))
+                    .andExpect(status().isForbidden());
+            limitsAt("/api/trade/mail/config", employee, dw, 2, null, null).andExpect(status().isForbidden());
+            // Choose: at most the brand's limit
+            grant(anu, "[\"11700\",\"13101\",\"13105\"]");
+            limitsAt("/api/trade/mail/config", owner, dw, 2, null, null).andExpect(status().isOk());
+            mockMvc.perform(get("/api/trade/mail/rules").header("Authorization", auth(employee)))
+                    .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].pickLimit").value(2));
+            tradeSend(employee, "CUSTOMER", customer).andExpect(status().isOk());
+            tradeSend(employee, "SUPPLIER", supplier).andExpect(status().isOk());
+            tradeSend(employee, "CUSTOMER", other).andExpect(status().isConflict());
+
+            // its own daily count, apart from staff email
+            int staffBefore = sentToday();
+            List<Integer> counted = JsonPath.read(body(mockMvc.perform(get("/api/trade/mail/config").header("Authorization", auth(owner)))),
+                    "$[?(@.brandId == %d)].sentToday".formatted(dw));
+            limitsAt("/api/trade/mail/config", owner, dw, 5, counted.get(0) + 1, null).andExpect(status().isOk());
+            tradeSend(owner, "CUSTOMER", other).andExpect(jsonPath("$.sent").value(true));
+            tradeSend(owner, "CUSTOMER", other).andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.startsWith("Today's customer & supplier email limit for DW")));
+            assertThat(sentToday()).isEqualTo(staffBefore);
+            send(owner, ravi, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(true));
+        } finally {
+            grant(anu, "[]");
+            limitsAt("/api/trade/mail/config", owner, dw, 5, null, null);
+        }
+    }
+
+    private ResultActions tradeSend(String token, String party, String id) throws Exception {
+        return mockMvc.perform(post("/api/trade/mail/send").header("Authorization", auth(token)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"party\":\"%s\",\"partyId\":%s,\"subject\":\"Hi\",\"body\":\"Hello\"}".formatted(party, id)));
+    }
+
+    private ResultActions limitsAt(String api, String token, Long brandId, int pickLimit, Integer dailyLimit, String cc) throws Exception {
+        String copy = cc == null ? "null" : "\"" + cc + "\"";
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(api)
+                .header("Authorization", auth(token)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%s,\"pickLimit\":%d,\"dailyLimit\":%s,\"alwaysCc\":%s}".formatted(brandId, pickLimit, dailyLimit, copy)));
+    }
+
+    @Test
+    void aBrandSendsThroughItsOwnBrevoAccount() throws Exception {
+        String customer = idOf(mockMvc.perform(post("/api/trade/customers").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%d,\"name\":\"Brevo Home\",\"phone\":\"9847099999\",\"email\":\"brevo@example.com\"}".formatted(dw))));
+        String account = "{\"brandId\":%d,\"smtpLogin\":\"dw@smtp-brevo.com\",\"smtpKey\":%s,\"fromEmail\":\"mail@dw.example\",\"fromName\":\"Amsidel DW\"}";
+        try {
+            // the first save needs the key; only those with the config tick, for their own brand
+            brevo(owner, "/api/mail", account.formatted(dw, "\"\"")).andExpect(status().isBadRequest());
+            brevo(employee, "/api/mail", account.formatted(dw, "\"secret-1\"")).andExpect(status().isForbidden());
+            String saved = body(brevo(owner, "/api/mail", account.formatted(dw, "\"secret-1\"")).andExpect(status().isOk())
+                    .andExpect(jsonPath("$[?(@.brandId == %d)].ownAccount".formatted(dw)).value(hasItem(true)))
+                    .andExpect(jsonPath("$[?(@.brandId == %d)].accountLogin".formatted(dw)).value(hasItem("dw@smtp-brevo.com"))));
+            assertThat(saved).doesNotContain("secret-1");
+            mockMvc.perform(get("/api/mail/config").header("Authorization", auth(owner)))
+                    .andExpect(result -> assertThat(result.getResponse().getContentAsString()).doesNotContain("secret-1"));
+            // those sending see where it comes from, not the login
+            mockMvc.perform(get("/api/mail/rules").header("Authorization", auth(owner)))
+                    .andExpect(jsonPath("$[?(@.brandId == %d)].accountFrom".formatted(dw)).value(hasItem("mail@dw.example")))
+                    .andExpect(jsonPath("$[?(@.brandId == %d)].accountLogin".formatted(dw)).value(hasItem(org.hamcrest.Matchers.nullValue())));
+
+            // staff and customer mail go through it, from its address; the default account sends nothing
+            send(owner, ravi, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(true));
+            tradeSend(owner, "CUSTOMER", customer).andExpect(jsonPath("$.sent").value(true));
+            List<MimeMessage> viaBrand = brandSenders.byLogin.get("dw@smtp-brevo.com").sent;
+            assertThat(viaBrand).hasSize(2);
+            assertThat(viaBrand.get(0).getFrom()[0].toString()).contains("mail@dw.example").contains("Amsidel DW");
+            assertThat(mail.sent).isEmpty();
+
+            // a blank key keeps the saved one; the sign-in test says what Brevo answered, and sends nothing
+            brevo(owner, "/api/trade/mail", account.formatted(dw, "\"\"")).andExpect(status().isOk());
+            brevoTest(owner, dw).andExpect(jsonPath("$.ok").value(true));
+            brevo(owner, "/api/mail", account.formatted(dw, "\"wrong\"")).andExpect(status().isOk());
+            brevoTest(owner, dw).andExpect(jsonPath("$.ok").value(false))
+                    .andExpect(jsonPath("$.message").value("Brevo refused the login or SMTP key"));
+        } finally {
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/mail/config/brevo")
+                    .param("brandId", String.valueOf(dw)).header("Authorization", auth(owner))).andExpect(status().isOk());
+        }
+        // removed: back to the default account
+        send(owner, ravi, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(true));
+        assertThat(mail.sent).hasSize(1);
+        assertThat(mail.sent.getFirst().getFrom()[0].toString()).contains("staff@amsidel.com");
+        brevoTest(owner, dw).andExpect(status().isBadRequest());
+    }
+
+    private ResultActions brevo(String token, String api, String json) throws Exception {
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(api + "/config/brevo")
+                .header("Authorization", auth(token)).contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
+    private ResultActions brevoTest(String token, long brandId) throws Exception {
+        return mockMvc.perform(post("/api/mail/config/brevo/test").param("brandId", String.valueOf(brandId)).header("Authorization", auth(token)));
+    }
+
+    @Test
+    void theHeaderAndFooterOfTheMailAreSetPerBrandForEachKindOfMail() throws Exception {
+        String customer = idOf(mockMvc.perform(post("/api/trade/customers").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%d,\"name\":\"Look Home\",\"phone\":\"9847010101\",\"email\":\"look@example.com\"}".formatted(dw))));
+        // the defaults
+        send(owner, ravi, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(true));
+        assertThat(mail.sent.getLast().getContent()).isNotNull();
+        assertThat(html(mail.sent.getLast())).contains(">AMSIDEL<").contains("Sent from the Amsidel Company Portal");
+        tradeSend(owner, "CUSTOMER", customer).andExpect(jsonPath("$.sent").value(true));
+        assertThat(html(mail.sent.getLast())).contains(">AMSIDEL<").contains("Sent by ");
+        String look = "{\"brandId\":%d,\"pickLimit\":5,\"mailHeader\":\"%s\",\"mailFooter\":\"%s\"}";
+        try {
+            // only those with the config tick
+            lookAt("/api/mail/config", employee, look.formatted(dw, "X", "Y")).andExpect(status().isForbidden());
+            lookAt("/api/mail/config", owner, look.formatted(dw, "D&W <b>HR</b>", "Sent by HR")).andExpect(status().isOk())
+                    .andExpect(jsonPath("$[?(@.brandId == %d)].mailHeader".formatted(dw)).value(hasItem("D&W <b>HR</b>")))
+                    .andExpect(jsonPath("$[?(@.brandId == %d)].defaultHeader".formatted(dw)).value(hasItem("AMSIDEL")));
+            lookAt("/api/trade/mail/config", owner, look.formatted(dw, "DOORS", "Doors and windows, Kochi")).andExpect(status().isOk());
+            lookAt("/api/mail/config", owner, look.formatted(dw, "x".repeat(61), "")).andExpect(status().isBadRequest());
+
+            send(owner, ravi, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(true));
+            // shown as written, never as HTML
+            assertThat(html(mail.sent.getLast())).contains("D&amp;W &lt;b&gt;HR&lt;/b&gt;").contains("Sent by HR")
+                    .doesNotContain("<b>HR</b>").doesNotContain(">AMSIDEL<").doesNotContain("Company Portal");
+            tradeSend(owner, "CUSTOMER", customer).andExpect(jsonPath("$.sent").value(true));
+            assertThat(html(mail.sent.getLast())).contains(">DOORS<").contains("Doors and windows, Kochi").doesNotContain("HR");
+        } finally {
+            limitsAt("/api/mail/config", owner, dw, 5, null, null);
+            limitsAt("/api/trade/mail/config", owner, dw, 5, null, null);
+        }
+        // cleared: the defaults again
+        send(owner, ravi, "Hello", "", "Text").andExpect(jsonPath("$.sent").value(true));
+        assertThat(html(mail.sent.getLast())).contains(">AMSIDEL<");
+    }
+
+    private ResultActions lookAt(String api, String token, String json) throws Exception {
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(api)
+                .header("Authorization", auth(token)).contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
+    /** The whole message as text, HTML part included (decoded). */
+    private static String html(MimeMessage message) throws Exception {
+        return collect(message.getContent());
+    }
+
+    private static String collect(Object part) throws Exception {
+        if (part instanceof jakarta.mail.Multipart m) {
+            StringBuilder all = new StringBuilder();
+            for (int i = 0; i < m.getCount(); i++) {
+                all.append(collect(m.getBodyPart(i).getContent()));
+            }
+            return all.toString();
+        }
+        return part instanceof String text ? text : "";
+    }
+
+    private int sentToday() throws Exception {
+        List<Integer> sent = JsonPath.read(body(mockMvc.perform(get("/api/mail/config").header("Authorization", auth(owner)))),
+                "$[?(@.brandId == %d)].sentToday".formatted(dw));
+        return sent.get(0);
     }
 
     private void grant(String employeeId, String checkpoints) throws Exception {
@@ -321,9 +591,10 @@ class MailTest {
                 .andExpect(status().isOk());
     }
 
-    private ResultActions pickLimit(String token, int limit) throws Exception {
-        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/mail/rules/pick-limit")
-                .header("Authorization", auth(token)).contentType(MediaType.APPLICATION_JSON).content("{\"pickLimit\":" + limit + "}"));
+    private ResultActions limits(String token, Long brandId, int pickLimit, Integer dailyLimit) throws Exception {
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/mail/config")
+                .header("Authorization", auth(token)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"brandId\":%s,\"pickLimit\":%d,\"dailyLimit\":%s}".formatted(brandId, pickLimit, dailyLimit)));
     }
 
     @Test

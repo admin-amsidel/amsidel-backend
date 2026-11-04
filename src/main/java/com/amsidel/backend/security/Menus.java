@@ -29,7 +29,10 @@ public final class Menus {
     public static final String EMP_LIST = "EMP_LIST";
     public static final String ORG_CHART = "ORG_CHART";
     public static final String DESIGNATIONS = "DESIGNATIONS";
+    public static final String EMAIL = "EMAIL";
     public static final String STAFF_MAIL = "STAFF_MAIL";
+    /** Staff email limits per brand: people in one send, emails a day, and the day's count. */
+    public static final String MAIL_CONFIG = "MAIL_CONFIG";
     public static final String MENU_ACCESS = "MENU_ACCESS";
     public static final String BRANDS = "BRANDS";
     public static final String NEWS = "NEWS";
@@ -103,11 +106,30 @@ public final class Menus {
     public static final String MAIL_PICTURE = "MAIL_PICTURE";
     /** Not a page: attachments (pictures, PDF, Word) on a staff mail (Attach files). */
     public static final String MAIL_ATTACH = "MAIL_ATTACH";
+    /** The Email menu of the customer portal. */
+    public static final String CUST_EMAIL = "CUST_EMAIL";
+    /** Customer &amp; supplier email limits per brand: people in one send, emails a day, the office copy. */
+    public static final String TMAIL_CONFIG = "TMAIL_CONFIG";
+    /** Not a page: customer &amp; supplier email by email (Both needs this and WhatsApp). */
+    public static final String TMAIL_EMAIL = "TMAIL_EMAIL";
+    /** Not a page: customer &amp; supplier email on WhatsApp. */
+    public static final String TMAIL_WHATSAPP = "TMAIL_WHATSAPP";
+    /** Not a page: email to all customers (of a brand, or everyone). */
+    public static final String TMAIL_ALL_CUSTOMERS = "TMAIL_ALL_CUSTOMERS";
+    /** Not a page: email to all suppliers (of a brand, or everyone). */
+    public static final String TMAIL_ALL_SUPPLIERS = "TMAIL_ALL_SUPPLIERS";
+    /** Not a page: email to chosen customers and suppliers, at most the brand's limit in one send. */
+    public static final String TMAIL_PICK = "TMAIL_PICK";
+    /** Not a page: pictures inside a customer &amp; supplier email (Add picture). */
+    public static final String TMAIL_PICTURE = "TMAIL_PICTURE";
+    /** Not a page: attachments on a customer &amp; supplier email (Attach files). */
+    public static final String TMAIL_ATTACH = "TMAIL_ATTACH";
     /** Sub-menus that a tick on their parent menu does not give: each needs its own tick. */
     public static final java.util.Set<String> OWN_TICK = java.util.Set.of(PROD_STOCK_APPROVE, ATT_NO_PHOTO, CUST_NEW_QUOTE, CUST_NEW_INVOICE,
-            CUST_ADD, CUST_EDIT, CUST_DELETE, MAIL_EMAIL, MAIL_WHATSAPP, MAIL_ALL, MAIL_PICK, MAIL_PICTURE, MAIL_ATTACH,
+            CUST_ADD, CUST_EDIT, CUST_DELETE, MAIL_EMAIL, MAIL_WHATSAPP, MAIL_ALL, MAIL_PICK, MAIL_PICTURE, MAIL_ATTACH, MAIL_CONFIG,
             PERF_TYPE_GENERAL, PERF_TYPE_SALES, PERF_TYPE_ORDERS, PERF_TYPE_WORKLOG, PAY_TAX_REGIME,
-            CHAT_GROUP_CREATE, CHAT_GROUP_ADD);
+            CHAT_GROUP_CREATE, CHAT_GROUP_ADD, TMAIL_CONFIG, TMAIL_EMAIL, TMAIL_WHATSAPP, TMAIL_ALL_CUSTOMERS, TMAIL_ALL_SUPPLIERS,
+            TMAIL_PICK, TMAIL_PICTURE, TMAIL_ATTACH);
     /** Any page of the product portal. */
     public static final String[] PRODUCT_PORTAL = {PROD_HOME, PROD_ITEMS, PROD_TYPES, PROD_SUPPLIERS, PROD_PURCHASES,
             PROD_QUOTES, PROD_ORDERS, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL, PROD_PAY, PROD_PAY_MANUAL, PROD_PROJECT_STATUS, PROD_STOCK_APPROVE};
@@ -138,14 +160,17 @@ public final class Menus {
             new Def(ORG_CHART, "Org chart", "The whole reporting structure", 4002, "EMPLOYEES", "/portal/org-chart", "pi-sitemap"),
             new Def(DESIGNATIONS, "Designations", "Designations and levels", 4003, "EMPLOYEES", "/portal/designations", "pi-list"),
 
-            new Def(STAFF_MAIL, "Staff mail", "Personal mail and WhatsApp messages to employees", 5000, null, "/portal/mail", "pi-envelope"),
+            new Def(EMAIL, "Email", "Staff email and its limits", 5100, null, null, "pi-envelope"),
+            // checkpoint 5000 kept from when it was a menu of its own, so existing access stays as it is
+            new Def(STAFF_MAIL, "Staff email", "Personal mail and WhatsApp messages to employees", 5000, EMAIL, "/portal/mail", "pi-send"),
+            new Def(MAIL_CONFIG, "Staff email config", "Each brand's staff email limits: people in one send and emails a day, with how many went today; its own tick (giving Email does not give it)", 5007, EMAIL, "/portal/mail/config", "pi-sliders-h"),
             // how and to whom staff mail may go, each its own tick (giving Staff mail does not give them)
-            new Def(MAIL_EMAIL, "Send by email", "Staff mail: send by office email (Both needs this and WhatsApp); its own tick", 5001, STAFF_MAIL, null, "pi-envelope"),
-            new Def(MAIL_WHATSAPP, "Send by WhatsApp", "Staff mail: send on WhatsApp (Both needs this and email); its own tick", 5002, STAFF_MAIL, null, "pi-whatsapp"),
-            new Def(MAIL_ALL, "All employees", "Staff mail: send to all employees (of a brand, or everyone); its own tick", 5003, STAFF_MAIL, null, "pi-users"),
-            new Def(MAIL_PICK, "Choose people", "Staff mail: send to chosen people, at most the number an admin sets on the Staff mail page (5 at first) in one send; its own tick", 5004, STAFF_MAIL, null, "pi-user-plus"),
-            new Def(MAIL_PICTURE, "Add picture", "Staff mail: pictures inside the message (Add picture), sent by email; its own tick", 5005, STAFF_MAIL, null, "pi-image"),
-            new Def(MAIL_ATTACH, "Attach files", "Staff mail: attach pictures, PDF and Word files (Attach files), sent by email; its own tick", 5006, STAFF_MAIL, null, "pi-paperclip"),
+            new Def(MAIL_EMAIL, "Send by email", "Staff email: send by office email (Both needs this and WhatsApp); its own tick", 5001, EMAIL, null, "pi-envelope"),
+            new Def(MAIL_WHATSAPP, "Send by WhatsApp", "Staff email: send on WhatsApp (Both needs this and email); its own tick", 5002, EMAIL, null, "pi-whatsapp"),
+            new Def(MAIL_ALL, "All employees", "Staff email: send to all employees (of a brand, or everyone); its own tick", 5003, EMAIL, null, "pi-users"),
+            new Def(MAIL_PICK, "Choose people", "Staff email: send to chosen people, at most the number set for each brand in Staff email config (5 at first) in one send; its own tick", 5004, EMAIL, null, "pi-user-plus"),
+            new Def(MAIL_PICTURE, "Add picture", "Staff email: pictures inside the message (Add picture), sent by email; its own tick", 5005, EMAIL, null, "pi-image"),
+            new Def(MAIL_ATTACH, "Attach files", "Staff email: attach pictures, PDF and Word files (Attach files), sent by email; its own tick", 5006, EMAIL, null, "pi-paperclip"),
 
             new Def("PERFORMANCE", "Performance", "Yearly performance: skills, goals, ratings and achievements", 6000, null, null, "pi-chart-line"),
             new Def(PERF_MY, "My performance", "Own skills, intro, goals, self-rating and achievements", 6001, "PERFORMANCE", "/portal/performance", "pi-star"),
@@ -192,7 +217,6 @@ public final class Menus {
             new Def("PROD_ACCOUNTS", "Accounts", "Other income and expenses, bank statements and the P&L reconciler", 11600, null, null, "pi-wallet"),
             new Def(PROD_LEDGER, "Income & expenses", "Investment, loans, capital and other income; transport, fixing, discounts and other expenses, by bill and project", 11601, "PROD_ACCOUNTS", "/portal/products/ledger", "pi-arrow-right-arrow-left"),
             new Def(PROD_RECONCILE, "P&L reconciler", "Profit and loss by week, month or year; bank statements tallied with the portal; invoices paid short", 11602, "PROD_ACCOUNTS", "/portal/products/reconciler", "pi-calculator"),
-            new Def(PROD_MAIL, "Customer & supplier mail", "Personal mail and WhatsApp messages to customers and suppliers, like staff mail; the office is copied on every mail", 11700, null, "/portal/products/mail", "pi-envelope"),
             new Def(PROD_PAY, "Pay bill", "Customers pay their bills online by card or UPI through the brand's Razorpay account; payment history and refunds", 11800, null, "/portal/products/pay", "pi-credit-card"),
             new Def(CHAT, "Team chat", "The chat window in the portal: one-to-one and group chats with colleagues, admins and owners who have this too; messages are cleared after the set number of days", 12000, null, null, "pi-comments"),
             // group chats, each its own tick (Team chat alone: one-to-one chats, and the groups others add you to)
@@ -209,7 +233,20 @@ public final class Menus {
             new Def(CUST_EDIT, "Change customer", "Change a customer's details, bank and UPI, and make them active or inactive; its own tick", 13004, CUSTOMERS, null, "pi-pencil"),
             new Def(CUST_DELETE, "Delete customer", "Delete a customer who has no quotations, invoices, projects, payments or tasks; its own tick", 13005, CUSTOMERS, null, "pi-trash"),
             new Def(CUST_NEW_QUOTE, "New quotation button", "On a customer's page: the New quotation button, which opens a new quotation for the customer in the product portal (also needs Quotations); its own tick", 13001, CUSTOMERS, null, "pi-file-edit"),
-            new Def(CUST_NEW_INVOICE, "New invoice button", "On a customer's page: the New invoice button, which opens a new invoice for the customer in the product portal (also needs Invoices); its own tick", 13002, CUSTOMERS, null, "pi-receipt")
+            new Def(CUST_NEW_INVOICE, "New invoice button", "On a customer's page: the New invoice button, which opens a new invoice for the customer in the product portal (also needs Invoices); its own tick", 13002, CUSTOMERS, null, "pi-receipt"),
+
+            // customer & supplier email, moved here from the product portal
+            new Def(CUST_EMAIL, "Email", "Customer & supplier email and its limits", 13100, null, null, "pi-envelope"),
+            // checkpoint 11700 kept from the product portal, so existing access stays as it is
+            new Def(PROD_MAIL, "Send email", "Personal mail and WhatsApp messages to customers and suppliers, like staff email; the office is copied on every mail", 11700, CUST_EMAIL, "/portal/customers/mail", "pi-send"),
+            new Def(TMAIL_CONFIG, "Email config", "Each brand's customer & supplier email limits: people in one send and emails a day, with how many went today, and the office copy (CC); its own tick (giving Email does not give it)", 13107, CUST_EMAIL, "/portal/customers/mail/config", "pi-sliders-h"),
+            new Def(TMAIL_EMAIL, "Send by email", "Customer & supplier email: send by email (Both needs this and WhatsApp); its own tick", 13101, CUST_EMAIL, null, "pi-envelope"),
+            new Def(TMAIL_WHATSAPP, "Send by WhatsApp", "Customer & supplier email: send on WhatsApp (Both needs this and email); its own tick", 13102, CUST_EMAIL, null, "pi-whatsapp"),
+            new Def(TMAIL_ALL_CUSTOMERS, "All customers", "Customer & supplier email: send to all customers (of a brand, or everyone); its own tick", 13103, CUST_EMAIL, null, "pi-users"),
+            new Def(TMAIL_ALL_SUPPLIERS, "All suppliers", "Customer & supplier email: send to all suppliers (of a brand, or everyone); its own tick", 13104, CUST_EMAIL, null, "pi-truck"),
+            new Def(TMAIL_PICK, "Choose", "Customer & supplier email: send to chosen customers and suppliers, at most the number set for each brand in its config (5 at first) in one send; its own tick", 13105, CUST_EMAIL, null, "pi-user-plus"),
+            new Def(TMAIL_PICTURE, "Add picture", "Customer & supplier email: pictures inside the message (Add picture), sent by email; its own tick", 13106, CUST_EMAIL, null, "pi-image"),
+            new Def(TMAIL_ATTACH, "Attach files", "Customer & supplier email: attach pictures, PDF and Word files (Attach files), sent by email; its own tick", 13108, CUST_EMAIL, null, "pi-paperclip")
     );
 
     /**
@@ -219,7 +256,8 @@ public final class Menus {
      * Quotations / Invoices (or the whole Sales menu), so those people keep them. Adding, changing and deleting
      * customers came with Customers (13000, before that 11301 / 11300), so those people keep them too. The staff mail
      * ticks came with Staff mail (5000), the goal types with Team performance (6002) or the whole Performance menu, and
-     * choosing the tax regime with Salaries (7001) or the whole Payroll menu, and the group chat ticks with Team chat (12000).
+     * choosing the tax regime with Salaries (7001) or the whole Payroll menu, the group chat ticks with Team chat (12000), and the
+     * customer & supplier email ticks with that menu (11700).
      */
     public static final java.util.Map<String, List<String>> TAKES_OVER = java.util.Map.ofEntries(
             java.util.Map.entry(CUSTOMERS, List.of("11301", "11300")),
@@ -240,7 +278,14 @@ public final class Menus {
             java.util.Map.entry(PERF_TYPE_WORKLOG, List.of("6002", "6000")),
             java.util.Map.entry(PAY_TAX_REGIME, List.of("7001", "7000")),
             java.util.Map.entry(CHAT_GROUP_CREATE, List.of("12000")),
-            java.util.Map.entry(CHAT_GROUP_ADD, List.of("12000")));
+            java.util.Map.entry(CHAT_GROUP_ADD, List.of("12000")),
+            java.util.Map.entry(TMAIL_EMAIL, List.of("11700")),
+            java.util.Map.entry(TMAIL_WHATSAPP, List.of("11700")),
+            java.util.Map.entry(TMAIL_ALL_CUSTOMERS, List.of("11700")),
+            java.util.Map.entry(TMAIL_ALL_SUPPLIERS, List.of("11700")),
+            java.util.Map.entry(TMAIL_PICK, List.of("11700")),
+            java.util.Map.entry(TMAIL_PICTURE, List.of("11700")),
+            java.util.Map.entry(TMAIL_ATTACH, List.of("11700")));
 
     /** Given to anyone with people reporting to them, whatever their user type or menu access. */
     public static final List<String> FOR_TEAM_LEADS = List.of(PERF_TEAM, PERF_TYPE_GENERAL);
