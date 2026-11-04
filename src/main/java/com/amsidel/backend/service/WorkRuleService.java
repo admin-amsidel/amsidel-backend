@@ -115,6 +115,11 @@ public class WorkRuleService {
         return inherited(brandKey, brand == null ? null : brand.getCode());
     }
 
+    /** The hours of this brand's default, else the group default. */
+    public WorkTarget brandDefault(Brand brand) {
+        return inherited(brand.getId(), brand.getCode());
+    }
+
     /** The brand's default, else the group default. */
     private WorkTarget inherited(long brandKey, String brandCode) {
         BrandWorkRule brandDefault = brandKey == BrandWorkRule.NO_BRAND ? null

@@ -29,6 +29,12 @@ public final class Menus {
     public static final String EMP_LIST = "EMP_LIST";
     public static final String ORG_CHART = "ORG_CHART";
     public static final String DESIGNATIONS = "DESIGNATIONS";
+    /** Offer letters: write, issue and download them. Pay details, so its own tick. */
+    public static final String OFFER_LETTERS = "OFFER_LETTERS";
+    /** Not a page: changing an offer letter after it is issued. */
+    public static final String OFFER_EDIT = "OFFER_EDIT";
+    /** Not a page: deleting an offer letter after it is issued. */
+    public static final String OFFER_DELETE = "OFFER_DELETE";
     public static final String EMAIL = "EMAIL";
     public static final String STAFF_MAIL = "STAFF_MAIL";
     /** Staff email limits per brand: people in one send, emails a day, and the day's count. */
@@ -129,7 +135,7 @@ public final class Menus {
             CUST_ADD, CUST_EDIT, CUST_DELETE, MAIL_EMAIL, MAIL_WHATSAPP, MAIL_ALL, MAIL_PICK, MAIL_PICTURE, MAIL_ATTACH, MAIL_CONFIG,
             PERF_TYPE_GENERAL, PERF_TYPE_SALES, PERF_TYPE_ORDERS, PERF_TYPE_WORKLOG, PAY_TAX_REGIME,
             CHAT_GROUP_CREATE, CHAT_GROUP_ADD, TMAIL_CONFIG, TMAIL_EMAIL, TMAIL_WHATSAPP, TMAIL_ALL_CUSTOMERS, TMAIL_ALL_SUPPLIERS,
-            TMAIL_PICK, TMAIL_PICTURE, TMAIL_ATTACH);
+            TMAIL_PICK, TMAIL_PICTURE, TMAIL_ATTACH, OFFER_LETTERS, OFFER_EDIT, OFFER_DELETE);
     /** Any page of the product portal. */
     public static final String[] PRODUCT_PORTAL = {PROD_HOME, PROD_ITEMS, PROD_TYPES, PROD_SUPPLIERS, PROD_PURCHASES,
             PROD_QUOTES, PROD_ORDERS, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL, PROD_PAY, PROD_PAY_MANUAL, PROD_PROJECT_STATUS, PROD_STOCK_APPROVE};
@@ -159,6 +165,9 @@ public final class Menus {
             new Def(EMP_LIST, "All employees", "Employee list; adding and changing records needs the Admin user type", 4001, "EMPLOYEES", "/portal/employees", "pi-id-card"),
             new Def(ORG_CHART, "Org chart", "The whole reporting structure", 4002, "EMPLOYEES", "/portal/org-chart", "pi-sitemap"),
             new Def(DESIGNATIONS, "Designations", "Designations and levels", 4003, "EMPLOYEES", "/portal/designations", "pi-list"),
+            new Def(OFFER_LETTERS, "Issue offer letter", "Write, issue and download offer letters (PDF with the brand's logo); kept for later. Once issued a letter is locked. Its own tick (giving Employees does not give it)", 4004, "EMPLOYEES", "/portal/offer-letters", "pi-file-edit"),
+            new Def(OFFER_EDIT, "Change issued offer letter", "Change an offer letter after it is issued; the PDF is made again and the change is recorded. Its own tick", 4005, "EMPLOYEES", null, "pi-pencil"),
+            new Def(OFFER_DELETE, "Delete issued offer letter", "Delete an offer letter after it is issued. Its own tick", 4006, "EMPLOYEES", null, "pi-trash"),
 
             new Def(EMAIL, "Email", "Staff email and its limits", 5100, null, null, "pi-envelope"),
             // checkpoint 5000 kept from when it was a menu of its own, so existing access stays as it is
@@ -304,6 +313,7 @@ public final class Menus {
      * Only used if that designation exists; more are given under Administration > Menu access.
      */
     public static final java.util.Map<String, List<String>> NEW_MENU_DESIGNATIONS = java.util.Map.of(
+            OFFER_LETTERS, List.of("8.2"),
             "PAYROLL", List.of("8.2"),
             PAYROLL_SALARIES, List.of("8.2"),
             PAY_COMPONENTS, List.of("8.2"),
