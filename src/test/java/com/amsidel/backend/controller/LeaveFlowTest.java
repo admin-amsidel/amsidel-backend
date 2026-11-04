@@ -48,6 +48,7 @@ class LeaveFlowTest {
     private String owner;
     private long dwBrandId;
     private String manager;
+    private String managerId;
     private Map<String, Integer> typeIds;
     private int seq;
 
@@ -57,7 +58,21 @@ class LeaveFlowTest {
         List<Integer> ids = JsonPath.read(body(mockMvc.perform(get("/api/brands").header("Authorization", auth(owner)))),
                 "$[?(@.code == 'DW')].id");
         dwBrandId = ids.get(0);
-        manager = person("MANAGER")[1];
+        // the tests below use dates in 2027: the plans in force run to then
+        String overview = body(mockMvc.perform(get("/api/leave/plans").header("Authorization", auth(owner))));
+        List<Map<String, Object>> current = JsonPath.read(overview, "$.brands[*].plans[?(@.state == 'CURRENT')]");
+        for (Map<String, Object> plan : current) {
+            List<Map<String, Object>> lines = JsonPath.read(plan, "$.lines[*]");
+            String lineJson = lines.stream().map(l -> "{\"leaveTypeId\":%s,\"days\":%s}".formatted(l.get("leaveTypeId"), l.get("days")))
+                    .collect(java.util.stream.Collectors.joining(","));
+            mockMvc.perform(put("/api/leave/plans/" + plan.get("id")).header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"brandId\":%s,\"validFrom\":\"%s\",\"validUntil\":\"2027-12-31\",\"lines\":[%s]}"
+                                    .formatted(plan.get("brandId"), plan.get("validFrom"), lineJson)))
+                    .andExpect(status().isOk());
+        }
+        String[] boss = person("MANAGER");
+        managerId = boss[0];
+        manager = boss[1];
 
         String types = body(mockMvc.perform(get("/api/leave/types").header("Authorization", auth(owner))));
         List<String> codes = JsonPath.read(types, "$[*].code");
@@ -134,12 +149,12 @@ class LeaveFlowTest {
         mockMvc.perform(post("/api/leave/grants").header("Authorization", auth(manager))
                         .contentType(MediaType.APPLICATION_JSON).content(grant))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.year").value(2027));
+                .andExpect(jsonPath("$.year").value(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).getYear()));
 
-        // the manager's team lists the employee, not other managers
+        // the manager's team lists those reporting to them
         mockMvc.perform(get("/api/leave/team").header("Authorization", auth(manager)))
                 .andExpect(jsonPath("$[*].id", hasItem(Integer.valueOf(emp[0]))))
-                .andExpect(jsonPath("$[*].role", not(hasItem("MANAGER"))));
+                .andExpect(jsonPath("$[*].brandName", hasItem("Amsidel Doors & Windows")));
         balance(emp[1], "CO", "available", 1.0);
         apply(emp[1], "CO", "2027-03-08", "2027-03-08", false).andExpect(status().isCreated());
         mockMvc.perform(get("/api/leave/me/grants?year=2027").header("Authorization", auth(emp[1])))
@@ -153,7 +168,7 @@ class LeaveFlowTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("2027-03-22 is not in the restricted holiday list"));
 
-        String holiday = "{\"date\":\"2027-03-22\",\"name\":\"Holi\"}";
+        String holiday = "{\"date\":\"2027-03-22\",\"name\":\"Holi\",\"brandId\":%d}".formatted(dwBrandId);
         mockMvc.perform(post("/api/leave/restricted-holidays").header("Authorization", auth(emp[1]))
                         .contentType(MediaType.APPLICATION_JSON).content(holiday))
                 .andExpect(status().isForbidden());
@@ -171,7 +186,7 @@ class LeaveFlowTest {
     @Test
     void officeHolidaysAreNotCountedAsLeave() throws Exception {
         String[] emp = person("EMPLOYEE");
-        String christmas = "{\"date\":\"2027-12-25\",\"name\":\"Christmas\"}";
+        String christmas = "{\"date\":\"2027-12-25\",\"name\":\"Christmas\",\"brandId\":%d}".formatted(dwBrandId);
         mockMvc.perform(post("/api/leave/office-holidays").header("Authorization", auth(emp[1]))
                         .contentType(MediaType.APPLICATION_JSON).content(christmas))
                 .andExpect(status().isForbidden());
@@ -218,14 +233,16 @@ class LeaveFlowTest {
                 .andExpect(status().isForbidden());
 
         String[] mgr = person("MANAGER");
+        String[] peer = person("MANAGER");
         String id = idOf(apply(mgr[1], "CL", "2027-06-07", "2027-06-07", false).andExpect(status().isCreated()));
-        // managers decide for employees only, never for themselves or other managers
+        // the person they report to decides: never themselves, nor another manager
         mockMvc.perform(post("/api/leave/requests/" + id + "/approve").header("Authorization", auth(mgr[1])))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(post("/api/leave/requests/" + id + "/approve").header("Authorization", auth(manager)))
+        mockMvc.perform(post("/api/leave/requests/" + id + "/approve").header("Authorization", auth(peer[1])))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/leave/requests?status=PENDING").header("Authorization", auth(manager)))
+        mockMvc.perform(get("/api/leave/requests?status=PENDING").header("Authorization", auth(peer[1])))
                 .andExpect(jsonPath("$[*].id", not(hasItem(Integer.valueOf(id)))));
+        // an owner can step in
         mockMvc.perform(post("/api/leave/requests/" + id + "/approve").header("Authorization", auth(owner)))
                 .andExpect(status().isOk());
 
@@ -268,19 +285,20 @@ class LeaveFlowTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.annualQuota").value(12));
+        // the type's days are only the starting point of a new plan: the plan in force decides
         String[] emp = person("EMPLOYEE");
-        balance(emp[1], "EL", "available", 12.0);
+        balance(emp[1], "EL", "available", 10.0);
     }
 
     // ---- helpers ----
 
-    /** A new person in brand DW with their own PIN set; returns {id, token}. */
+    /** A new person in brand DW, reporting to the manager, with their own PIN set; returns {id, token}. */
     private String[] person(String role) throws Exception {
         String userId = "leave" + (++seq);
         String json = """
-                {"name":"Leave Tester %d","userId":"%s","password":"ab@123","role":"%s","brandId":%d,
+                {"name":"Leave Tester %d","userId":"%s","password":"ab@123","role":"%s","brandId":%d,"reportsToId":%s,
                  "phone":"+91 98470 00000","joinedDate":"2026-01-01"}
-                """.formatted(seq, userId, role, dwBrandId);
+                """.formatted(seq, userId, role, dwBrandId, managerId);
         String id = idOf(mockMvc.perform(post("/api/employees").header("Authorization", auth(owner))
                         .contentType(MediaType.APPLICATION_JSON).content(json))
                 .andExpect(status().isCreated()));
@@ -296,7 +314,7 @@ class LeaveFlowTest {
     }
 
     private void balance(String token, String code, String field, double expected) throws Exception {
-        String json = body(mockMvc.perform(get("/api/leave/me/balances?year=2027").header("Authorization", auth(token)))
+        String json = body(mockMvc.perform(get("/api/leave/me/balances").header("Authorization", auth(token)))
                 .andExpect(status().isOk()));
         List<Double> values = JsonPath.read(json, "$[?(@.code == '" + code + "')]." + field);
         assertEquals(expected, values.get(0), code + " " + field);

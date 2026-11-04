@@ -39,7 +39,7 @@ public final class PayslipDtos {
 
         private List<Long> employeeIds;
 
-        /** This month's working days for everyone made now; empty = each salary's own (default 26). */
+        /** This month's working days for everyone made now; empty = each salary's own (default 30). */
         @Min(1)
         @Max(31)
         private Integer workingDays;

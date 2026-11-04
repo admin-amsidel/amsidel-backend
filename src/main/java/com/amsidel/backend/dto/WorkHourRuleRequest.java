@@ -4,36 +4,39 @@
  */
 package com.amsidel.backend.dto;
 
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.math.BigDecimal;
 
-/** Minimum hours for one designation level; levelNumber 0 = the default for everyone else. */
+/** One brand's default hours, or its hours for one designation. */
 @Data
 public class WorkHourRuleRequest {
 
-    @NotNull
-    @Min(0)
-    @Max(99)
-    private Integer levelNumber;
+    /** Empty = the group-level people, who have no brand. */
+    private Long brandId;
 
-    @NotNull
+    /** Empty = the brand's default. */
+    private Long designationId;
+
+    @NotNull(message = "Give the hours a day")
     @DecimalMin("0")
     @DecimalMax("24")
     private BigDecimal dailyMinHours;
 
-    @NotNull
+    @NotNull(message = "Give the hours a week")
     @DecimalMin("0")
     @DecimalMax("168")
     private BigDecimal weeklyMinHours;
 
-    @NotNull
+    @NotNull(message = "Give the Half Day Leave limit")
     @DecimalMin("0")
     @DecimalMax("24")
     private BigDecimal halfDayBelow;
 
-    @NotNull
+    @NotNull(message = "Give the Full Day Leave limit")
     @DecimalMin("0")
     @DecimalMax("24")
     private BigDecimal fullDayBelow;

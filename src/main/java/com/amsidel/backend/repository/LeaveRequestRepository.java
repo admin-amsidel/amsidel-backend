@@ -21,10 +21,10 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
             + " left join fetch r.decidedBy where r.id = :id")
     Optional<LeaveRequest> findFull(@Param("id") Long id);
 
-    /** One person's requests in a year, newest first. */
+    /** One person's requests, newest first. */
     @Query("select r from LeaveRequest r join fetch r.leaveType left join fetch r.decidedBy"
-            + " where r.employee.id = :employeeId and r.leaveYear = :year order by r.fromDate desc")
-    List<LeaveRequest> forEmployee(@Param("employeeId") Long employeeId, @Param("year") int year);
+            + " where r.employee.id = :employeeId order by r.fromDate desc")
+    List<LeaveRequest> forEmployee(@Param("employeeId") Long employeeId);
 
     /** Requests for approvers: one status (or all), one brand (or all). */
     @Query("select r from LeaveRequest r join fetch r.leaveType join fetch r.employee e left join fetch e.brand b"

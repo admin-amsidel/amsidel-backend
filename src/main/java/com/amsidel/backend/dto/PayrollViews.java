@@ -28,13 +28,14 @@ public final class PayrollViews {
     }
 
     /** pan and bankAccount are payroll details: only payroll users and the person see them. */
-    public record Person(Long id, String name, String empNumber, String designationName, String brandCode,
+    public record Person(Long id, String name, String empNumber, String designationName, String brandCode, String brandName,
                          LocalDate joinedDate, boolean active, String photoPath, Instant photoUpdatedAt, String pan,
                          String bankAccount, String ifsc, String upi) {
         public static Person of(Employee e) {
             return new Person(e.getId(), e.getName(), e.getEmpNumber(),
                     e.getDesignation() == null ? null : e.getDesignation().getName(),
-                    e.getBrand() == null ? null : e.getBrand().getCode(), e.getJoinedDate(), e.isActive(),
+                    e.getBrand() == null ? null : e.getBrand().getCode(), e.getBrand() == null ? null : e.getBrand().getName(),
+                    e.getJoinedDate(), e.isActive(),
                     e.getPhotoPath(), e.getPhotoUpdatedAt(), e.getPanNumber(), e.getBankAccountNumber(), e.getIfscCode(),
                     e.getUpiId());
         }

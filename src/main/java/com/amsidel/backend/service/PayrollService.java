@@ -40,7 +40,7 @@ public class PayrollService {
 
     private static final BigDecimal TWELVE = BigDecimal.valueOf(12);
     /** Working days in a month unless a salary says otherwise. */
-    public static final int DEFAULT_WORKING_DAYS = 26;
+    public static final int DEFAULT_WORKING_DAYS = 30;
 
     private final PayComponentRepository componentRepository;
     private final SalaryStructureRepository salaryRepository;

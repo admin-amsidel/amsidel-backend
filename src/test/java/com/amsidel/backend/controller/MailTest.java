@@ -112,6 +112,9 @@ class MailTest {
     private FakeBrandSenders brandSenders;
 
     @Autowired
+    private com.amsidel.backend.scheduler.LeaveExpiryNotifier leaveExpiry;
+
+    @Autowired
     private MockMvc mockMvc;
 
     @Autowired
@@ -576,6 +579,38 @@ class MailTest {
             return all.toString();
         }
         return part instanceof String text ? text : "";
+    }
+
+    @Test
+    void ownersAndAdminsAreEmailedOnceWhenALeavePlanIsAboutToEnd() throws Exception {
+        create("Plan Admin", "ml.planadmin", "plan.admin@amsidel.com", dw, "ADMIN");
+        List<java.util.Map<String, Object>> plans = JsonPath.read(body(mockMvc.perform(get("/api/leave/plans").header("Authorization", auth(owner)))),
+                "$.brands[?(@.brandId == %d)].plans[?(@.state == 'CURRENT')]".formatted(dw));
+        java.util.Map<String, Object> plan = plans.getFirst();
+        List<java.util.Map<String, Object>> lines = JsonPath.read(plan, "$.lines[*]");
+        String lineJson = lines.stream().map(l -> "{\"leaveTypeId\":%s,\"days\":%s}".formatted(l.get("leaveTypeId"), l.get("days")))
+                .collect(java.util.stream.Collectors.joining(","));
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        String body = "{\"brandId\":%d,\"validFrom\":\"%s\",\"validUntil\":\"%s\",\"lines\":[%s]}";
+        // far from its end: nothing
+        leaveExpiry.run();
+        assertThat(mail.sent).isEmpty();
+        try {
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/leave/plans/" + plan.get("id"))
+                    .header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                    .content(body.formatted(dw, plan.get("validFrom"), today.plusDays(7), lineJson))).andExpect(status().isOk());
+            leaveExpiry.run();
+            assertThat(mail.sent).hasSize(1);
+            assertThat(mail.sent.getFirst().getAllRecipients()).extracting(Address::toString).contains("plan.admin@amsidel.com");
+            assertThat(mail.sent.getFirst().getSubject()).contains("DW").contains(today.plusDays(7).toString());
+            // once only
+            leaveExpiry.run();
+            assertThat(mail.sent).hasSize(1);
+        } finally {
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/leave/plans/" + plan.get("id"))
+                    .header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                    .content(body.formatted(dw, plan.get("validFrom"), plan.get("validUntil"), lineJson))).andExpect(status().isOk());
+        }
     }
 
     private int sentToday() throws Exception {

@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 
 /**
  * Monthly payslips made from each employee's salary for the year.
- * Making one: the month has the salary's working days (default 26; payroll may set the month's own). Per-day pay =
+ * Making one: the month has the salary's working days (default 30; payroll may set the month's own). Per-day pay =
  * monthly earnings / working days; earnings are paid for the paid days = working days employed - LOP days (a salary
  * starting mid-month counts its working days, i.e. not the weekly offs, from the start date). Deductions and
  * reimbursements are the salary's amounts. Income tax (New or Old regime) is worked out again for the month whenever a

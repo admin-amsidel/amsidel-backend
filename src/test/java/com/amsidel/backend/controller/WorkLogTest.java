@@ -82,10 +82,10 @@ class WorkLogTest {
                 .andExpect(jsonPath("$.editable").value(true))
                 .andExpect(jsonPath("$.joinedDate").value("2026-01-01"))
                 .andExpect(jsonPath("$.entries[*].taskId", contains("MSC-101", "MSC-102")));
-        // a Team Member (level 3) has no level rule of its own: the default applies
+        // a Team Member has no rule of its own: the brand's default applies
         month(other, null, day, day)
                 .andExpect(jsonPath("$.target.dailyMinHours").value(9))
-                .andExpect(jsonPath("$.target.source").value("Default rule"))
+                .andExpect(jsonPath("$.target.source").value("DW default"))
                 .andExpect(jsonPath("$.target.weeklyMinHours").value(54))
                 .andExpect(jsonPath("$.target.halfDayBelow").value(4.5));
     }
@@ -152,24 +152,36 @@ class WorkLogTest {
 
     @Test
     void levelRulesAndPersonalTargets() throws Exception {
-        String rules = """
-                [{"levelNumber":0,"dailyMinHours":9,"weeklyMinHours":54,"halfDayBelow":4.5,"fullDayBelow":1},
-                 {"levelNumber":1,"dailyMinHours":8,"weeklyMinHours":48,"halfDayBelow":4,"fullDayBelow":1}]
-                """;
-        mockMvc.perform(put("/api/worklog/rules").header("Authorization", auth(lead))
-                        .contentType(MediaType.APPLICATION_JSON).content(rules))
-                .andExpect(status().isForbidden());
-        mockMvc.perform(put("/api/worklog/rules").header("Authorization", auth(owner))
-                        .contentType(MediaType.APPLICATION_JSON).content("[{\"levelNumber\":1,\"dailyMinHours\":8,"
-                                + "\"weeklyMinHours\":48,\"halfDayBelow\":4,\"fullDayBelow\":1}]"))
-                .andExpect(status().isBadRequest());
-        mockMvc.perform(put("/api/worklog/rules").header("Authorization", auth(owner))
-                        .contentType(MediaType.APPLICATION_JSON).content(rules))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
+        // each brand has its default, and its hours for a designation if needed
+        String ruleJson = "{\"brandId\":%s,\"designationId\":%s,\"dailyMinHours\":%s,\"weeklyMinHours\":%s,\"halfDayBelow\":4,\"fullDayBelow\":1}";
+        List<Integer> traineeIds = JsonPath.read(body(mockMvc.perform(get("/api/designations").header("Authorization", auth(owner)))), "$[?(@.name == 'Trainee')].id");
+        int traineeDesignation = traineeIds.get(0);
+        rule(lead, ruleJson.formatted(dw, null, 9, 54)).andExpect(status().isForbidden());
+        rule(owner, ruleJson.formatted(dw, null, 3, 54)).andExpect(status().isBadRequest());
+        // starts from the rule made for every brand on first start
+        month(trainee, null, TODAY, TODAY).andExpect(jsonPath("$.target.source").value("DW default"));
+
+        rule(owner, ruleJson.formatted(dw, null, 7.5, 45)).andExpect(status().isOk());
+        month(trainee, null, TODAY, TODAY)
+                .andExpect(jsonPath("$.target.dailyMinHours").value(7.5))
+                .andExpect(jsonPath("$.target.source").value("DW default"));
+        // without a brand default of its own, a brand uses the group's
+        mockMvc.perform(delete("/api/worklog/rules").param("brandId", String.valueOf(dw)).header("Authorization", auth(owner))).andExpect(status().isOk());
+        month(trainee, null, TODAY, TODAY).andExpect(jsonPath("$.target.source").value("Group default"));
+        // the other tests expect the brand's first default
+        rule(owner, "{\"brandId\":%d,\"dailyMinHours\":9,\"weeklyMinHours\":54,\"halfDayBelow\":4.5,\"fullDayBelow\":1}".formatted(dw)).andExpect(status().isOk());
+        rule(owner, ruleJson.formatted(dw, traineeDesignation, 8, 48)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.brandId == %d && @.designationId == %d)].dailyMinHours".formatted(dw, traineeDesignation)).value(org.hamcrest.Matchers.hasItem(8)))
+                .andExpect(jsonPath("$[?(@.brandId == %d && @.designationId == %d)].inherited.source".formatted(dw, traineeDesignation)).value(org.hamcrest.Matchers.hasItem("DW default")));
         month(trainee, null, TODAY, TODAY)
                 .andExpect(jsonPath("$.target.dailyMinHours").value(8))
-                .andExpect(jsonPath("$.target.source").value("Level 1 rule"));
+                .andExpect(jsonPath("$.target.source").value("Trainee rule"));
+        // taken off: the brand's default again; the group default always stays
+        mockMvc.perform(delete("/api/worklog/rules").param("brandId", String.valueOf(dw)).param("designationId", String.valueOf(traineeDesignation))
+                .header("Authorization", auth(owner))).andExpect(status().isOk());
+        month(trainee, null, TODAY, TODAY).andExpect(jsonPath("$.target.source").value("DW default"));
+        mockMvc.perform(delete("/api/worklog/rules").header("Authorization", auth(owner))).andExpect(status().isBadRequest());
+        rule(owner, ruleJson.formatted(dw, traineeDesignation, 8, 48)).andExpect(status().isOk());
 
         String target = "{\"dailyMinHours\":7,\"weeklyMinHours\":null}";
         mockMvc.perform(put("/api/worklog/targets/" + traineeId).header("Authorization", auth(trainee))
@@ -184,6 +196,25 @@ class WorkLogTest {
                 .andExpect(jsonPath("$.dailyMinHours").value(7))
                 .andExpect(jsonPath("$.weeklyMinHours").value(48))
                 .andExpect(jsonPath("$.source").value("Personal target"));
+    }
+
+    @Test
+    void aBrandsTaskGoesToThatBrandsPeople() throws Exception {
+        long wk = ((Number) JsonPath.read(body(mockMvc.perform(post("/api/brands").header("Authorization", auth(owner))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"BR\",\"name\":\"Other Brand\"}"))), "$.id")).longValue();
+        String json = "{\"code\":\"BRT-1\",\"title\":\"Other brand work\",\"status\":\"OPEN\",\"brandId\":%d,\"assigneeIds\":[%s]}";
+        mockMvc.perform(post("/api/tasks").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON).content(json.formatted(wk, traineeId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Tom Trainee is not in Other Brand; choose people of the task's brand"));
+        // the same brand: fine; moved to another brand with them still on it: refused
+        String id = idOf(mockMvc.perform(post("/api/tasks").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON).content(json.formatted(dw, traineeId)))
+                .andExpect(status().isCreated()));
+        mockMvc.perform(put("/api/tasks/" + id).header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON).content(json.formatted(wk, traineeId)))
+                .andExpect(status().isBadRequest());
+        // a task for the whole group can go to anyone
+        mockMvc.perform(post("/api/tasks").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"BRT-2\",\"title\":\"Group work\",\"status\":\"OPEN\",\"assigneeIds\":[%s]}".formatted(traineeId)))
+                .andExpect(status().isCreated());
     }
 
     @Test
@@ -294,6 +325,11 @@ class WorkLogTest {
     private ResultActions task(String token, String code, String title, String status, String assigneeId) throws Exception {
         return mockMvc.perform(post("/api/tasks").header("Authorization", auth(token))
                 .contentType(MediaType.APPLICATION_JSON).content(taskJson(code, title, status, assigneeId)));
+    }
+
+    private ResultActions rule(String token, String json) throws Exception {
+        return mockMvc.perform(put("/api/worklog/rules").header("Authorization", auth(token))
+                .contentType(MediaType.APPLICATION_JSON).content(json));
     }
 
     private String taskJson(String code, String title, String status, String assigneeId) {

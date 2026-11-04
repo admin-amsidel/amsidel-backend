@@ -52,7 +52,7 @@ public final class PayrollRequests {
         @Size(max = 500)
         private String notes;
 
-        /** Working days in a month (per-day pay = monthly earnings / working days); empty = 26. */
+        /** Working days in a month (per-day pay = monthly earnings / working days); empty = 30. */
         @Min(value = 1, message = "Working days: 1 to 31")
         @Max(value = 31, message = "Working days: 1 to 31")
         private Integer workingDays;

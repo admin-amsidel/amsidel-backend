@@ -61,14 +61,14 @@ class PayslipTest {
         String result = body(json(post("/api/payroll/payslips/generate"), owner, "{\"year\":2025,\"month\":9,\"employeeIds\":[" + emp[0] + "]}")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(1)));
         String id = payslipId(emp[0], 2025, 9);
-        // joined Tue 9th: 19 working days (not Sundays) of 26; earnings = monthly / 26 x 19, deductions and reimbursements in full
+        // joined Tue 9th: 19 working days (not Sundays) of 30; earnings = monthly / 30 x 19, deductions and reimbursements in full
         mockMvc.perform(get("/api/payroll/payslips/" + id).header("Authorization", auth(owner)))
                 .andExpect(jsonPath("$.status").value("DRAFT"))
                 .andExpect(jsonPath("$.periodLabel").value("September 2025"))
                 .andExpect(jsonPath("$.daysInMonth").value(30))
-                .andExpect(jsonPath("$.workingDays").value(26))
+                .andExpect(jsonPath("$.workingDays").value(30))
                 .andExpect(jsonPath("$.paidDays").value(19))
-                .andExpect(jsonPath("$.lines[?(@.code == 'BASIC')].amount").value(hasItem(71453.00)))
+                .andExpect(jsonPath("$.lines[?(@.code == 'BASIC')].amount").value(hasItem(61926.00)))
                 .andExpect(jsonPath("$.lines[?(@.code == 'BASIC')].fullAmount").value(hasItem(97778.00)))
                 .andExpect(jsonPath("$.lines[?(@.code == 'TDS')].amount").value(hasItem(24957.00)))
                 .andExpect(jsonPath("$.company.address").value("Kakkanad, Kochi, Kerala"));
@@ -145,11 +145,11 @@ class PayslipTest {
         json(post("/api/payroll/payslips/generate"), owner, "{\"year\":2025,\"month\":5,\"employeeIds\":[" + emp[0] + "]}");
         String april = payslipId(emp[0], 2025, 4);
         String may = payslipId(emp[0], 2025, 5);
-        // two unpaid days in May (26 working days): earnings for 24
+        // two unpaid days in May (30 working days): earnings for 28
         String mayLines = body(mockMvc.perform(get("/api/payroll/payslips/" + may).header("Authorization", auth(owner))));
         json(put("/api/payroll/payslips/" + may), owner, "{\"payDate\":\"2025-05-31\",\"lopDays\":2,\"lines\":[],\"publish\":false}")
-                .andExpect(jsonPath("$.paidDays").value(24)).andExpect(jsonPath("$.lopDays").value(2));
-        assertThat(mayLines).contains("\"paidDays\":26");
+                .andExpect(jsonPath("$.paidDays").value(28)).andExpect(jsonPath("$.lopDays").value(2));
+        assertThat(mayLines).contains("\"paidDays\":30");
 
         json(post("/api/payroll/payslips/publish"), owner, "{\"ids\":[" + april + "," + may + "]}")
                 .andExpect(jsonPath("$.published").value(2));
@@ -300,7 +300,10 @@ class PayslipTest {
         String[] emp = employee("2025-04-01");
         salary(emp[0], "2025-04-01");
         mockMvc.perform(get("/api/payroll/salaries/" + emp[0]).param("fy", "2025").header("Authorization", auth(owner)))
-                .andExpect(jsonPath("$.workingDays").value(26));
+                .andExpect(jsonPath("$.workingDays").value(30));
+        // the lists carry the brand's name for the Brand filter
+        mockMvc.perform(get("/api/payroll/salaries").param("fy", "2025").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.rows[*].employee.brandName", hasItem("Amsidel Doors & Windows")));
         // June made with 25 working days: a full month is 25 paid days, the full amounts
         json(post("/api/payroll/payslips/generate"), owner, "{\"year\":2025,\"month\":6,\"workingDays\":25,\"employeeIds\":[" + emp[0] + "]}")
                 .andExpect(jsonPath("$.created").value(1));
@@ -321,7 +324,7 @@ class PayslipTest {
         // the salary's own working days apply to new payslips
         json(post("/api/payroll/payslips/generate"), owner, "{\"year\":2025,\"month\":7,\"employeeIds\":[" + emp[0] + "]}");
         mockMvc.perform(get("/api/payroll/payslips/" + payslipId(emp[0], 2025, 7)).header("Authorization", auth(owner)))
-                .andExpect(jsonPath("$.workingDays").value(26));
+                .andExpect(jsonPath("$.workingDays").value(30));
     }
 
     @Test

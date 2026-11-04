@@ -147,13 +147,13 @@ public final class Menus {
 
             new Def("LEAVE", "Leave", "Leave requests, approvals and settings", 2000, null, null, "pi-calendar"),
             new Def(LEAVE_MY, "My leave", "Own balances and requests", 2001, "LEAVE", "/portal/leave", "pi-calendar"),
-            new Def(LEAVE_APPROVALS, "Approvals", "Approve leave and grant comp-off for your team", 2002, "LEAVE", "/portal/leave/approvals", "pi-check-square"),
-            new Def(LEAVE_SETTINGS, "Leave settings", "Leave types, yearly limits and restricted holidays", 2003, "LEAVE", "/portal/leave/settings", "pi-cog"),
+            new Def(LEAVE_APPROVALS, "Approvals", "Approve leave and grant comp-off for the people reporting to you (everyone with people reporting to them gets this)", 2002, "LEAVE", "/portal/leave/approvals", "pi-check-square"),
+            new Def(LEAVE_SETTINGS, "Leave settings", "Leave types, each brand's leave plans (dates, days, carry forward) and holidays", 2003, "LEAVE", "/portal/leave/settings", "pi-cog"),
 
             new Def("WORKLOG", "Work log", "Daily work log, tasks and minimum hours", 3000, null, null, "pi-clock"),
             new Def(WORKLOG_MY, "My work log", "Own work log; managers also see their team's", 3001, "WORKLOG", "/portal/worklog", "pi-clock"),
             new Def(TASKS, "Tasks", "Create tasks and assign them to employees", 3002, "WORKLOG", "/portal/worklog/tasks", "pi-list-check"),
-            new Def(WORK_RULES, "Work hour rules", "Minimum hours per designation level", 3003, "WORKLOG", "/portal/worklog/rules", "pi-sliders-h"),
+            new Def(WORK_RULES, "Work hour rules", "Minimum hours per brand and designation", 3003, "WORKLOG", "/portal/worklog/rules", "pi-sliders-h"),
 
             new Def("EMPLOYEES", "Employees", "Employee records and the organisation", 4000, null, null, "pi-users"),
             new Def(EMP_LIST, "All employees", "Employee list; adding and changing records needs the Admin user type", 4001, "EMPLOYEES", "/portal/employees", "pi-id-card"),
@@ -288,7 +288,7 @@ public final class Menus {
             java.util.Map.entry(TMAIL_ATTACH, List.of("11700")));
 
     /** Given to anyone with people reporting to them, whatever their user type or menu access. */
-    public static final List<String> FOR_TEAM_LEADS = List.of(PERF_TEAM, PERF_TYPE_GENERAL);
+    public static final List<String> FOR_TEAM_LEADS = List.of(PERF_TEAM, PERF_TYPE_GENERAL, LEAVE_APPROVALS);
 
     /**
      * User types that get a menu when it first appears in a database that already has menu access set up

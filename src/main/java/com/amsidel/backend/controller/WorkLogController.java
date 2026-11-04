@@ -11,11 +11,11 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import com.amsidel.backend.dto.*;
-import com.amsidel.backend.entity.WorkHourRule;
 import com.amsidel.backend.security.AuthUser;
 import com.amsidel.backend.security.Checkpoint;
 import com.amsidel.backend.security.Menus;
 import com.amsidel.backend.service.WorkLogService;
+import com.amsidel.backend.service.WorkRuleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -28,7 +28,7 @@ import java.util.List;
 
 /**
  * Work log. With My work log, people log their own hours; reading someone else's log and setting their hours is
- * checked person by person in WorkLogService; changing the level rules needs the Work hour rules menu.
+ * checked person by person in WorkLogService; each brand's rules need the Work hour rules menu.
  */
 @RestController
 @RequestMapping("/api/worklog")
@@ -36,6 +36,7 @@ import java.util.List;
 public class WorkLogController {
 
     private final WorkLogService workLogService;
+    private final WorkRuleService ruleService;
     private final ExportService exportService;
 
     /** Calendar data for me, or for employeeId. */
@@ -86,16 +87,24 @@ public class WorkLogController {
         workLogService.delete(me, id);
     }
 
-    @Checkpoint({Menus.WORKLOG_MY, Menus.WORK_RULES})
+    @Checkpoint({Menus.WORK_RULES})
     @GetMapping("/rules")
-    public List<WorkHourRule> rules() {
-        return workLogService.rules();
+    public List<WorkRuleService.Row> rules(@AuthenticationPrincipal AuthUser me) {
+        return ruleService.rows(me);
+    }
+
+    /** One brand's default, or its hours for one designation. */
+    @Checkpoint({Menus.WORK_RULES})
+    @PutMapping("/rules")
+    public List<WorkRuleService.Row> saveRule(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody WorkHourRuleRequest rule) {
+        return ruleService.save(me, rule);
     }
 
     @Checkpoint({Menus.WORK_RULES})
-    @PutMapping("/rules")
-    public List<WorkHourRule> saveRules(@Valid @RequestBody List<@Valid WorkHourRuleRequest> rules) {
-        return workLogService.saveRules(rules);
+    @DeleteMapping("/rules")
+    public List<WorkRuleService.Row> removeRule(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Long brandId,
+                                                @RequestParam(required = false) Long designationId) {
+        return ruleService.remove(me, brandId, designationId);
     }
 
     @Checkpoint({Menus.WORKLOG_MY})

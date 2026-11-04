@@ -39,9 +39,14 @@ public class LeaveGrant {
     @JoinColumn(name = "leave_type_id")
     private LeaveType leaveType;
 
-    /** Calendar year the days can be used in. */
+    /** Calendar year the days can be used in (older grants; new ones go by plan). */
     @Column(nullable = false)
     private int leaveYear;
+
+    /** The leave plan the days count in; null on grants made before plans, which go by leaveYear. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "plan_id")
+    private LeavePlan plan;
 
     @Column(nullable = false, precision = 5, scale = 1)
     private BigDecimal days;

@@ -63,9 +63,9 @@ public class Payslip {
     @Column(nullable = false)
     private int daysInMonth;
 
-    /** Working days in the month (from the salary, default 26; payroll may change it): per-day pay = earnings / this. */
-    @Column(nullable = false, columnDefinition = "integer default 26")
-    private int workingDays = 26;
+    /** Working days in the month (from the salary, default 30; payroll may change it): per-day pay = earnings / this. */
+    @Column(nullable = false, columnDefinition = "integer default 30")
+    private int workingDays = 30;
 
     /** Working days employed in the month (all of them, or from a later start date), before unpaid leave. */
     @Column(nullable = false)

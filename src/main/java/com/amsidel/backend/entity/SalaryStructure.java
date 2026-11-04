@@ -46,9 +46,9 @@ public class SalaryStructure {
     @Column(nullable = false)
     private LocalDate effectiveFrom;
 
-    /** Working days in a month for this salary (default 26): per-day pay = monthly earnings / working days. */
-    @Column(nullable = false, columnDefinition = "integer default 26")
-    private int workingDays = 26;
+    /** Working days in a month for this salary (default 30): per-day pay = monthly earnings / working days. */
+    @Column(nullable = false, columnDefinition = "integer default 30")
+    private int workingDays = 30;
 
     @Column(length = 500)
     private String notes;

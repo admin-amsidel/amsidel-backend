@@ -13,7 +13,7 @@ import java.util.List;
 
 public interface LeaveGrantRepository extends JpaRepository<LeaveGrant, Long> {
 
-    @Query("select g from LeaveGrant g join fetch g.leaveType join fetch g.employee join fetch g.grantedBy"
-            + " where g.employee.id = :employeeId and g.leaveYear = :year order by g.createdAt desc")
-    List<LeaveGrant> forEmployee(@Param("employeeId") Long employeeId, @Param("year") int year);
+    @Query("select g from LeaveGrant g join fetch g.leaveType join fetch g.employee join fetch g.grantedBy left join fetch g.plan"
+            + " where g.employee.id = :employeeId order by g.createdAt desc")
+    List<LeaveGrant> forEmployee(@Param("employeeId") Long employeeId);
 }

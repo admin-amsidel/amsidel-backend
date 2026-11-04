@@ -9,8 +9,9 @@ import com.amsidel.backend.entity.LeaveAllocation;
 import java.math.BigDecimal;
 
 /**
- * One leave type's balance for one person and year. entitled = quota + granted; available = entitled - used
- * - pending. For UNLIMITED types (leave without pay) entitled and available are null.
+ * One leave type's balance for one person in a leave plan. entitled (the maximum) = quota + carried + granted;
+ * available (what remains) = entitled - used - pending. For UNLIMITED types (leave without pay) entitled and available
+ * are null. carried: what came on from the brand's plan before.
  */
 public record LeaveBalance(
         Long leaveTypeId,
@@ -20,6 +21,7 @@ public record LeaveBalance(
         boolean halfDayAllowed,
         boolean restrictedDatesOnly,
         int quota,
+        BigDecimal carried,
         BigDecimal granted,
         BigDecimal entitled,
         BigDecimal used,

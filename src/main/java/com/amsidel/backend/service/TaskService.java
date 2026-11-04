@@ -149,6 +149,12 @@ public class TaskService {
             if (!inScope(me, e.getBrand())) {
                 throw ApiException.forbidden("You can only assign people of your own brand");
             }
+            // a brand's task goes to that brand's people; someone already on it stays while the brand stays the same
+            boolean sameBrand = brand == null || (e.getBrand() != null && e.getBrand().getId().equals(brand.getId()));
+            boolean brandKept = task.getBrand() != null && brand != null && task.getBrand().getId().equals(brand.getId());
+            if (!sameBrand && !(alreadyOn && brandKept)) {
+                throw ApiException.badRequest(e.getName() + " is not in " + brand.getName() + "; choose people of the task's brand");
+            }
             assignees.add(e);
         }
 

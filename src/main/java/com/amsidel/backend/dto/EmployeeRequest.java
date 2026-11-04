@@ -51,6 +51,9 @@ public class EmployeeRequest {
     /** Direct superior's employee id; optional. */
     private Long reportsToId;
 
+    /** Leave of the people reporting to this person is approved automatically; only owners and admins can set it. */
+    private Boolean autoApproveReports;
+
     @Size(max = 500)
     private String address;
 

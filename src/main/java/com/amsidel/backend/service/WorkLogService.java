@@ -10,7 +10,6 @@ import com.amsidel.backend.exception.ApiException;
 import com.amsidel.backend.exception.ResourceNotFoundException;
 import com.amsidel.backend.repository.EmployeeRepository;
 import com.amsidel.backend.repository.LeaveRequestRepository;
-import com.amsidel.backend.repository.WorkHourRuleRepository;
 import com.amsidel.backend.repository.WorkLogRepository;
 import com.amsidel.backend.security.AuthUser;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,20 +25,17 @@ import java.util.*;
 /**
  * Work logging: everyone logs the open tasks assigned to them (see TaskService), day by day. Logs are seen by the person, by everyone
  * above them in the reporting line, and by owners and admins (in their brand); only the person changes them.
- * Minimum hours come from the person's own target, else their designation level's rule, else the default rule.
+ * Minimum hours come from the person's own target, else the work hour rules of their brand (WorkRuleService).
  */
 @Service
 public class WorkLogService {
 
-    /** Used only if the default rule (level 0) was ever removed from the database. */
-    private static final WorkTarget FALLBACK = new WorkTarget(new BigDecimal("9"), new BigDecimal("54"),
-            new BigDecimal("4.5"), new BigDecimal("1"), "Default");
     private static final BigDecimal DAY = new BigDecimal("24");
     private static final int MAX_RANGE_DAYS = 62;
     private static final List<LeaveStatus> SHOWN_LEAVE = List.of(LeaveStatus.APPROVED, LeaveStatus.PENDING);
 
     private final WorkLogRepository logRepository;
-    private final WorkHourRuleRepository ruleRepository;
+    private final WorkRuleService ruleService;
     private final EmployeeRepository employeeRepository;
     private final LeaveRequestRepository leaveRepository;
     private final TaskService taskService;
@@ -47,12 +43,12 @@ public class WorkLogService {
     private final OfficeHolidays officeHolidays;
     private final ZoneId zone;
 
-    public WorkLogService(WorkLogRepository logRepository, WorkHourRuleRepository ruleRepository,
+    public WorkLogService(WorkLogRepository logRepository, WorkRuleService ruleService,
                           EmployeeRepository employeeRepository, LeaveRequestRepository leaveRepository,
                           TaskService taskService, TeamAccess access, OfficeHolidays officeHolidays,
                           @Value("${app.leave.zone}") ZoneId zone) {
         this.logRepository = logRepository;
-        this.ruleRepository = ruleRepository;
+        this.ruleService = ruleService;
         this.employeeRepository = employeeRepository;
         this.leaveRepository = leaveRepository;
         this.taskService = taskService;
@@ -137,42 +133,6 @@ public class WorkLogService {
 
     // ---- minimum hours ----
 
-    @Transactional(readOnly = true)
-    public List<WorkHourRule> rules() {
-        return ruleRepository.findAllByOrderByLevelNumberAsc();
-    }
-
-    /** Replaces the whole rule list; a level left out falls back to the default (level 0), which must be included. */
-    @Transactional
-    public List<WorkHourRule> saveRules(List<WorkHourRuleRequest> requests) {
-        Set<Integer> levels = new HashSet<>();
-        for (WorkHourRuleRequest r : requests) {
-            if (!levels.add(r.getLevelNumber())) {
-                throw ApiException.badRequest("Level " + r.getLevelNumber() + " is listed twice");
-            }
-            checkThresholds(r.getLevelNumber(), r.getDailyMinHours(), r.getHalfDayBelow(), r.getFullDayBelow());
-        }
-        if (!levels.contains(WorkHourRule.DEFAULT_LEVEL)) {
-            throw ApiException.badRequest("The default rule (level 0) is required");
-        }
-        Map<Integer, WorkHourRule> existing = new HashMap<>();
-        for (WorkHourRule rule : ruleRepository.findAll()) {
-            if (levels.contains(rule.getLevelNumber())) existing.put(rule.getLevelNumber(), rule);
-            else ruleRepository.delete(rule);
-        }
-        for (WorkHourRuleRequest r : requests) {
-            WorkHourRule rule = existing.getOrDefault(r.getLevelNumber(), new WorkHourRule());
-            rule.setLevelNumber(r.getLevelNumber());
-            rule.setDailyMinHours(r.getDailyMinHours());
-            rule.setWeeklyMinHours(r.getWeeklyMinHours());
-            rule.setHalfDayBelow(r.getHalfDayBelow());
-            rule.setFullDayBelow(r.getFullDayBelow());
-            ruleRepository.save(rule);
-        }
-        ruleRepository.flush();
-        return ruleRepository.findAllByOrderByLevelNumberAsc();
-    }
-
     /** One person's own minimum hours: owners, admins in scope, or anyone above them in the reporting line. */
     @Transactional
     public WorkTarget setTarget(AuthUser me, Long employeeId, WorkTargetRequest request) {
@@ -187,12 +147,7 @@ public class WorkLogService {
     }
 
     WorkTarget target(Employee person) {
-        Integer level = person.getDesignation() == null ? null : person.getDesignation().getLevelNumber();
-        WorkHourRule levelRule = level == null ? null : ruleRepository.findByLevelNumber(level).orElse(null);
-        WorkHourRule rule = levelRule != null ? levelRule
-                : ruleRepository.findByLevelNumber(WorkHourRule.DEFAULT_LEVEL).orElse(null);
-        WorkTarget base = rule == null ? FALLBACK : new WorkTarget(rule.getDailyMinHours(), rule.getWeeklyMinHours(),
-                rule.getHalfDayBelow(), rule.getFullDayBelow(), levelRule != null ? "Level " + level + " rule" : "Default rule");
+        WorkTarget base = ruleService.target(person);
         boolean personal = person.getMinDailyHours() != null || person.getMinWeeklyHours() != null;
         if (!personal) {
             return base;
@@ -220,15 +175,6 @@ public class WorkLogService {
         if (total.compareTo(DAY) > 0) {
             throw ApiException.badRequest("That makes " + total.stripTrailingZeros().toPlainString()
                     + " hours on " + day + "; a day has at most 24");
-        }
-    }
-
-    private static void checkThresholds(int level, BigDecimal daily, BigDecimal halfDay, BigDecimal fullDay) {
-        if (fullDay.compareTo(halfDay) > 0) {
-            throw ApiException.badRequest("Level " + level + ": the Full Day Leave limit must not be above the Half Day one");
-        }
-        if (halfDay.compareTo(daily) > 0) {
-            throw ApiException.badRequest("Level " + level + ": the Half Day Leave limit must not be above the daily minimum");
         }
     }
 

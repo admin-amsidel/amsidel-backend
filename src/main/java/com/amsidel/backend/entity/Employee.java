@@ -129,6 +129,10 @@ public class Employee {
     @Column(nullable = false)
     private boolean active = true;
 
+    /** Leave of the people reporting to this person is approved automatically (set by owners and admins); null = no. */
+    @Column(name = "auto_approve_reports")
+    private Boolean autoApproveReports;
+
     /** Set for new accounts and after an admin reset, so the person picks their own PIN. */
     @Column(nullable = false)
     private boolean mustChangePassword = true;

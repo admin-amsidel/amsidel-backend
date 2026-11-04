@@ -25,11 +25,12 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Leave balances, applications and approvals.
+ * Leave balances, applications and approvals, within the leave plan of the person's brand (LeavePlanService): they see
+ * and apply against the plan in force today only; what is left of a type set to carry forward goes on to the next plan.
  * <p>
- * Who decides whose leave: a manager decides for employees of their brand; an admin for managers and
- * employees of their brand (every brand when the admin has none); an owner for everyone. Nobody decides
- * their own; an owner's own leave is approved on submission. The same people grant comp-off and extra days.
+ * Who decides whose leave: the person they report to; owners, and admins in their scope, can step in. Nobody decides
+ * their own. Leave is approved on submission for owners, for someone with no (active) reporting person, and when that
+ * person is set to auto-approve those below them. The same people grant comp-off and extra days.
  */
 @Service
 public class LeaveService {
@@ -41,6 +42,7 @@ public class LeaveService {
     private final LeaveTypeRepository typeRepository;
     private final LeaveRequestRepository requestRepository;
     private final LeaveGrantRepository grantRepository;
+    private final LeavePlanService planService;
     private final RestrictedHolidayRepository holidayRepository;
     private final OfficeHolidays officeHolidays;
     private final EmployeeRepository employeeRepository;
@@ -49,7 +51,7 @@ public class LeaveService {
 
     public LeaveService(LeaveTypeRepository typeRepository,
                         LeaveRequestRepository requestRepository,
-                        LeaveGrantRepository grantRepository,
+                        LeaveGrantRepository grantRepository, LeavePlanService planService,
                         RestrictedHolidayRepository holidayRepository, OfficeHolidays officeHolidays,
                         EmployeeRepository employeeRepository,
                         @Value("${app.leave.weekly-offs}") List<DayOfWeek> weeklyOffs,
@@ -57,6 +59,7 @@ public class LeaveService {
         this.typeRepository = typeRepository;
         this.requestRepository = requestRepository;
         this.grantRepository = grantRepository;
+        this.planService = planService;
         this.holidayRepository = holidayRepository;
         this.officeHolidays = officeHolidays;
         this.employeeRepository = employeeRepository;
@@ -67,20 +70,34 @@ public class LeaveService {
     // ---- the signed-in person's own leave ----
 
     @Transactional(readOnly = true)
-    public List<LeaveBalance> myBalances(AuthUser me, Integer year) {
-        return balances(employee(me.id()), yearOr(year));
+    public List<LeaveBalance> myBalances(AuthUser me) {
+        return balances(employee(me.id()));
     }
 
+    /** The plan in force today for my brand, today's date and my balances in it; future plans are not shown. */
     @Transactional(readOnly = true)
-    public List<LeaveRequestResponse> myRequests(AuthUser me, Integer year) {
-        return requestRepository.forEmployee(me.id(), yearOr(year)).stream()
+    public LeavePlanDtos.MyCurrent myCurrent(AuthUser me) {
+        Employee employee = employee(me.id());
+        LeavePlan plan = currentPlan(employee);
+        Brand brand = employee.getBrand();
+        return new LeavePlanDtos.MyCurrent(plan == null ? null : plan.getId(), brand == null ? null : brand.getCode(),
+                brand == null ? null : brand.getName(), plan == null ? null : plan.getValidFrom(), plan == null ? null : plan.getValidUntil(),
+                today(), balances(employee));
+    }
+
+    /** My requests in the plan in force. */
+    @Transactional(readOnly = true)
+    public List<LeaveRequestResponse> myRequests(AuthUser me) {
+        LeavePlan plan = currentPlan(employee(me.id()));
+        return requestRepository.forEmployee(me.id()).stream()
+                .filter(r -> plan != null && plan.covers(r.getFromDate()))
                 .map(r -> LeaveRequestResponse.from(r, null))
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<LeaveGrantResponse> myGrants(AuthUser me, Integer year) {
-        return grantRepository.forEmployee(me.id(), yearOr(year)).stream().map(LeaveGrantResponse::from).toList();
+    public List<LeaveGrantResponse> myGrants(AuthUser me) {
+        return grantsIn(employee(me.id()));
     }
 
     @Transactional
@@ -89,6 +106,14 @@ public class LeaveService {
         LeaveType type = typeRepository.findById(request.getLeaveTypeId())
                 .filter(LeaveType::isActive)
                 .orElseThrow(() -> ApiException.badRequest("Choose a leave type"));
+        LeavePlan plan = currentPlan(employee);
+        if (plan == null) {
+            throw ApiException.badRequest("No leave plan is in force for your brand; ask your admin");
+        }
+        LeavePlanLine line = lineOf(plan, type);
+        if (line == null) {
+            throw ApiException.badRequest(type.getName() + " is not in your brand's leave plan");
+        }
         LocalDate from = request.getFromDate();
         LocalDate to = request.getToDate();
         boolean halfDay = request.isHalfDay();
@@ -96,8 +121,9 @@ public class LeaveService {
         if (to.isBefore(from)) {
             throw ApiException.badRequest("The end date is before the start date");
         }
-        if (from.getYear() != to.getYear()) {
-            throw ApiException.badRequest("Leave cannot run into the next year; apply for each year separately");
+        if (!plan.covers(from) || !plan.covers(to)) {
+            throw ApiException.badRequest("Leave can be applied for only inside the current leave plan, from " + plan.getValidFrom()
+                    + " to " + plan.getValidUntil());
         }
         if (ChronoUnit.DAYS.between(from, to) >= MAX_SPAN_DAYS) {
             throw ApiException.badRequest("Apply for at most " + MAX_SPAN_DAYS + " days at a time");
@@ -123,7 +149,7 @@ public class LeaveService {
             throw ApiException.conflict("You already have leave on some of these dates");
         }
         if (type.getAllocation() != LeaveAllocation.UNLIMITED) {
-            BigDecimal available = balanceOf(employee, type, from.getYear()).available();
+            BigDecimal available = balanceOf(employee, plan, type).available();
             if (available.compareTo(days) < 0) {
                 throw ApiException.badRequest("Not enough " + type.getName() + ": " + plain(available)
                         + " day(s) available, " + plain(days) + " asked for");
@@ -139,12 +165,12 @@ public class LeaveService {
         leave.setHalfDay(halfDay);
         leave.setDays(days);
         leave.setReason(trimToNull(request.getReason()));
-        if (me.isOwner()) {
-            // owners have nobody above them to approve
+        String auto = autoApproval(me, employee);
+        if (auto != null) {
             leave.setStatus(LeaveStatus.APPROVED);
             leave.setDecidedBy(employee);
             leave.setDecidedAt(Instant.now());
-            leave.setDecisionNote("Owner's leave, approved automatically");
+            leave.setDecisionNote(auto);
         } else {
             leave.setStatus(LeaveStatus.PENDING);
         }
@@ -168,23 +194,26 @@ public class LeaveService {
 
     // ---- approvers: owners, admins, managers ----
 
-    /** Requests of the people {@code me} decides for; available balance is filled in for pending ones. */
+    /**
+     * Requests of the people {@code me} decides for, by status, brand and dates (touching from..to, either may be left
+     * out); available balance is filled in for pending ones.
+     */
     @Transactional(readOnly = true)
-    public List<LeaveRequestResponse> requestsToDecide(AuthUser me, LeaveStatus status, Long brandId) {
-        if (!me.isOwner() && !me.isGroupAdmin()) {
-            if (brandId != null && !brandId.equals(me.brandId())) {
-                throw ApiException.forbidden("You can only see leave of your own brand");
-            }
-            brandId = me.brandId();
-        }
+    public List<LeaveRequestResponse> requestsToDecide(AuthUser me, LeaveStatus status, Long brandId, String brandCode, LocalDate from, LocalDate to) {
         Map<String, BigDecimal> available = new HashMap<>();
         return requestRepository.search(status, brandId).stream()
                 .filter(r -> canDecide(me, r.getEmployee()))
-                .map(r -> LeaveRequestResponse.from(r, r.getStatus() == LeaveStatus.PENDING
-                        && r.getLeaveType().getAllocation() != LeaveAllocation.UNLIMITED
-                        ? available.computeIfAbsent(r.getEmployee().getId() + ":" + r.getLeaveType().getId(),
-                        k -> balanceOf(r.getEmployee(), r.getLeaveType(), r.getLeaveYear()).available())
-                        : null))
+                .filter(r -> brandCode == null || brandCode.isBlank() || (r.getEmployee().getBrand() != null && brandCode.equalsIgnoreCase(r.getEmployee().getBrand().getCode())))
+                .filter(r -> from == null || !r.getToDate().isBefore(from))
+                .filter(r -> to == null || !r.getFromDate().isAfter(to))
+                .map(r -> {
+                    BigDecimal left = null;
+                    if (r.getStatus() == LeaveStatus.PENDING && r.getLeaveType().getAllocation() != LeaveAllocation.UNLIMITED) {
+                        left = available.computeIfAbsent(r.getEmployee().getId() + ":" + r.getLeaveType().getId() + ":" + r.getFromDate(),
+                                k -> Optional.ofNullable(balanceAt(r.getEmployee(), r.getLeaveType(), r.getFromDate())).map(LeaveBalance::available).orElse(null));
+                    }
+                    return LeaveRequestResponse.from(r, left);
+                })
                 .toList();
     }
 
@@ -202,10 +231,12 @@ public class LeaveService {
             throw ApiException.badRequest("Give a reason when rejecting leave");
         }
         // the balance counts this request as pending already, so below zero means it no longer fits
-        if (approve && leave.getLeaveType().getAllocation() != LeaveAllocation.UNLIMITED
-                && balanceOf(leave.getEmployee(), leave.getLeaveType(), leave.getLeaveYear()).available().signum() < 0) {
-            throw ApiException.badRequest("Not enough " + leave.getLeaveType().getName()
-                    + " left for this request any more");
+        if (approve && leave.getLeaveType().getAllocation() != LeaveAllocation.UNLIMITED) {
+            LeaveBalance balance = balanceAt(leave.getEmployee(), leave.getLeaveType(), leave.getFromDate());
+            if (balance != null && balance.available().signum() < 0) {
+                throw ApiException.badRequest("Not enough " + leave.getLeaveType().getName()
+                        + " left for this request any more");
+            }
         }
         leave.setStatus(approve ? LeaveStatus.APPROVED : LeaveStatus.REJECTED);
         leave.setDecidedBy(employee(me.id()));
@@ -214,27 +245,27 @@ public class LeaveService {
         return LeaveRequestResponse.from(leave, null);
     }
 
-    /** Active people whose leave {@code me} decides, by name. */
+    /** Active people whose leave {@code me} decides, by name (someone reporting to me may be in another brand). */
     @Transactional(readOnly = true)
     public List<TeamMember> team(AuthUser me) {
-        Long brandId = me.isOwner() || me.isGroupAdmin() ? null : me.brandId();
-        return employeeRepository.search(brandId).stream()
+        return employeeRepository.search(null).stream()
                 .filter(e -> e.isActive() && canDecide(me, e))
                 .map(TeamMember::from)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<LeaveBalance> balancesOf(AuthUser me, Long employeeId, Integer year) {
+    public List<LeaveBalance> balancesOf(AuthUser me, Long employeeId) {
         Employee employee = employee(employeeId);
         checkCanView(me, employee);
-        return balances(employee, yearOr(year));
+        return balances(employee);
     }
 
     @Transactional(readOnly = true)
-    public List<LeaveGrantResponse> grantsOf(AuthUser me, Long employeeId, Integer year) {
-        checkCanView(me, employee(employeeId));
-        return grantRepository.forEmployee(employeeId, yearOr(year)).stream().map(LeaveGrantResponse::from).toList();
+    public List<LeaveGrantResponse> grantsOf(AuthUser me, Long employeeId) {
+        Employee employee = employee(employeeId);
+        checkCanView(me, employee);
+        return grantsIn(employee);
     }
 
     @Transactional
@@ -249,16 +280,22 @@ public class LeaveService {
         if (type.getAllocation() == LeaveAllocation.UNLIMITED) {
             throw ApiException.badRequest(type.getName() + " has no balance to add days to");
         }
+        LeavePlan plan = currentPlan(employee);
+        if (plan == null) {
+            throw ApiException.badRequest("No leave plan is in force for " + employee.getName() + "'s brand");
+        }
+        if (lineOf(plan, type) == null) {
+            throw ApiException.badRequest(type.getName() + " is not in the leave plan of " + employee.getName() + "'s brand");
+        }
         if (request.getDays().remainder(HALF).signum() != 0) {
             throw ApiException.badRequest("Grant whole or half days, e.g. 1 or 1.5");
         }
-        int year = request.getYear() != null ? request.getYear()
-                : request.getWorkedOn() != null ? request.getWorkedOn().getYear() : today().getYear();
 
         LeaveGrant grant = new LeaveGrant();
         grant.setEmployee(employee);
         grant.setLeaveType(type);
-        grant.setLeaveYear(year);
+        grant.setPlan(plan);
+        grant.setLeaveYear(plan.getValidFrom().getYear());
         grant.setDays(request.getDays().setScale(1, RoundingMode.UNNECESSARY));
         grant.setWorkedOn(request.getWorkedOn());
         grant.setReason(request.getReason().trim());
@@ -268,18 +305,29 @@ public class LeaveService {
 
     // ---- rules ----
 
+    /** The person they report to; owners, and admins in their scope, can step in. Never their own. */
     static boolean canDecide(AuthUser me, Employee target) {
         if (me.id().equals(target.getId())) {
             return false;
         }
+        if (target.getReportsTo() != null && me.id().equals(target.getReportsTo().getId())) {
+            return true;
+        }
         Long brandId = target.getBrand() == null ? null : target.getBrand().getId();
         boolean staff = target.getRole() == Role.MANAGER || target.getRole() == Role.EMPLOYEE;
-        return switch (me.role()) {
-            case OWNER -> true;
-            case ADMIN -> staff && (me.brandId() == null || me.brandId().equals(brandId));
-            case MANAGER -> target.getRole() == Role.EMPLOYEE && me.brandId() != null && me.brandId().equals(brandId);
-            case EMPLOYEE -> false;
-        };
+        return me.isOwner() || (me.role() == Role.ADMIN && staff && (me.brandId() == null || me.brandId().equals(brandId)));
+    }
+
+    /** Why this leave needs no decision; null when it goes to the reporting person. */
+    private static String autoApproval(AuthUser me, Employee employee) {
+        if (me.isOwner()) {
+            return "Owner's leave, approved automatically";
+        }
+        Employee boss = employee.getReportsTo();
+        if (boss == null || !boss.isActive()) {
+            return "No reporting person, approved automatically";
+        }
+        return Boolean.TRUE.equals(boss.getAutoApproveReports()) ? "Approved automatically (set for " + boss.getName() + "'s team)" : null;
     }
 
     private void checkCanView(AuthUser me, Employee target) {
@@ -319,41 +367,86 @@ public class LeaveService {
         return employee.getBrand() == null ? null : employee.getBrand().getId();
     }
 
-    private List<LeaveBalance> balances(Employee employee, int year) {
-        List<LeaveRequest> requests = requestRepository.forEmployee(employee.getId(), year);
-        List<LeaveGrant> grants = grantRepository.forEmployee(employee.getId(), year);
-        Set<Long> usedTypes = requests.stream().map(r -> r.getLeaveType().getId()).collect(Collectors.toSet());
-        return typeRepository.findAllByOrderBySortOrderAscNameAsc().stream()
-                .filter(t -> t.isActive() || usedTypes.contains(t.getId()))
-                .map(t -> balance(t, requests, grants))
+    private LeavePlan currentPlan(Employee employee) {
+        return LeavePlanService.covering(planService.ofBrand(brandIdOf(employee)), today());
+    }
+
+    private static LeavePlanLine lineOf(LeavePlan plan, LeaveType type) {
+        return plan.getLines().stream().filter(l -> l.getLeaveType().getId().equals(type.getId())).findFirst().orElse(null);
+    }
+
+    /** The grants counted in the plan in force. */
+    private List<LeaveGrantResponse> grantsIn(Employee employee) {
+        LeavePlan plan = currentPlan(employee);
+        return plan == null ? List.of() : grantRepository.forEmployee(employee.getId()).stream()
+                .filter(g -> countsIn(g, plan)).map(LeaveGrantResponse::from).toList();
+    }
+
+    /** Balances in the plan in force: the plan's types (one no longer in use only if it has been taken). */
+    private List<LeaveBalance> balances(Employee employee) {
+        List<LeavePlan> plans = planService.ofBrand(brandIdOf(employee));
+        LeavePlan plan = LeavePlanService.covering(plans, today());
+        if (plan == null) {
+            return List.of();
+        }
+        List<LeaveRequest> requests = requestRepository.forEmployee(employee.getId());
+        List<LeaveGrant> grants = grantRepository.forEmployee(employee.getId());
+        Set<Long> usedTypes = requests.stream().filter(r -> plan.covers(r.getFromDate())).map(r -> r.getLeaveType().getId()).collect(Collectors.toSet());
+        return plan.getLines().stream()
+                .filter(l -> l.getLeaveType().isActive() || usedTypes.contains(l.getLeaveType().getId()))
+                .sorted(Comparator.comparingInt((LeavePlanLine l) -> l.getLeaveType().getSortOrder()).thenComparing(l -> l.getLeaveType().getName()))
+                .map(l -> balance(plans, plan, l.getLeaveType(), requests, grants))
                 .toList();
     }
 
-    private LeaveBalance balanceOf(Employee employee, LeaveType type, int year) {
-        return balance(type, requestRepository.forEmployee(employee.getId(), year),
-                grantRepository.forEmployee(employee.getId(), year));
+    private LeaveBalance balanceOf(Employee employee, LeavePlan plan, LeaveType type) {
+        return balance(planService.ofBrand(brandIdOf(employee)), plan, type, requestRepository.forEmployee(employee.getId()),
+                grantRepository.forEmployee(employee.getId()));
     }
 
-    private static LeaveBalance balance(LeaveType type, List<LeaveRequest> requests, List<LeaveGrant> grants) {
-        BigDecimal used = sum(requests, type, LeaveStatus.APPROVED);
-        BigDecimal pending = sum(requests, type, LeaveStatus.PENDING);
+    /** The balance in the plan covering this day; null when none does. */
+    private LeaveBalance balanceAt(Employee employee, LeaveType type, LocalDate day) {
+        LeavePlan plan = LeavePlanService.covering(planService.ofBrand(brandIdOf(employee)), day);
+        return plan == null ? null : balanceOf(employee, plan, type);
+    }
+
+    private static LeaveBalance balance(List<LeavePlan> plans, LeavePlan plan, LeaveType type, List<LeaveRequest> requests, List<LeaveGrant> grants) {
+        BigDecimal used = sum(requests, plan, type, LeaveStatus.APPROVED);
+        BigDecimal pending = sum(requests, plan, type, LeaveStatus.PENDING);
         BigDecimal granted = grants.stream()
-                .filter(g -> g.getLeaveType().getId().equals(type.getId()))
+                .filter(g -> g.getLeaveType().getId().equals(type.getId()) && countsIn(g, plan))
                 .map(LeaveGrant::getDays)
                 .reduce(BigDecimal.ZERO.setScale(1), BigDecimal::add);
-        int quota = type.getAllocation() == LeaveAllocation.ANNUAL && type.getAnnualQuota() != null
-                ? type.getAnnualQuota() : 0;
+        LeavePlanLine line = lineOf(plan, type);
+        int quota = line != null && line.getDays() != null ? line.getDays() : 0;
         boolean unlimited = type.getAllocation() == LeaveAllocation.UNLIMITED;
-        BigDecimal entitled = unlimited ? null : granted.add(BigDecimal.valueOf(quota));
+        BigDecimal carried = unlimited ? BigDecimal.ZERO.setScale(1) : carriedInto(plans, plan, type, requests, grants);
+        BigDecimal entitled = unlimited ? null : granted.add(carried).add(BigDecimal.valueOf(quota));
         BigDecimal available = unlimited ? null : entitled.subtract(used).subtract(pending);
         return new LeaveBalance(type.getId(), type.getCode(), type.getName(), type.getAllocation(),
-                type.isHalfDayAllowed(), type.isRestrictedDatesOnly(), quota, granted, entitled, used, pending,
+                type.isHalfDayAllowed(), type.isRestrictedDatesOnly(), quota, carried, granted, entitled, used, pending,
                 available);
     }
 
-    private static BigDecimal sum(List<LeaveRequest> requests, LeaveType type, LeaveStatus status) {
+    /** What is left of this type in the plan before, when that plan carries it forward (at most its limit). */
+    private static BigDecimal carriedInto(List<LeavePlan> plans, LeavePlan plan, LeaveType type, List<LeaveRequest> requests, List<LeaveGrant> grants) {
+        LeavePlan before = LeavePlanService.before(plans, plan);
+        LeavePlanLine line = before == null ? null : lineOf(before, type);
+        if (line == null || !line.isCarryForward()) {
+            return BigDecimal.ZERO.setScale(1);
+        }
+        BigDecimal left = balance(plans, before, type, requests, grants).available().max(BigDecimal.ZERO);
+        return line.getMaxCarryDays() != null ? left.min(line.getMaxCarryDays()).setScale(1, RoundingMode.DOWN) : left;
+    }
+
+    /** A grant counts in its plan; one made before plans counts in the plan starting in its year. */
+    private static boolean countsIn(LeaveGrant g, LeavePlan plan) {
+        return g.getPlan() != null ? g.getPlan().getId().equals(plan.getId()) : g.getLeaveYear() == plan.getValidFrom().getYear();
+    }
+
+    private static BigDecimal sum(List<LeaveRequest> requests, LeavePlan plan, LeaveType type, LeaveStatus status) {
         return requests.stream()
-                .filter(r -> r.getStatus() == status && r.getLeaveType().getId().equals(type.getId()))
+                .filter(r -> r.getStatus() == status && r.getLeaveType().getId().equals(type.getId()) && plan.covers(r.getFromDate()))
                 .map(LeaveRequest::getDays)
                 .reduce(BigDecimal.ZERO.setScale(1), BigDecimal::add);
     }
@@ -366,10 +459,6 @@ public class LeaveService {
     private Employee employee(Long id) {
         return employeeRepository.findWithBrandById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found: " + id));
-    }
-
-    private int yearOr(Integer year) {
-        return year != null ? year : today().getYear();
     }
 
     private LocalDate today() {

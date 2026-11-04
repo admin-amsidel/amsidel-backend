@@ -10,6 +10,7 @@ import com.amsidel.backend.entity.LeaveType;
 import com.amsidel.backend.security.AuthUser;
 import com.amsidel.backend.security.Checkpoint;
 import com.amsidel.backend.security.Menus;
+import com.amsidel.backend.service.LeavePlanService;
 import com.amsidel.backend.service.LeaveService;
 import com.amsidel.backend.service.LeaveSettingsService;
 import jakarta.validation.Valid;
@@ -32,6 +33,7 @@ public class LeaveController {
 
     private final LeaveService leaveService;
     private final LeaveSettingsService settingsService;
+    private final LeavePlanService planService;
 
     // ---- settings ----
 
@@ -56,60 +58,106 @@ public class LeaveController {
 
     @Checkpoint({Menus.LEAVE_MY, Menus.LEAVE_APPROVALS, Menus.LEAVE_SETTINGS})
     @GetMapping("/restricted-holidays")
-    public List<RestrictedHolidayResponse> holidays(@RequestParam(required = false) Integer year) {
-        return settingsService.holidays(year != null ? year : LocalDate.now().getYear());
+    public List<RestrictedHolidayResponse> holidays(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Integer year,
+                                                  @RequestParam(required = false) LocalDate from, @RequestParam(required = false) LocalDate to,
+                                                  @RequestParam(required = false) Long brandId) {
+        int y = year != null ? year : LocalDate.now().getYear();
+        return settingsService.holidays(me, from != null ? from : LocalDate.of(y, 1, 1), to != null ? to : LocalDate.of(y, 12, 31), brandId);
     }
 
     @Checkpoint({Menus.LEAVE_SETTINGS})
     @PostMapping("/restricted-holidays")
     @ResponseStatus(HttpStatus.CREATED)
-    public RestrictedHolidayResponse addHoliday(@Valid @RequestBody RestrictedHolidayRequest request) {
-        return settingsService.addHoliday(request);
+    public RestrictedHolidayResponse addHoliday(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody RestrictedHolidayRequest request) {
+        return settingsService.addHoliday(me, request);
     }
 
     @Checkpoint({Menus.LEAVE_SETTINGS})
     @DeleteMapping("/restricted-holidays/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void removeHoliday(@PathVariable Long id) {
-        settingsService.removeHoliday(id);
+    public void removeHoliday(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        settingsService.removeHoliday(me, id);
+    }
+
+    // ---- leave plans ----
+
+    @Checkpoint({Menus.LEAVE_SETTINGS})
+    @GetMapping("/plans")
+    public LeavePlanDtos.Overview plans(@AuthenticationPrincipal AuthUser me) {
+        return planService.overview(me);
+    }
+
+    /** Plans about to end with no next one, and brands with no plan: for the alert in the portal. */
+    @Checkpoint({Menus.LEAVE_SETTINGS})
+    @GetMapping("/plans/alerts")
+    public List<LeavePlanDtos.Alert> planAlerts(@AuthenticationPrincipal AuthUser me) {
+        return planService.alerts(me);
+    }
+
+    @Checkpoint({Menus.LEAVE_SETTINGS})
+    @PostMapping("/plans")
+    @ResponseStatus(HttpStatus.CREATED)
+    public LeavePlanDtos.PlanView addPlan(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody LeavePlanDtos.PlanBody body) {
+        return planService.create(me, body);
+    }
+
+    @Checkpoint({Menus.LEAVE_SETTINGS})
+    @PutMapping("/plans/{id}")
+    public LeavePlanDtos.PlanView updatePlan(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody LeavePlanDtos.PlanBody body) {
+        return planService.update(me, id, body);
+    }
+
+    @Checkpoint({Menus.LEAVE_SETTINGS})
+    @DeleteMapping("/plans/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removePlan(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        planService.delete(me, id);
     }
 
     // ---- office holidays (closed for everyone; nobody applies) ----
 
     @Checkpoint({Menus.LEAVE_MY, Menus.LEAVE_APPROVALS, Menus.LEAVE_SETTINGS, Menus.WORKLOG_MY})
     @GetMapping("/office-holidays")
-    public List<OfficeHolidayResponse> officeHolidays(@RequestParam(required = false) Integer year) {
-        return settingsService.officeHolidays(year != null ? year : LocalDate.now().getYear());
+    public List<OfficeHolidayResponse> officeHolidays(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Integer year,
+                                                  @RequestParam(required = false) LocalDate from, @RequestParam(required = false) LocalDate to,
+                                                  @RequestParam(required = false) Long brandId) {
+        int y = year != null ? year : LocalDate.now().getYear();
+        return settingsService.officeHolidays(me, from != null ? from : LocalDate.of(y, 1, 1), to != null ? to : LocalDate.of(y, 12, 31), brandId);
     }
 
     @Checkpoint({Menus.LEAVE_SETTINGS})
     @PostMapping("/office-holidays")
     @ResponseStatus(HttpStatus.CREATED)
-    public OfficeHolidayResponse addOfficeHoliday(@Valid @RequestBody RestrictedHolidayRequest request) {
-        return settingsService.addOfficeHoliday(request);
+    public OfficeHolidayResponse addOfficeHoliday(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody RestrictedHolidayRequest request) {
+        return settingsService.addOfficeHoliday(me, request);
     }
 
     @Checkpoint({Menus.LEAVE_SETTINGS})
     @DeleteMapping("/office-holidays/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void removeOfficeHoliday(@PathVariable Long id) {
-        settingsService.removeOfficeHoliday(id);
+    public void removeOfficeHoliday(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        settingsService.removeOfficeHoliday(me, id);
     }
 
     // ---- my leave ----
 
     @Checkpoint({Menus.LEAVE_MY})
     @GetMapping("/me/balances")
-    public List<LeaveBalance> myBalances(@AuthenticationPrincipal AuthUser me,
-                                         @RequestParam(required = false) Integer year) {
-        return leaveService.myBalances(me, year);
+    public List<LeaveBalance> myBalances(@AuthenticationPrincipal AuthUser me) {
+        return leaveService.myBalances(me);
+    }
+
+    /** The plan in force today for my brand, today's date and my balances in it. */
+    @Checkpoint({Menus.LEAVE_MY})
+    @GetMapping("/me/current")
+    public LeavePlanDtos.MyCurrent myCurrent(@AuthenticationPrincipal AuthUser me) {
+        return leaveService.myCurrent(me);
     }
 
     @Checkpoint({Menus.LEAVE_MY})
     @GetMapping("/me/requests")
-    public List<LeaveRequestResponse> myRequests(@AuthenticationPrincipal AuthUser me,
-                                                 @RequestParam(required = false) Integer year) {
-        return leaveService.myRequests(me, year);
+    public List<LeaveRequestResponse> myRequests(@AuthenticationPrincipal AuthUser me) {
+        return leaveService.myRequests(me);
     }
 
     @Checkpoint({Menus.LEAVE_MY})
@@ -128,9 +176,8 @@ public class LeaveController {
 
     @Checkpoint({Menus.LEAVE_MY})
     @GetMapping("/me/grants")
-    public List<LeaveGrantResponse> myGrants(@AuthenticationPrincipal AuthUser me,
-                                             @RequestParam(required = false) Integer year) {
-        return leaveService.myGrants(me, year);
+    public List<LeaveGrantResponse> myGrants(@AuthenticationPrincipal AuthUser me) {
+        return leaveService.myGrants(me);
     }
 
     // ---- approvers ----
@@ -139,8 +186,11 @@ public class LeaveController {
     @GetMapping("/requests")
     public List<LeaveRequestResponse> requests(@AuthenticationPrincipal AuthUser me,
                                                @RequestParam(required = false) LeaveStatus status,
-                                               @RequestParam(required = false) Long brandId) {
-        return leaveService.requestsToDecide(me, status, brandId);
+                                               @RequestParam(required = false) Long brandId,
+                                               @RequestParam(required = false) String brandCode,
+                                               @RequestParam(required = false) LocalDate from,
+                                               @RequestParam(required = false) LocalDate to) {
+        return leaveService.requestsToDecide(me, status, brandId, brandCode, from, to);
     }
 
     @Checkpoint({Menus.LEAVE_APPROVALS})
@@ -165,16 +215,14 @@ public class LeaveController {
 
     @Checkpoint({Menus.LEAVE_APPROVALS})
     @GetMapping("/balances")
-    public List<LeaveBalance> balances(@AuthenticationPrincipal AuthUser me, @RequestParam Long employeeId,
-                                       @RequestParam(required = false) Integer year) {
-        return leaveService.balancesOf(me, employeeId, year);
+    public List<LeaveBalance> balances(@AuthenticationPrincipal AuthUser me, @RequestParam Long employeeId) {
+        return leaveService.balancesOf(me, employeeId);
     }
 
     @Checkpoint({Menus.LEAVE_APPROVALS})
     @GetMapping("/grants")
-    public List<LeaveGrantResponse> grants(@AuthenticationPrincipal AuthUser me, @RequestParam Long employeeId,
-                                           @RequestParam(required = false) Integer year) {
-        return leaveService.grantsOf(me, employeeId, year);
+    public List<LeaveGrantResponse> grants(@AuthenticationPrincipal AuthUser me, @RequestParam Long employeeId) {
+        return leaveService.grantsOf(me, employeeId);
     }
 
     @Checkpoint({Menus.LEAVE_APPROVALS})

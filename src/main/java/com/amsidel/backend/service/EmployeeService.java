@@ -88,6 +88,7 @@ public class EmployeeService {
         employee.setMustChangePassword(true);
         employee.setPasswordChangedAt(Instant.now());
         apply(employee, request);
+        applyAutoApprove(me, employee, request);
         employee.setUserType(type);
         EmployeeResponse saved = EmployeeResponse.from(employeeRepository.save(employee));
         teamsChanged();
@@ -115,6 +116,7 @@ public class EmployeeService {
             throw ApiException.badRequest("You cannot change your own user type");
         }
         apply(employee, request);
+        applyAutoApprove(me, employee, request);
         employee.setUserType(type);
         signedIn.evict(employee.getId());
         teamsChanged();
@@ -183,6 +185,13 @@ public class EmployeeService {
         Employee employee = find(id);
         checkCanManage(me, employee);
         return employee;
+    }
+
+    /** Whether leave of the people reporting to this person is approved automatically: owners and admins only. */
+    private static void applyAutoApprove(AuthUser me, Employee employee, EmployeeRequest request) {
+        if (request.getAutoApproveReports() != null && (me.isOwner() || me.role() == Role.ADMIN)) {
+            employee.setAutoApproveReports(request.getAutoApproveReports());
+        }
     }
 
     private void apply(Employee employee, EmployeeRequest request) {

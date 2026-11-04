@@ -19,6 +19,7 @@ import com.amsidel.backend.repository.BrandRepository;
 import com.amsidel.backend.repository.LeaveTypeRepository;
 import com.amsidel.backend.repository.OfficeHolidayRepository;
 import com.amsidel.backend.repository.RestrictedHolidayRepository;
+import com.amsidel.backend.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,8 +30,9 @@ import java.util.Locale;
 import java.util.Objects;
 
 /**
- * Leave types with their yearly allowances, the restricted holiday list (optional days people take as leave) and
- * the office holiday list (days the office is closed for everyone); changed under Leave settings.
+ * Leave types, the restricted holiday list (optional days people take as leave) and the office holiday list (days the
+ * office is closed), each holiday mapped to a brand; changed under Leave settings. Holidays made before that may be for
+ * every brand, and still apply. Someone with a brand sees and changes only theirs.
  */
 @Service
 @RequiredArgsConstructor
@@ -62,16 +64,16 @@ public class LeaveSettingsService {
     }
 
     @Transactional(readOnly = true)
-    public List<RestrictedHolidayResponse> holidays(int year) {
-        return holidayRepository.between(LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)).stream()
+    public List<RestrictedHolidayResponse> holidays(AuthUser me, LocalDate from, LocalDate to, Long brandId) {
+        return holidayRepository.between(from, to).stream()
+                .filter(h -> visible(me, brandIdOf(h.getBrand()), brandId))
                 .map(RestrictedHolidayResponse::from)
                 .toList();
     }
 
     @Transactional
-    public RestrictedHolidayResponse addHoliday(RestrictedHolidayRequest request) {
-        Brand brand = request.getBrandId() == null ? null : brandRepository.findById(request.getBrandId())
-                .orElseThrow(() -> ApiException.badRequest("Brand not found: " + request.getBrandId()));
+    public RestrictedHolidayResponse addHoliday(AuthUser me, RestrictedHolidayRequest request) {
+        Brand brand = brandFor(me, request.getBrandId());
         boolean duplicate = holidayRepository.between(request.getDate(), request.getDate()).stream()
                 .anyMatch(h -> Objects.equals(brandIdOf(h.getBrand()), request.getBrandId()));
         if (duplicate) {
@@ -85,17 +87,17 @@ public class LeaveSettingsService {
     }
 
     @Transactional(readOnly = true)
-    public List<OfficeHolidayResponse> officeHolidays(int year) {
-        return officeHolidayRepository.between(LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)).stream()
+    public List<OfficeHolidayResponse> officeHolidays(AuthUser me, LocalDate from, LocalDate to, Long brandId) {
+        return officeHolidayRepository.between(from, to).stream()
+                .filter(h -> visible(me, brandIdOf(h.getBrand()), brandId))
                 .map(OfficeHolidayResponse::from)
                 .toList();
     }
 
     /** Leave applied for before a holiday was added keeps its day count. */
     @Transactional
-    public OfficeHolidayResponse addOfficeHoliday(RestrictedHolidayRequest request) {
-        Brand brand = request.getBrandId() == null ? null : brandRepository.findById(request.getBrandId())
-                .orElseThrow(() -> ApiException.badRequest("Brand not found: " + request.getBrandId()));
+    public OfficeHolidayResponse addOfficeHoliday(AuthUser me, RestrictedHolidayRequest request) {
+        Brand brand = brandFor(me, request.getBrandId());
         boolean duplicate = officeHolidayRepository.between(request.getDate(), request.getDate()).stream()
                 .anyMatch(h -> Objects.equals(brandIdOf(h.getBrand()), request.getBrandId()));
         if (duplicate) {
@@ -109,20 +111,20 @@ public class LeaveSettingsService {
     }
 
     @Transactional
-    public void removeOfficeHoliday(Long id) {
-        if (!officeHolidayRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Office holiday not found: " + id);
-        }
-        officeHolidayRepository.deleteById(id);
+    public void removeOfficeHoliday(AuthUser me, Long id) {
+        OfficeHoliday holiday = officeHolidayRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Office holiday not found: " + id));
+        requireInScope(me, brandIdOf(holiday.getBrand()));
+        officeHolidayRepository.delete(holiday);
     }
 
     /** Leave already taken on that date stays as it is. */
     @Transactional
-    public void removeHoliday(Long id) {
-        if (!holidayRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Restricted holiday not found: " + id);
-        }
-        holidayRepository.deleteById(id);
+    public void removeHoliday(AuthUser me, Long id) {
+        RestrictedHoliday holiday = holidayRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Restricted holiday not found: " + id));
+        requireInScope(me, brandIdOf(holiday.getBrand()));
+        holidayRepository.delete(holiday);
     }
 
     private void apply(LeaveType type, LeaveTypeRequest request) {
@@ -149,6 +151,33 @@ public class LeaveSettingsService {
         if (request.getSortOrder() != null) {
             type.setSortOrder(request.getSortOrder());
         }
+    }
+
+    /** A new holiday is always for one brand, one I may change. */
+    private Brand brandFor(AuthUser me, Long brandId) {
+        if (brandId == null) {
+            throw ApiException.badRequest("Choose the brand of this holiday");
+        }
+        requireInScope(me, brandId);
+        return brandRepository.findById(brandId).orElseThrow(() -> ApiException.badRequest("Brand not found: " + brandId));
+    }
+
+    private static void requireInScope(AuthUser me, Long brandId) {
+        if (!seesAll(me) && (brandId == null || !brandId.equals(me.brandId()))) {
+            throw ApiException.forbidden("You can only change your own brand's holidays");
+        }
+    }
+
+    /** Mine (and those for every brand); with a brand asked for, only that one's (and those for every brand). */
+    private static boolean visible(AuthUser me, Long holidayBrand, Long asked) {
+        if (holidayBrand == null) {
+            return true;
+        }
+        return (seesAll(me) || holidayBrand.equals(me.brandId())) && (asked == null || holidayBrand.equals(asked));
+    }
+
+    private static boolean seesAll(AuthUser me) {
+        return me.isOwner() || me.brandId() == null;
     }
 
     private static Long brandIdOf(Brand brand) {

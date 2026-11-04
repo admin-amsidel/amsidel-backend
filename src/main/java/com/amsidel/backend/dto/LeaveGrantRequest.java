@@ -25,7 +25,7 @@ public class LeaveGrantRequest {
     @DecimalMax(value = "60", message = "Grant at most 60 days at a time")
     private BigDecimal days;
 
-    /** Year the days can be used in; defaults to the year of workedOn, else the current year. */
+    /** Not used any more: the days count in the leave plan in force. */
     @Min(2020)
     @Max(2100)
     private Integer year;
