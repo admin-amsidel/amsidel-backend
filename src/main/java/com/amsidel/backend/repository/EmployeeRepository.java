@@ -5,23 +5,45 @@
 package com.amsidel.backend.repository;
 
 import com.amsidel.backend.entity.Employee;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
+    /** Everything sign-in answers with, in one round trip: it uses this after the query's connection has gone back. */
     @Query("select e from Employee e left join fetch e.brand left join fetch e.designation left join fetch e.reportsTo"
-            + " where e.userId = :userId")
+            + " left join fetch e.approver left join fetch e.userType where e.userId = :userId")
     Optional<Employee> findByUserId(@Param("userId") String userId);
 
     @Query("select e from Employee e left join fetch e.brand left join fetch e.designation left join fetch e.reportsTo"
             + " left join fetch e.userType where e.id = :id")
     Optional<Employee> findWithBrandById(@Param("id") Long id);
+
+    /** The person's row held until the transaction ends, so wrong PINs arriving together are each counted. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from Employee e where e.id = :id")
+    Optional<Employee> findForUpdate(@Param("id") Long id);
+
+    /**
+     * Records a sign-in, if the account is still as it was when its PIN was checked: same PIN, active, not locked. Says
+     * how many rows changed (0: it no longer is). A sign-in changes nothing else about the person, so their cached
+     * details stay valid and it does not count as an edit of the record.
+     */
+    @Transactional
+    @Modifying
+    @Query("update Employee e set e.failedAttempts = 0, e.lockedUntil = null, e.lastLoginAt = :now where e.id = :id and e.passwordHash = :hash"
+            + " and e.active = true and e.lockedAt is null and (e.lockedUntil is null or e.lockedUntil <= :now)")
+    int recordSignIn(@Param("id") Long id, @Param("hash") String hash, @Param("now") Instant now);
 
     /** Everyone, or one brand's people when brandId is given. */
     @Query("select e from Employee e left join fetch e.brand b left join fetch e.designation"

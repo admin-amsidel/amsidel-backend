@@ -5,12 +5,15 @@
 package com.amsidel.backend.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.NestedRuntimeException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -65,9 +68,12 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.CONFLICT, "This record clashes with an existing one", null);
     }
 
-    /** A row stayed locked by another transaction (see lock_timeout in application.properties), or a query ran too long. */
-    @ExceptionHandler({PessimisticLockingFailureException.class, QueryTimeoutException.class})
-    public ResponseEntity<Map<String, Object>> busy(org.springframework.dao.DataAccessException ex) {
+    /**
+     * A row stayed locked by another transaction (see lock_timeout in application.properties), a query ran too long, or
+     * no connection came free in time.
+     */
+    @ExceptionHandler({PessimisticLockingFailureException.class, QueryTimeoutException.class, DataAccessResourceFailureException.class, CannotCreateTransactionException.class})
+    public ResponseEntity<Map<String, Object>> busy(NestedRuntimeException ex) {
         log.warn("Database busy: {}", ex.getMostSpecificCause().getMessage());
         return build(HttpStatus.SERVICE_UNAVAILABLE, "The database is busy right now. Please try again in a moment.", null);
     }
