@@ -83,6 +83,10 @@ public class Brand {
     @Column(length = 3)
     private CurrencyCode currency;
 
+    /** The time zone its people work in, such as Asia/Dubai; null = the company's default (India). */
+    @Column(length = 50)
+    private String timeZone;
+
     /** The brand's Razorpay account for bills paid online (cards and UPI); the money settles to its linked bank. */
     @Column(length = 40)
     private String razorpayKeyId;

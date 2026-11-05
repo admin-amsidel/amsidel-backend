@@ -12,6 +12,8 @@ import com.amsidel.backend.exception.ResourceNotFoundException;
 import com.amsidel.backend.repository.EmployeePhotoRepository;
 import com.amsidel.backend.repository.EmployeeRepository;
 import com.amsidel.backend.security.AuthUser;
+import com.amsidel.backend.entity.StoredFile;
+import com.amsidel.backend.entity.StoredFileCategory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +36,7 @@ public class PhotoService {
     private final EmployeePhotoRepository photoRepository;
     private final EmployeeService employeeService;
     private final UploadLimits limits;
+    private final StoredFiles storedFiles;
 
     @Transactional(readOnly = true)
     public EmployeePhoto myPhoto(AuthUser me) {
@@ -83,11 +86,14 @@ public class PhotoService {
         photoRepository.save(photo);
 
         employee.setPhotoUpdatedAt(now);
+        storedFiles.record(StoredFileCategory.PROFILE_PHOTO, employee.getId(), employee.getBrand(), file.getOriginalFilename(), "Profile photo",
+                employee.getName(), type, bytes.length, StoredFile.Location.DATABASE);
         return EmployeeResponse.from(employee);
     }
 
     private EmployeeResponse remove(Employee employee) {
         photoRepository.deleteById(employee.getId());
+        storedFiles.forget(StoredFileCategory.PROFILE_PHOTO, employee.getId());
         employee.setPhotoUpdatedAt(null);
         return EmployeeResponse.from(employee);
     }

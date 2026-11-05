@@ -51,6 +51,10 @@ public final class Menus {
     /** Staff email limits per brand: people in one send, emails a day, and the day's count. */
     public static final String MAIL_CONFIG = "MAIL_CONFIG";
     public static final String MENU_ACCESS = "MENU_ACCESS";
+    /** How much is stored, and the list of stored files, which can be opened: personal documents among them. */
+    public static final String STORAGE_USAGE = "STORAGE_USAGE";
+    /** Not a page: deleting stored files. */
+    public static final String STORAGE_DELETE = "STORAGE_DELETE";
     public static final String BRANDS = "BRANDS";
     public static final String NEWS = "NEWS";
     public static final String PERF_MY = "PERF_MY";
@@ -152,7 +156,7 @@ public final class Menus {
     /** Not a page: attachments on a customer &amp; supplier email (Attach files). */
     public static final String TMAIL_ATTACH = "TMAIL_ATTACH";
     /** Sub-menus that a tick on their parent menu does not give: each needs its own tick. */
-    public static final java.util.Set<String> OWN_TICK = java.util.Set.of(PROD_STOCK_APPROVE, ATT_NO_PHOTO, CUST_NEW_QUOTE, CUST_NEW_INVOICE,
+    public static final java.util.Set<String> OWN_TICK = java.util.Set.of(STORAGE_USAGE, STORAGE_DELETE, PROD_STOCK_APPROVE, ATT_NO_PHOTO, CUST_NEW_QUOTE, CUST_NEW_INVOICE,
             CUST_ADD, CUST_EDIT, CUST_DELETE, MAIL_EMAIL, MAIL_WHATSAPP, MAIL_ALL, MAIL_PICK, MAIL_PICTURE, MAIL_ATTACH, MAIL_CONFIG,
             PERF_TYPE_GENERAL, PERF_TYPE_SALES, PERF_TYPE_ORDERS, PERF_TYPE_WORKLOG, PAY_TAX_REGIME,
             CHAT_GROUP_CREATE, CHAT_GROUP_ADD, TMAIL_CONFIG, TMAIL_EMAIL, TMAIL_WHATSAPP, TMAIL_ALL_CUSTOMERS, TMAIL_ALL_SUPPLIERS,
@@ -195,7 +199,7 @@ public final class Menus {
             new Def(DESIGNATIONS, "Designations", "Designations and levels", 4003, "EMPLOYEES", "/portal/designations", "pi-list"),
             new Def(OFFER_LETTERS, "Issue offer letter", "Write, issue and download offer letters (PDF with the brand's logo); kept for later. Once issued a letter is locked. Its own tick (giving Employees does not give it)", 4004, "EMPLOYEES", "/portal/offer-letters", "pi-file-edit"),
             new Def(OFFER_EDIT, "Change issued offer letter", "Change an offer letter after it is issued; the PDF is made again and the change is recorded. Its own tick", 4005, "EMPLOYEES", null, "pi-pencil"),
-            new Def(OFFER_DELETE, "Delete issued offer letter", "Delete an offer letter after it is issued. Its own tick", 4006, "EMPLOYEES", null, "pi-trash"),
+            new Def(OFFER_DELETE, "Delete issued offer letter", "Delete an offer letter after it is issued, on the Offer letters screen or from the Storage list. Its own tick", 4006, "EMPLOYEES", null, "pi-trash"),
 
             new Def(EMAIL, "Email", "Staff email and its limits", 5100, null, null, "pi-envelope"),
             // checkpoint 5000 kept from when it was a menu of its own, so existing access stays as it is
@@ -233,6 +237,8 @@ public final class Menus {
             new Def(NEWS, "News & announcements", "Add, change and remove the news on the home page (and the offers on the website): discounts, promotions, birthdays, important notices", 9003, "ADMIN", "/portal/admin/news", "pi-megaphone"),
             new Def(BRANDS, "Brands", "The group's brands: details, logo, owners and GST number; changing them needs the Owner user type", 9002, "ADMIN", "/portal/admin/brands", "pi-building"),
             new Def(MENU_ACCESS, "Menu access", "Which user types and designations see which menus; changing it needs the Admin user type", 9001, "ADMIN", "/portal/admin/menu-access", "pi-lock"),
+            new Def(STORAGE_USAGE, "Storage", "How much of the database is used, and every stored file with its size, type, brand and who uploaded it; files can be opened, personal documents included. Its own tick", 9010, "ADMIN", "/portal/admin/storage", "pi-database"),
+            new Def(STORAGE_DELETE, "Delete stored files", "Delete files from the Storage list to free space; this cannot be undone. Its own tick", 9011, "ADMIN", null, "pi-trash"),
 
             // ---- product portal ----
             new Def(PROD_HOME, "Overview", "Product portal: sales, purchases, stock and money owed at a glance", 11000, null, "/portal/products", "pi-chart-bar"),

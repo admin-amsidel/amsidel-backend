@@ -16,6 +16,8 @@ import com.amsidel.backend.entity.Employee;
 import com.amsidel.backend.entity.OfferLetter;
 import com.amsidel.backend.entity.OfferLetter.Status;
 import com.amsidel.backend.entity.OfferLetterFile;
+import com.amsidel.backend.entity.StoredFile;
+import com.amsidel.backend.entity.StoredFileCategory;
 import com.amsidel.backend.exception.ApiException;
 import com.amsidel.backend.exception.ResourceNotFoundException;
 import com.amsidel.backend.repository.BrandLogoRepository;
@@ -57,6 +59,7 @@ public class OfferLetterService {
 
     private final OfferLetterRepository letters;
     private final OfferLetterFileRepository files;
+    private final StoredFiles storedFiles;
     private final BrandRepository brands;
     private final BrandLogoRepository logos;
     private final EmployeeRepository employees;
@@ -150,6 +153,7 @@ public class OfferLetterService {
             throw ApiException.forbidden("This offer letter is issued and cannot be deleted");
         }
         files.deleteById(id);
+        storedFiles.forget(StoredFileCategory.OFFER_LETTER, id);
         letters.delete(o);
     }
 
@@ -167,7 +171,10 @@ public class OfferLetterService {
     // ---- inside ----
 
     private void keepPdf(OfferLetter o) {
-        files.save(new OfferLetterFile(o.getId(), render(o)));
+        byte[] pdf = render(o);
+        files.save(new OfferLetterFile(o.getId(), pdf));
+        storedFiles.record(StoredFileCategory.OFFER_LETTER, o.getId(), o.getBrand(), o.getLetterNumber() == null ? null : o.getLetterNumber().replace('/', '-') + ".pdf", "Offer letter",
+                o.getCandidateName(), "application/pdf", pdf.length, StoredFile.Location.DATABASE);
     }
 
     private byte[] render(OfferLetter o) {

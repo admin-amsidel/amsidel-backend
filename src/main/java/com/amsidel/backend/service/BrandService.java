@@ -14,6 +14,8 @@ import com.amsidel.backend.exception.ResourceNotFoundException;
 import com.amsidel.backend.repository.BrandLogoRepository;
 import com.amsidel.backend.repository.BrandUpiQrRepository;
 import com.amsidel.backend.repository.BrandRepository;
+import com.amsidel.backend.entity.StoredFile;
+import com.amsidel.backend.entity.StoredFileCategory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +37,7 @@ public class BrandService {
     private final BrandLogoRepository logoRepository;
     private final BrandUpiQrRepository qrRepository;
     private final UploadLimits limits;
+    private final StoredFiles storedFiles;
 
 
     @Transactional(readOnly = true)
@@ -83,6 +86,9 @@ public class BrandService {
                 : request.getUpi().strip().toLowerCase(Locale.ROOT));
         if (request.getCurrency() != null) {
             brand.setCurrency(request.getCurrency());
+        }
+        if (request.getTimeZone() != null && !request.getTimeZone().isBlank()) {
+            brand.setTimeZone(TimeZones.checked(request.getTimeZone()));
         }
     }
 
@@ -135,6 +141,7 @@ public class BrandService {
         logo.setUpdatedAt(Instant.now());
         logoRepository.save(logo);
         brand.setLogoUpdatedAt(logo.getUpdatedAt());
+        storedFiles.record(StoredFileCategory.BRAND_LOGO, id, brand, file.getOriginalFilename(), "Brand logo", brand.getName(), type, bytes.length, StoredFile.Location.DATABASE);
         return brand;
     }
 
@@ -142,6 +149,7 @@ public class BrandService {
     public Brand deleteLogo(Long id) {
         Brand brand = brandRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Brand not found: " + id));
         logoRepository.deleteById(id);
+        storedFiles.forget(StoredFileCategory.BRAND_LOGO, id);
         brand.setLogoUpdatedAt(null);
         return brand;
     }
@@ -183,6 +191,7 @@ public class BrandService {
         qr.setUpdatedAt(Instant.now());
         qrRepository.save(qr);
         brand.setUpiQrUpdatedAt(qr.getUpdatedAt());
+        storedFiles.record(StoredFileCategory.UPI_QR, id, brand, file.getOriginalFilename(), "UPI QR code", brand.getName(), type, bytes.length, StoredFile.Location.DATABASE);
         brand.setUpiQrPayee(payee == null ? null : payee.length() > 100 ? payee.substring(0, 100) : payee);
         if (payee != null && (brand.getUpiId() == null || brand.getUpiId().isBlank())) {
             brand.setUpiId(payee.length() > 80 ? null : payee.toLowerCase(Locale.ROOT));
@@ -194,6 +203,7 @@ public class BrandService {
     public Brand deleteUpiQr(Long id) {
         Brand brand = brandRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Brand not found: " + id));
         qrRepository.deleteById(id);
+        storedFiles.forget(StoredFileCategory.UPI_QR, id);
         brand.setUpiQrUpdatedAt(null);
         brand.setUpiQrPayee(null);
         return brand;

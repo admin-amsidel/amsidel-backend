@@ -59,4 +59,7 @@ public class BrandRequest {
 
     /** The currency its documents show (symbol only); empty = keep (a new brand: rupees). */
     private com.amsidel.backend.entity.CurrencyCode currency;
+
+    /** The time zone its people work in, such as Asia/Dubai; empty = keep (a new brand: the company's default). */
+    private String timeZone;
 }

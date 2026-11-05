@@ -39,6 +39,6 @@ public final class MeetingDtos {
     }
 
     /** canAdd: the person has the Add meetings tick. */
-    public record Page(LocalDate today, boolean canAdd, List<View> meetings) {
+    public record Page(LocalDate today, String zone, boolean canAdd, List<View> meetings) {
     }
 }

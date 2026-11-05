@@ -42,6 +42,7 @@ import java.util.function.Predicate;
 @RequiredArgsConstructor
 public class MenuAccessService {
 
+    private final TimeZones timeZones;
     private final MenuItemRepository menuRepository;
     private final MenuAccessRepository accessRepository;
     private final DesignationRepository designationRepository;
@@ -117,7 +118,7 @@ public class MenuAccessService {
         Snapshot s = snapshot();
         Predicate<MenuItem> allowed = m -> codes == null || codes.contains(m.getCode());
         List<String> list = s.menus().stream().filter(allowed).map(MenuItem::getCode).toList();
-        return new MyAccess(codes == null, list, tree(s, allowed));
+        return new MyAccess(codes == null, list, tree(s, allowed), timeZones.of(me).getId());
     }
 
     /** Every menu, for the access screen. */

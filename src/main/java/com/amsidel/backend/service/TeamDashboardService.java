@@ -230,7 +230,7 @@ public class TeamDashboardService {
 
     @Transactional(readOnly = true)
     public List<MeetingDtos.View> meetingsToday(AuthUser me, Long brandId) {
-        LocalDate today = today();
+        LocalDate today = meetings.today(me);
         return meetings.ofPeople(me, memberIds(me, brandId), today, today).meetings();
     }
 

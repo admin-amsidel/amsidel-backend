@@ -13,6 +13,8 @@ import com.amsidel.backend.repository.ProjectUpdatePhotoRepository;
 import com.amsidel.backend.repository.ProjectUpdateRepository;
 import com.amsidel.backend.security.AuthUser;
 import com.amsidel.backend.security.Menus;
+import com.amsidel.backend.entity.StoredFile;
+import com.amsidel.backend.entity.StoredFileCategory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +49,7 @@ public class ProjectUpdateService {
     private final ProjectUpdateRepository updates;
     private final ProjectUpdatePhotoRepository photos;
     private final UploadLimits limits;
+    private final StoredFiles storedFiles;
     private final TradeAccess access;
     private final TradeHistoryLog history;
     private final ProjectStageService stages;
@@ -157,6 +160,7 @@ public class ProjectUpdateService {
         canSee(me);
         ProjectUpdate u = editable(me, updateId);
         Project p = u.getProject();
+        u.getPhotos().forEach(ph -> storedFiles.forget(StoredFileCategory.PROJECT_PHOTO, ph.getId()));
         updates.delete(u);
         updates.flush();
         log(me, p, "STATUS UPDATE", "Removed “" + u.getTitle() + "” (" + WHEN.format(u.getHappenedAt()) + ")");
@@ -213,6 +217,7 @@ public class ProjectUpdateService {
             throw ApiException.badRequest("An update can have at most " + MAX_PHOTOS + " photos");
         }
         int order = u.getPhotos().stream().mapToInt(ProjectUpdatePhoto::getSortOrder).max().orElse(0);
+        Map<Integer, String> names = new java.util.HashMap<>();
         for (MultipartFile f : files) {
             UploadLimits.check(f.getSize(), limits.getProjectPhoto(), "Each photo");
             byte[] bytes;
@@ -232,10 +237,15 @@ public class ProjectUpdateService {
             ph.setSortOrder(order += 10);
             ph.setCreatedAt(Instant.now());
             u.getPhotos().add(ph);
+            names.put(ph.getSortOrder(), f.getOriginalFilename());
         }
         u.setUpdatedBy(access.me(me));
         u.setUpdatedAt(Instant.now());
-        updates.saveAndFlush(u);
+        // what was saved holds the new photos with their ids (they are matched by their order, unique within the update)
+        ProjectUpdate saved = updates.saveAndFlush(u);
+        Project project = saved.getProject();
+        saved.getPhotos().stream().filter(ph -> names.containsKey(ph.getSortOrder())).forEach(ph -> storedFiles.record(StoredFileCategory.PROJECT_PHOTO, ph.getId(), project.getBrand(),
+                names.get(ph.getSortOrder()), "Project status photo", project.getCode() + " · " + saved.getTitle(), ph.getContentType(), ph.getContent().length, StoredFile.Location.DATABASE));
         log(me, u.getProject(), "STATUS UPDATE", files.size() + " photo" + (files.size() == 1 ? "" : "s") + " added to “" + u.getTitle() + "”");
         return of(me, u.getProject().getId());
     }
@@ -246,6 +256,7 @@ public class ProjectUpdateService {
         ProjectUpdatePhoto ph = photos.findFull(photoId).orElseThrow(() -> new ResourceNotFoundException("Photo not found: " + photoId));
         ProjectUpdate u = editable(me, ph.getUpdate().getId());
         u.getPhotos().removeIf(x -> x.getId().equals(photoId));
+        storedFiles.forget(StoredFileCategory.PROJECT_PHOTO, photoId);
         u.setUpdatedBy(access.me(me));
         u.setUpdatedAt(Instant.now());
         updates.saveAndFlush(u);

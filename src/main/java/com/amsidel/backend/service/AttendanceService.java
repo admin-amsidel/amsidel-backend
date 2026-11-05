@@ -14,6 +14,8 @@ import com.amsidel.backend.dto.TeamMember;
 import com.amsidel.backend.entity.Attendance;
 import com.amsidel.backend.entity.Employee;
 import com.amsidel.backend.entity.Role;
+import com.amsidel.backend.entity.StoredFile;
+import com.amsidel.backend.entity.StoredFileCategory;
 import com.amsidel.backend.entity.WorkMode;
 import com.amsidel.backend.exception.ApiException;
 import com.amsidel.backend.exception.ResourceNotFoundException;
@@ -61,11 +63,12 @@ public class AttendanceService {
     private final AttendancePhotoStore photos;
     private final MenuAccessService menuAccess;
     private final WorkApprovalService approvals;
+    private final StoredFiles storedFiles;
     private final ZoneId zone;
     private final double lowAccuracyMetres;
 
     public AttendanceService(AttendanceRepository attendanceRepository, EmployeeRepository employeeRepository,
-                             TeamAccess access, AttendancePhotoStore photos, MenuAccessService menuAccess, WorkApprovalService approvals,
+                             TeamAccess access, AttendancePhotoStore photos, MenuAccessService menuAccess, WorkApprovalService approvals, StoredFiles storedFiles,
                              @Value("${app.attendance.zone}") ZoneId zone,
                              @Value("${app.attendance.low-accuracy-metres:200}") double lowAccuracyMetres) {
         this.attendanceRepository = attendanceRepository;
@@ -74,6 +77,7 @@ public class AttendanceService {
         this.photos = photos;
         this.menuAccess = menuAccess;
         this.approvals = approvals;
+        this.storedFiles = storedFiles;
         this.zone = zone;
         this.lowAccuracyMetres = lowAccuracyMetres;
     }
@@ -148,6 +152,8 @@ public class AttendanceService {
 
         if (hasPhoto) {
             savePhoto(path, jpeg);
+            storedFiles.record(StoredFileCategory.CHECK_IN_PHOTO, a.getId(), person.getBrand(), null, "Check-in photo", person.getName() + " · " + today,
+                    "image/jpeg", jpeg.length, StoredFile.Location.DISK);
         }
         log.info("Check-in {} {} #{} {}{}{}", person.getEmpNumber(), today, entryNo, a.getWorkMode(), where.missing() ? " (no location)" : "",
                 hasPhoto ? "" : capture ? " (no photo)" : " (time and GPS only)");
@@ -246,6 +252,7 @@ public class AttendanceService {
         Attendance a = attendanceRepository.findWithEmployee(attendanceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Attendance not found: " + attendanceId));
         String path = a.getPhotoPath();
+        storedFiles.forget(StoredFileCategory.CHECK_IN_PHOTO, attendanceId);
         attendanceRepository.delete(a);
         attendanceRepository.flush();
         if (path != null) {

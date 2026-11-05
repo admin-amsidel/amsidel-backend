@@ -9,6 +9,8 @@ import com.amsidel.backend.entity.DocumentType;
 import com.amsidel.backend.entity.Employee;
 import com.amsidel.backend.entity.EmployeeDocument;
 import com.amsidel.backend.entity.EmployeeDocumentFile;
+import com.amsidel.backend.entity.StoredFile;
+import com.amsidel.backend.entity.StoredFileCategory;
 import com.amsidel.backend.exception.ApiException;
 import com.amsidel.backend.exception.ResourceNotFoundException;
 import com.amsidel.backend.repository.EmployeeDocumentFileRepository;
@@ -53,12 +55,13 @@ public class EmployeeDocumentService {
     private final EmployeeDocumentStore store;
     private final EmployeeService employeeService;
     private final UploadLimits limits;
+    private final StoredFiles storedFiles;
     private final int defaultMonthlyLimit;
     private final ZoneId zone;
 
     public EmployeeDocumentService(EmployeeRepository employeeRepository, EmployeeDocumentRepository documentRepository,
                                    EmployeeDocumentFileRepository fileRepository, EmployeeDocumentStore store,
-                                   EmployeeService employeeService, UploadLimits limits, @Value("${app.documents.monthly-upload-limit}") int defaultMonthlyLimit,
+                                   EmployeeService employeeService, UploadLimits limits, StoredFiles storedFiles, @Value("${app.documents.monthly-upload-limit}") int defaultMonthlyLimit,
                                    @Value("${app.leave.zone}") ZoneId zone) {
         this.employeeRepository = employeeRepository;
         this.documentRepository = documentRepository;
@@ -66,6 +69,7 @@ public class EmployeeDocumentService {
         this.store = store;
         this.employeeService = employeeService;
         this.limits = limits;
+        this.storedFiles = storedFiles;
         this.defaultMonthlyLimit = defaultMonthlyLimit;
         this.zone = zone;
     }
@@ -101,6 +105,8 @@ public class EmployeeDocumentService {
         d.setUploadedBy(employeeRepository.getReferenceById(me.id()));
         documentRepository.saveAndFlush(d);
         fileRepository.saveAndFlush(new EmployeeDocumentFile(d.getId(), bytes));
+        storedFiles.record(StoredFileCategory.EMPLOYEE_DOCUMENT, d.getId(), e.getBrand(), d.getFileName(), type.label(), e.getName() + " · " + type.label(),
+                contentType, bytes.length, StoredFile.Location.DATABASE);
         if (onDisk != null) {
             store.deleteQuietly(onDisk);
         }
@@ -151,6 +157,7 @@ public class EmployeeDocumentService {
     public void delete(AuthUser me, Long employeeId, DocumentType type) {
         EmployeeDocument d = find(target(me, employeeId), type);
         fileRepository.remove(d.getId());
+        storedFiles.forget(StoredFileCategory.EMPLOYEE_DOCUMENT, d.getId());
         documentRepository.delete(d);
         documentRepository.flush();
         if (d.getStoredPath() != null) {

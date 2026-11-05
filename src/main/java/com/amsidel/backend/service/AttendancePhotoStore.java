@@ -102,6 +102,10 @@ public class AttendancePhotoStore {
         }
     }
 
+    public boolean exists(String relative) {
+        return Files.exists(resolve(relative));
+    }
+
     public void deleteQuietly(String relative) {
         try {
             Files.deleteIfExists(resolve(relative));

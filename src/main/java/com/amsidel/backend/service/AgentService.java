@@ -11,6 +11,8 @@ import com.amsidel.backend.entity.AgentCommission;
 import com.amsidel.backend.entity.AgentPhoto;
 import com.amsidel.backend.entity.Brand;
 import com.amsidel.backend.entity.Project;
+import com.amsidel.backend.entity.StoredFile;
+import com.amsidel.backend.entity.StoredFileCategory;
 import com.amsidel.backend.entity.SalesDoc;
 import com.amsidel.backend.entity.TradeSubject;
 import com.amsidel.backend.exception.ApiException;
@@ -56,10 +58,11 @@ public class AgentService {
     private final TradeHistoryLog history;
     private final MenuAccessService menuAccess;
     private final UploadLimits limits;
+    private final StoredFiles storedFiles;
     private final ZoneId zone;
 
     public AgentService(AgentRepository agents, AgentPhotoRepository photos, AgentCommissionRepository commissions, SalesDocRepository sales, TradeAccess access, TradeNumbers numbers,
-                        TradeHistoryLog history, MenuAccessService menuAccess, UploadLimits limits, @Value("${app.leave.zone}") ZoneId zone) {
+                        TradeHistoryLog history, MenuAccessService menuAccess, UploadLimits limits, StoredFiles storedFiles, @Value("${app.leave.zone}") ZoneId zone) {
         this.agents = agents;
         this.photos = photos;
         this.commissions = commissions;
@@ -69,6 +72,7 @@ public class AgentService {
         this.history = history;
         this.menuAccess = menuAccess;
         this.limits = limits;
+        this.storedFiles = storedFiles;
         this.zone = zone;
     }
 
@@ -164,6 +168,8 @@ public class AgentService {
         p.setContent(bytes);
         p.setContentType(type);
         photos.save(p);
+        storedFiles.record(StoredFileCategory.AGENT_PHOTO, id, a.getBrand(), file.getOriginalFilename(), "Agent photo", a.getName() + " (" + a.getCode() + ")",
+                type, bytes.length, StoredFile.Location.DATABASE);
         a.setPhotoUpdatedAt(Instant.now());
         return row(agents.saveAndFlush(a), null);
     }
@@ -172,6 +178,7 @@ public class AgentService {
     public Row removePhoto(AuthUser me, Long id) {
         Agent a = agent(me, id);
         photos.findById(id).ifPresent(photos::delete);
+        storedFiles.forget(StoredFileCategory.AGENT_PHOTO, id);
         a.setPhotoUpdatedAt(null);
         return row(agents.saveAndFlush(a), null);
     }

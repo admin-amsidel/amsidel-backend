@@ -14,6 +14,8 @@ import com.amsidel.backend.repository.NewsImageRepository;
 import com.amsidel.backend.repository.NewsPostRepository;
 import com.amsidel.backend.security.AuthUser;
 import com.amsidel.backend.security.Menus;
+import com.amsidel.backend.entity.StoredFile;
+import com.amsidel.backend.entity.StoredFileCategory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +44,7 @@ public class NewsService {
     private final NewsPostRepository repository;
     private final NewsImageRepository imageRepository;
     private final UploadLimits limits;
+    private final StoredFiles storedFiles;
     private final BrandRepository brandRepository;
     private final EmployeeRepository employeeRepository;
     private final MenuAccessService menuAccess;
@@ -120,6 +123,7 @@ public class NewsService {
         requireManage(me);
         NewsPost n = find(id);
         imageRepository.deleteById(id);
+        storedFiles.forget(StoredFileCategory.NEWS_PICTURE, id);
         repository.delete(n);
     }
 
@@ -167,6 +171,7 @@ public class NewsService {
         image.setUpdatedAt(Instant.now());
         imageRepository.save(image);
         n.setImageUpdatedAt(image.getUpdatedAt());
+        storedFiles.record(StoredFileCategory.NEWS_PICTURE, id, n.getBrand(), file.getOriginalFilename(), "News picture", n.getTitle(), type, bytes.length, StoredFile.Location.DATABASE);
         n.setUpdatedBy(access.me(me));
         repository.saveAndFlush(n);
         return view(n, access.today());
@@ -177,6 +182,7 @@ public class NewsService {
         requireManage(me);
         NewsPost n = find(id);
         imageRepository.deleteById(id);
+        storedFiles.forget(StoredFileCategory.NEWS_PICTURE, id);
         n.setImageUpdatedAt(null);
         n.setUpdatedBy(access.me(me));
         repository.saveAndFlush(n);

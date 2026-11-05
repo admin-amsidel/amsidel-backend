@@ -17,13 +17,11 @@ import com.amsidel.backend.repository.MeetingRepository;
 import com.amsidel.backend.repository.NotificationClearRepository;
 import com.amsidel.backend.security.AuthUser;
 import com.amsidel.backend.security.Menus;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -46,16 +44,16 @@ public class MeetingService {
     private final EmployeeRepository employees;
     private final MenuAccessService menuAccess;
     private final NotificationClearRepository notificationClears;
-    private final ZoneId zone;
+    private final TimeZones timeZones;
 
     public MeetingService(MeetingRepository meetings, EmployeeRepository employees, MenuAccessService menuAccess,
                           NotificationClearRepository notificationClears,
-                          @Value("${app.leave.zone}") ZoneId zone) {
+                          TimeZones timeZones) {
         this.meetings = meetings;
         this.employees = employees;
         this.menuAccess = menuAccess;
         this.notificationClears = notificationClears;
-        this.zone = zone;
+        this.timeZones = timeZones;
     }
 
     @Transactional(readOnly = true)
@@ -63,7 +61,7 @@ public class MeetingService {
         if (to.isBefore(from) || ChronoUnit.DAYS.between(from, to) > MAX_RANGE_DAYS) {
             throw ApiException.badRequest("Ask for at most " + MAX_RANGE_DAYS + " days at a time");
         }
-        return new Page(today(), menuAccess.can(me, Menus.MEETING_ADD),
+        return new Page(today(me), timeZones.of(me).getId(), menuAccess.can(me, Menus.MEETING_ADD),
                 meetings.forEmployee(me.id(), from, to).stream().map(m -> view(me, m)).toList());
     }
 
@@ -73,7 +71,7 @@ public class MeetingService {
         if (to.isBefore(from) || ChronoUnit.DAYS.between(from, to) > MAX_RANGE_DAYS) {
             throw ApiException.badRequest("Ask for at most " + MAX_RANGE_DAYS + " days at a time");
         }
-        return new Page(today(), menuAccess.can(me, Menus.MEETING_ADD),
+        return new Page(today(me), timeZones.of(me).getId(), menuAccess.can(me, Menus.MEETING_ADD),
                 ids.isEmpty() ? List.of() : meetings.ofPeople(ids, from, to).stream().map(m -> view(me, m)).toList());
     }
 
@@ -87,7 +85,7 @@ public class MeetingService {
 
     @Transactional
     public View create(AuthUser me, Body body) {
-        if (body.date().isBefore(today())) {
+        if (body.date().isBefore(today(me))) {
             throw ApiException.badRequest("A new meeting cannot be on a date that has passed");
         }
         Meeting m = new Meeting();
@@ -99,7 +97,7 @@ public class MeetingService {
     @Transactional
     public View update(AuthUser me, Long id, Body body) {
         Meeting m = changeable(me, id);
-        if (!body.date().equals(m.getMeetingDate()) && body.date().isBefore(today())) {
+        if (!body.date().equals(m.getMeetingDate()) && body.date().isBefore(today(me))) {
             throw ApiException.badRequest("A meeting cannot be moved to a date that has passed");
         }
         Set<Long> already = new HashSet<>();
@@ -178,7 +176,8 @@ public class MeetingService {
                 e.getBrand() == null ? null : e.getBrand().getCode(), e.getPhotoPath(), e.getPhotoUpdatedAt());
     }
 
-    private LocalDate today() {
-        return LocalDate.now(zone);
+    /** The day it is where this person works: meetings are on their calendar, in their brand's time zone. */
+    public LocalDate today(AuthUser me) {
+        return LocalDate.now(timeZones.of(me));
     }
 }

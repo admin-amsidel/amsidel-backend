@@ -21,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -40,14 +39,14 @@ public class NotificationService {
     private final MeetingRepository meetings;
     private final NotificationClearRepository clears;
     private final Clock clock;
-    private final ZoneId zone;
+    private final TimeZones timeZones;
     private final int pollMinutes;
     private final int leadMinutes;
     private final int defaultLengthMinutes;
     private final int keepDays;
 
     public NotificationService(MeetingRepository meetings, NotificationClearRepository clears, Clock clock,
-                               @Value("${app.leave.zone}") ZoneId zone,
+                               TimeZones timeZones,
                                @Value("${app.notifications.poll-minutes}") int pollMinutes,
                                @Value("${app.notifications.meeting-lead-minutes}") int leadMinutes,
                                @Value("${app.notifications.meeting-default-length-minutes}") int defaultLengthMinutes,
@@ -55,7 +54,7 @@ public class NotificationService {
         this.meetings = meetings;
         this.clears = clears;
         this.clock = clock;
-        this.zone = zone;
+        this.timeZones = timeZones;
         this.pollMinutes = Math.max(1, pollMinutes);
         this.leadMinutes = Math.max(0, leadMinutes);
         this.defaultLengthMinutes = Math.max(1, defaultLengthMinutes);
@@ -64,7 +63,7 @@ public class NotificationService {
 
     @Transactional(readOnly = true)
     public Feed feed(AuthUser me) {
-        return new Feed(pollMinutes, items(me, now()));
+        return new Feed(pollMinutes, items(me, now(me)));
     }
 
     /** Clears one; clearing it twice is fine. */
@@ -80,7 +79,7 @@ public class NotificationService {
 
     /** Clears everything showing. */
     public void clearAll(AuthUser me) {
-        for (Item i : items(me, now())) {
+        for (Item i : items(me, now(me))) {
             mark(me.id(), i.meetingId(), i.kind(), i.date());
         }
         forgetOld(me);
@@ -123,11 +122,12 @@ public class NotificationService {
     }
 
     private void forgetOld(AuthUser me) {
-        clears.deleteOld(me.id(), now().toLocalDate().minusDays(keepDays));
+        clears.deleteOld(me.id(), now(me).toLocalDate().minusDays(keepDays));
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.now(clock.withZone(zone));
+    /** Meeting times are in the time zone of the person being told. */
+    private LocalDateTime now(AuthUser me) {
+        return LocalDateTime.now(clock.withZone(timeZones.of(me)));
     }
 
     private static String key(Long meetingId, Kind kind) {

@@ -132,7 +132,7 @@ public class DashboardService {
     }
 
     public List<MeetingDtos.View> meetingsToday(AuthUser me) {
-        LocalDate today = today();
+        LocalDate today = meetings.today(me);
         return meetings.mine(me, today, today).meetings();
     }
 
