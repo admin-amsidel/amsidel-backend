@@ -17,8 +17,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
 /**
- * Employee documents on the server's disk, under app.documents.dir, at documents/{employeeId}/{TYPE}-{millis}.{ext}.
- * Like the check-in photos they are only ever served through the authenticated API, never as static files, and a
+ * Employee documents left on the server's disk from before they were kept in the database, under app.documents.dir, at
+ * documents/{employeeId}/{TYPE}-{millis}.{ext}. Nothing new is written here: these are read until they have moved
+ * (EmployeeDocumentMigration). They are only ever served through the authenticated API, never as static files, and a
  * stored path can never point outside the folder.
  */
 @Slf4j

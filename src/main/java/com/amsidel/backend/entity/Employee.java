@@ -138,6 +138,16 @@ public class Employee {
     @Column(name = "auto_approve_reports")
     private Boolean autoApproveReports;
 
+    /** Documents that may be uploaded for this person in a month; null = the company default (app.documents.monthly-upload-limit). */
+    private Integer documentUploadLimit;
+
+    /** How many have been uploaded in {@link #documentUploadsMonth}. */
+    private Integer documentUploadsUsed;
+
+    /** The month that count is for, e.g. 2026-11; an older one means nothing has been uploaded this month. */
+    @Column(length = 7)
+    private String documentUploadsMonth;
+
     /** Set for new accounts and after an admin reset, so the person picks their own PIN. */
     @Column(nullable = false)
     private boolean mustChangePassword = true;

@@ -29,6 +29,17 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
             + " left join fetch e.userType where e.id = :id")
     Optional<Employee> findWithBrandById(@Param("id") Long id);
 
+    /**
+     * Counts one more document upload this month, if the limit allows it (a new month starts from 1). One statement, so
+     * uploads arriving together cannot pass the limit. Says how many rows changed (0: the limit is reached). Call in a
+     * transaction, so that an upload that fails afterwards is not counted.
+     */
+    @Modifying
+    @Query("update Employee e set e.documentUploadsUsed = case when e.documentUploadsMonth = :month then e.documentUploadsUsed + 1 else 1 end,"
+            + " e.documentUploadsMonth = :month where e.id = :id"
+            + " and (e.documentUploadsMonth is null or e.documentUploadsMonth <> :month or e.documentUploadsUsed < :limit)")
+    int countDocumentUpload(@Param("id") Long id, @Param("month") String month, @Param("limit") int limit);
+
     /** The person's row held until the transaction ends, so wrong PINs arriving together are each counted. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from Employee e where e.id = :id")

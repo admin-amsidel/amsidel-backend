@@ -82,7 +82,7 @@ public class EmployeeController {
         return PhotoResponses.image(photoService.photoOf(me, id));
     }
 
-    /** Multipart form with one part named "file" (JPEG, PNG or WebP, up to 2 MB). */
+    /** Multipart form with one part named "file" (JPEG, PNG or WebP). */
     @PostMapping(path = "/{id}/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public EmployeeResponse uploadPhoto(@AuthenticationPrincipal AuthUser me, @PathVariable Long id,
                                         @RequestParam("file") MultipartFile file) {

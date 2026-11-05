@@ -57,6 +57,11 @@ public class EmployeeRequest {
     /** Auto approve: leave, attendance and work log of the people this person approves for count at once; only owners and admins can set it. */
     private Boolean autoApproveReports;
 
+    /** Documents that may be uploaded for this person in a month; empty = the company default. */
+    @Min(value = 0, message = "The monthly document limit cannot be negative")
+    @Max(value = 1000, message = "The monthly document limit can be at most 1000")
+    private Integer documentUploadLimit;
+
     @Size(max = 500)
     private String address;
 

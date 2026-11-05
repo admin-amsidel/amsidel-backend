@@ -56,7 +56,7 @@ public class ProjectUpdateController {
         return service.delete(me, updateId);
     }
 
-    /** One or more photos (field "files"), JPEG, PNG or WebP, up to 5 MB each, at most 8 an update. */
+    /** One or more photos (field "files"), JPEG, PNG or WebP, at most 8 an update. */
     @PostMapping("/project-updates/{updateId}/photos")
     public ProjectStatusView addPhotos(@AuthenticationPrincipal AuthUser me, @PathVariable Long updateId,
                                        @RequestParam("files") List<MultipartFile> files) {

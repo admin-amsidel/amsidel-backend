@@ -220,6 +220,7 @@ public class EmployeeService {
         employee.setDesignation(resolveDesignation(request.getDesignationId(), employee));
         employee.setReportsTo(resolveReportsTo(request.getReportsToId(), employee));
         employee.setApprover(resolveApprover(request.getApproverId(), employee));
+        employee.setDocumentUploadLimit(request.getDocumentUploadLimit());
         employee.setName(request.getName().trim());
         employee.setAddress(trimToNull(request.getAddress()));
         employee.setPhone(Phones.normalize(request.getPhone(), "Phone"));

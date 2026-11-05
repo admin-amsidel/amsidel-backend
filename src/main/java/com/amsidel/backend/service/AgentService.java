@@ -47,8 +47,6 @@ import java.util.stream.Collectors;
 @Service
 public class AgentService {
 
-    private static final int MAX_PHOTO_BYTES = 1024 * 1024;
-
     private final AgentRepository agents;
     private final AgentPhotoRepository photos;
     private final AgentCommissionRepository commissions;
@@ -57,10 +55,11 @@ public class AgentService {
     private final TradeNumbers numbers;
     private final TradeHistoryLog history;
     private final MenuAccessService menuAccess;
+    private final UploadLimits limits;
     private final ZoneId zone;
 
     public AgentService(AgentRepository agents, AgentPhotoRepository photos, AgentCommissionRepository commissions, SalesDocRepository sales, TradeAccess access, TradeNumbers numbers,
-                        TradeHistoryLog history, MenuAccessService menuAccess, @Value("${app.leave.zone}") ZoneId zone) {
+                        TradeHistoryLog history, MenuAccessService menuAccess, UploadLimits limits, @Value("${app.leave.zone}") ZoneId zone) {
         this.agents = agents;
         this.photos = photos;
         this.commissions = commissions;
@@ -69,6 +68,7 @@ public class AgentService {
         this.numbers = numbers;
         this.history = history;
         this.menuAccess = menuAccess;
+        this.limits = limits;
         this.zone = zone;
     }
 
@@ -151,9 +151,10 @@ public class AgentService {
         } catch (IOException e) {
             throw ApiException.badRequest("The photo could not be read; please try again");
         }
-        if (bytes.length == 0 || bytes.length > MAX_PHOTO_BYTES) {
-            throw ApiException.badRequest("The photo can be at most 1 MB");
+        if (bytes.length == 0) {
+            throw ApiException.badRequest("Choose a photo to upload");
         }
+        UploadLimits.check(bytes.length, limits.getAgentPhoto(), "The photo");
         String type = imageType(bytes);
         if (type == null) {
             throw ApiException.badRequest("Choose a JPG or PNG picture");

@@ -17,6 +17,7 @@ import com.amsidel.backend.service.AuthService;
 import com.amsidel.backend.service.BankDetailsService;
 import com.amsidel.backend.service.MenuAccessService;
 import com.amsidel.backend.service.PhotoService;
+import com.amsidel.backend.service.UploadLimits;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -35,6 +36,7 @@ public class AuthController {
     private final MenuAccessService menuAccessService;
     private final BankDetailsService bankDetailsService;
     private final EmployeeService employeeService;
+    private final UploadLimits uploadLimits;
 
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest request) {
@@ -50,6 +52,12 @@ public class AuthController {
     @GetMapping("/access")
     public MyAccess access(@AuthenticationPrincipal AuthUser me) {
         return menuAccessService.myAccess(me);
+    }
+
+    /** How large uploads may be, for the portal's checks and hints. */
+    @GetMapping("/upload-limits")
+    public UploadLimits.View uploadLimits() {
+        return uploadLimits.view();
     }
 
     @PostMapping("/change-password")
@@ -76,7 +84,7 @@ public class AuthController {
         return PhotoResponses.image(photoService.myPhoto(me));
     }
 
-    /** Multipart form with one part named "file" (JPEG, PNG or WebP, up to 2 MB). */
+    /** Multipart form with one part named "file" (JPEG, PNG or WebP). */
     @PostMapping(path = "/me/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public EmployeeResponse uploadMyPhoto(@AuthenticationPrincipal AuthUser me,
                                           @RequestParam("file") MultipartFile file) {

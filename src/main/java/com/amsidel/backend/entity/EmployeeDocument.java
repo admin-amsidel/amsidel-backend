@@ -13,8 +13,8 @@ import java.time.Instant;
 
 /**
  * One document an employee keeps on file (PAN card, Aadhaar card, bank statement / passbook, offer letter, passport
- * size photo), one of each type. The file itself is on the server's disk (EmployeeDocumentStore, under
- * app.documents.dir); this row says where, what it is and who uploaded it.
+ * size photo), one of each type. The file itself is in {@link EmployeeDocumentFile}; this row says what it is and who
+ * uploaded it.
  */
 @Entity
 @Table(name = "employee_documents",
@@ -46,8 +46,11 @@ public class EmployeeDocument {
     @Column(nullable = false)
     private int sizeBytes;
 
-    /** Where the file is, below app.documents.dir, e.g. documents/12/PAN_CARD-1730620000000.pdf. */
-    @Column(nullable = false, length = 300)
+    /**
+     * Null: the file is in the database. Otherwise it has not moved there yet (EmployeeDocumentMigration) and this is
+     * where it is on the disk, below app.documents.dir, e.g. documents/12/PAN_CARD-1730620000000.pdf.
+     */
+    @Column(length = 300)
     private String storedPath;
 
     @Column(nullable = false)

@@ -115,7 +115,7 @@ public class AttendanceService {
         if (capture && !hasPhoto && request.getWorkMode() == WorkMode.FIELD) {
             throw ApiException.badRequest("Take a photo to check in for a field visit");
         }
-        byte[] jpeg = hasPhoto ? AttendancePhotoStore.clean(photo) : null;
+        byte[] jpeg = hasPhoto ? photos.clean(photo) : null;
         int entryNo = sofar.stream().mapToInt(Attendance::getEntryNo).max().orElse(0) + 1;
 
         Attendance a = new Attendance();

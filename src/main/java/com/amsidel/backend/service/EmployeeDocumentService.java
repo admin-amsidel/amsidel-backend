@@ -8,21 +8,28 @@ import com.amsidel.backend.dto.EmployeeDocumentDtos.*;
 import com.amsidel.backend.entity.DocumentType;
 import com.amsidel.backend.entity.Employee;
 import com.amsidel.backend.entity.EmployeeDocument;
+import com.amsidel.backend.entity.EmployeeDocumentFile;
 import com.amsidel.backend.exception.ApiException;
 import com.amsidel.backend.exception.ResourceNotFoundException;
+import com.amsidel.backend.repository.EmployeeDocumentFileRepository;
 import com.amsidel.backend.repository.EmployeeDocumentRepository;
 import com.amsidel.backend.repository.EmployeeRepository;
 import com.amsidel.backend.security.AuthUser;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -31,18 +38,37 @@ import java.util.stream.Collectors;
  * An employee's documents (PAN card, Aadhaar card, bank statement / passbook, offer letter, passport size photo) and
  * how complete their profile is. Everyone looks after their own; owners and admins who manage a person (the same
  * rule as changing their record) see and change theirs. Nobody else sees them, not even with the employee list.
- * Each file is a PDF, JPEG or PNG (the passport size photo an image), up to 2 MB, judged by its first bytes.
+ * Each file is a PDF, JPEG or PNG (the passport size photo an image), judged by its first bytes, up to app.uploads.max-size.document.
+ * <p>
+ * A person has a monthly number of uploads: their own limit if their record has one, otherwise the company default.
+ * Every file taken counts for the person it belongs to, whoever uploads it. Replacing counts, as it is a new file;
+ * deleting gives nothing back, or delete and upload again would get round the limit. A refused file does not count.
  */
 @Service
-@RequiredArgsConstructor
 public class EmployeeDocumentService {
-
-    public static final int MAX_BYTES = 2 * 1024 * 1024;
 
     private final EmployeeRepository employeeRepository;
     private final EmployeeDocumentRepository documentRepository;
+    private final EmployeeDocumentFileRepository fileRepository;
     private final EmployeeDocumentStore store;
     private final EmployeeService employeeService;
+    private final UploadLimits limits;
+    private final int defaultMonthlyLimit;
+    private final ZoneId zone;
+
+    public EmployeeDocumentService(EmployeeRepository employeeRepository, EmployeeDocumentRepository documentRepository,
+                                   EmployeeDocumentFileRepository fileRepository, EmployeeDocumentStore store,
+                                   EmployeeService employeeService, UploadLimits limits, @Value("${app.documents.monthly-upload-limit}") int defaultMonthlyLimit,
+                                   @Value("${app.leave.zone}") ZoneId zone) {
+        this.employeeRepository = employeeRepository;
+        this.documentRepository = documentRepository;
+        this.fileRepository = fileRepository;
+        this.store = store;
+        this.employeeService = employeeService;
+        this.limits = limits;
+        this.defaultMonthlyLimit = defaultMonthlyLimit;
+        this.zone = zone;
+    }
 
     /** employeeId null = my own. */
     @Transactional(readOnly = true)
@@ -62,38 +88,74 @@ public class EmployeeDocumentService {
                     ? "The " + type.label().toLowerCase() + " must be a JPEG or PNG image"
                     : "The " + type.label().toLowerCase() + " must be a PDF, JPEG or PNG file");
         }
-        String path = "documents/%d/%s-%d.%s".formatted(e.getId(), type.name(), System.currentTimeMillis(), extension(contentType));
-        store.save(path, bytes);
-
+        countUpload(me, e);
         EmployeeDocument d = documentRepository.findByEmployeeIdAndType(e.getId(), type).orElseGet(EmployeeDocument::new);
-        String old = d.getStoredPath();
+        String onDisk = d.getStoredPath();
         d.setEmployee(e);
         d.setType(type);
         d.setFileName(fileName(file.getOriginalFilename(), type, contentType));
         d.setContentType(contentType);
         d.setSizeBytes(bytes.length);
-        d.setStoredPath(path);
+        d.setStoredPath(null);
         d.setUploadedAt(Instant.now());
         d.setUploadedBy(employeeRepository.getReferenceById(me.id()));
         documentRepository.saveAndFlush(d);
-        if (old != null && !old.equals(path)) {
-            store.deleteQuietly(old);
+        fileRepository.saveAndFlush(new EmployeeDocumentFile(d.getId(), bytes));
+        if (onDisk != null) {
+            store.deleteQuietly(onDisk);
         }
         return view(type, documentRepository.findByEmployeeIdAndType(e.getId(), type).orElse(d));
+    }
+
+    /** Uploads this month: employeeId null = my own. */
+    @Transactional(readOnly = true)
+    public UploadQuota quota(AuthUser me, Long employeeId) {
+        Employee e = target(me, employeeId);
+        YearMonth month = YearMonth.now(zone);
+        int limit = limitOf(e);
+        int used = month.toString().equals(e.getDocumentUploadsMonth()) && e.getDocumentUploadsUsed() != null ? e.getDocumentUploadsUsed() : 0;
+        return new UploadQuota(limit, used, Math.max(0, limit - used), month.plusMonths(1).atDay(1));
+    }
+
+    private void countUpload(AuthUser me, Employee e) {
+        YearMonth month = YearMonth.now(zone);
+        int limit = limitOf(e);
+        if (limit > 0 && employeeRepository.countDocumentUpload(e.getId(), month.toString(), limit) > 0) {
+            return;
+        }
+        String from = month.plusMonths(1).atDay(1).format(DateTimeFormatter.ofPattern("d MMMM", Locale.ENGLISH));
+        boolean mine = e.getId().equals(me.id());
+        String message = limit == 0
+                ? (mine ? "Your account cannot upload documents. Ask your admin to change your monthly limit."
+                        : e.getName() + " (" + e.getUserId() + ") has a monthly document limit of 0. Change it on their record to upload.")
+                : mine
+                ? "You have used all " + limit + " document uploads for this month. You can upload again from " + from + ", or ask your admin to raise your limit."
+                : e.getName() + " (" + e.getUserId() + ") has used all " + limit + " document uploads for this month. Raise the limit on their record, or upload from " + from + ".";
+        throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, message);
+    }
+
+    private int limitOf(Employee e) {
+        return e.getDocumentUploadLimit() != null ? e.getDocumentUploadLimit() : defaultMonthlyLimit;
     }
 
     @Transactional(readOnly = true)
     public DocumentFile file(AuthUser me, Long employeeId, DocumentType type) {
         EmployeeDocument d = find(target(me, employeeId), type);
-        return new DocumentFile(store.read(d.getStoredPath()), d.getContentType(), d.getFileName());
+        byte[] bytes = d.getStoredPath() != null ? store.read(d.getStoredPath()) : fileRepository.findById(d.getId())
+                .map(EmployeeDocumentFile::getContent)
+                .orElseThrow(() -> new ResourceNotFoundException("The file of this document is missing; please upload it again"));
+        return new DocumentFile(bytes, d.getContentType(), d.getFileName());
     }
 
     @Transactional
     public void delete(AuthUser me, Long employeeId, DocumentType type) {
         EmployeeDocument d = find(target(me, employeeId), type);
+        fileRepository.remove(d.getId());
         documentRepository.delete(d);
         documentRepository.flush();
-        store.deleteQuietly(d.getStoredPath());
+        if (d.getStoredPath() != null) {
+            store.deleteQuietly(d.getStoredPath());
+        }
     }
 
     /** What a complete profile has: personal details, bank &amp; tax details and the documents. */
@@ -169,13 +231,11 @@ public class EmployeeDocumentService {
                 d.getUploadedAt(), d.getUploadedBy() == null ? null : d.getUploadedBy().getName());
     }
 
-    private static byte[] read(MultipartFile file) {
+    private byte[] read(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest("Choose a file to upload");
         }
-        if (file.getSize() > MAX_BYTES) {
-            throw ApiException.badRequest("Each file must be 2 MB or smaller");
-        }
+        UploadLimits.check(file.getSize(), limits.getDocument(), "Each file");
         try {
             return file.getBytes();
         } catch (IOException e) {

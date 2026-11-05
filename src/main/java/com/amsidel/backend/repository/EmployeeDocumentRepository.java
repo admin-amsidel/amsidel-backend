@@ -23,4 +23,8 @@ public interface EmployeeDocumentRepository extends JpaRepository<EmployeeDocume
     List<Object[]> typesOfPeople(@Param("ids") java.util.Collection<Long> ids);
 
     Optional<EmployeeDocument> findByEmployeeIdAndType(Long employeeId, DocumentType type);
+
+    /** Those whose file has not moved from the disk to the database. */
+    @Query("select d.id from EmployeeDocument d where d.storedPath is not null")
+    List<Long> stillOnDisk();
 }

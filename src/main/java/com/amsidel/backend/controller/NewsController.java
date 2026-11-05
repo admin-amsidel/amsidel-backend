@@ -59,7 +59,7 @@ public class NewsController {
         news.delete(me, id);
     }
 
-    /** Multipart, one part named "file": JPEG, PNG or WebP, up to 3 MB. */
+    /** Multipart, one part named "file": JPEG, PNG or WebP. */
     @PostMapping("/api/news/{id}/image")
     public NewsView uploadImage(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @RequestParam("file") MultipartFile file) {
         return news.saveImage(me, id, file);

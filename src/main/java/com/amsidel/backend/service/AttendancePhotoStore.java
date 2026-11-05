@@ -43,7 +43,6 @@ import java.util.Iterator;
 public class AttendancePhotoStore {
 
     /** Upload limit, before re-encoding. */
-    public static final int MAX_BYTES = 2 * 1024 * 1024;
     /** Refuse images that would take too much memory to open. */
     private static final int MAX_PIXELS_SIDE = 8000;
     /** The app sends at most 1280 px; anything larger is shrunk. */
@@ -51,9 +50,11 @@ public class AttendancePhotoStore {
     private static final float QUALITY = 0.8f;
 
     private final Path root;
+    private final UploadLimits limits;
 
-    public AttendancePhotoStore(@Value("${app.attendance.photo-dir}") String dir) {
+    public AttendancePhotoStore(@Value("${app.attendance.photo-dir}") String dir, UploadLimits limits) {
         this.root = Path.of(dir).toAbsolutePath().normalize();
+        this.limits = limits;
     }
 
     /** The day's first entry is {dd}.jpg; more field visits that day are {dd}-2.jpg, {dd}-3.jpg... */
@@ -66,13 +67,11 @@ public class AttendancePhotoStore {
      * The uploaded photo as a clean JPEG (no metadata), or a 400 when it is not a real JPEG/PNG photo.
      * The type is judged by the file's first bytes, not its name or the type the browser claims.
      */
-    public static byte[] clean(byte[] upload) {
+    public byte[] clean(byte[] upload) {
         if (upload == null || upload.length == 0) {
             throw ApiException.badRequest("Take a photo to check in");
         }
-        if (upload.length > MAX_BYTES) {
-            throw ApiException.badRequest("The photo must be 2 MB or smaller");
-        }
+        UploadLimits.check(upload.length, limits.getCheckInPhoto(), "The photo");
         if (!isJpeg(upload) && !isPng(upload)) {
             throw ApiException.badRequest("The photo must be a JPEG or PNG image");
         }

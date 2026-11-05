@@ -38,11 +38,10 @@ import static com.amsidel.backend.service.CatalogService.blank;
 @RequiredArgsConstructor
 public class NewsService {
 
-    /** Pictures up to 3 MB (the portal makes them smaller before uploading). */
-    private static final int MAX_IMAGE = 3 * 1024 * 1024;
 
     private final NewsPostRepository repository;
     private final NewsImageRepository imageRepository;
+    private final UploadLimits limits;
     private final BrandRepository brandRepository;
     private final EmployeeRepository employeeRepository;
     private final MenuAccessService menuAccess;
@@ -150,9 +149,7 @@ public class NewsService {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest("Choose a picture to upload");
         }
-        if (file.getSize() > MAX_IMAGE) {
-            throw ApiException.badRequest("The picture must be 3 MB or smaller");
-        }
+        UploadLimits.check(file.getSize(), limits.getNewsPicture(), "The picture");
         byte[] bytes;
         try {
             bytes = file.getBytes();

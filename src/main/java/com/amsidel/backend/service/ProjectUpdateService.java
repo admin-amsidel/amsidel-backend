@@ -40,13 +40,13 @@ import static com.amsidel.backend.service.CatalogService.blank;
 public class ProjectUpdateService {
 
     private static final int MAX_PHOTOS = 8;
-    private static final int MAX_PHOTO = 5 * 1024 * 1024;
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final DateTimeFormatter WHEN = DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a").withZone(ZoneId.of("Asia/Kolkata"));
 
     private final ProjectRepository projects;
     private final ProjectUpdateRepository updates;
     private final ProjectUpdatePhotoRepository photos;
+    private final UploadLimits limits;
     private final TradeAccess access;
     private final TradeHistoryLog history;
     private final ProjectStageService stages;
@@ -214,9 +214,7 @@ public class ProjectUpdateService {
         }
         int order = u.getPhotos().stream().mapToInt(ProjectUpdatePhoto::getSortOrder).max().orElse(0);
         for (MultipartFile f : files) {
-            if (f.getSize() > MAX_PHOTO) {
-                throw ApiException.badRequest("Each photo must be 5 MB or smaller");
-            }
+            UploadLimits.check(f.getSize(), limits.getProjectPhoto(), "Each photo");
             byte[] bytes;
             try {
                 bytes = f.getBytes();

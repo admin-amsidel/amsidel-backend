@@ -43,6 +43,8 @@ public record EmployeeResponse(
         boolean active,
         boolean mustChangePassword,
         boolean autoApproveReports,
+        /** Documents that may be uploaded for them in a month; null = the company default. */
+        Integer documentUploadLimit,
         boolean locked,
         /** When the account locked after too many wrong PINs (it stays locked until a temporary PIN is set). */
         Instant lockedAt,
@@ -85,6 +87,7 @@ public record EmployeeResponse(
                 e.isActive(),
                 e.isMustChangePassword(),
                 Boolean.TRUE.equals(e.getAutoApproveReports()),
+                e.getDocumentUploadLimit(),
                 e.getLockedAt() != null || (e.getLockedUntil() != null && e.getLockedUntil().isAfter(Instant.now())),
                 e.getLockedAt(),
                 e.getLastLoginAt(),

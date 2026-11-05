@@ -41,6 +41,11 @@ public class EmployeeDocumentController {
         return documents.list(me, null);
     }
 
+    @GetMapping("/api/auth/me/document-quota")
+    public UploadQuota myQuota(@AuthenticationPrincipal AuthUser me) {
+        return documents.quota(me, null);
+    }
+
     @PostMapping(path = "/api/auth/me/documents/{type}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public DocumentView uploadMine(@AuthenticationPrincipal AuthUser me, @PathVariable DocumentType type,
                                    @RequestParam("file") MultipartFile file) {
@@ -70,6 +75,12 @@ public class EmployeeDocumentController {
     @GetMapping("/api/employees/{id}/documents")
     public List<DocumentView> list(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
         return documents.list(me, id);
+    }
+
+    @Checkpoint({Menus.EMP_LIST})
+    @GetMapping("/api/employees/{id}/document-quota")
+    public UploadQuota quota(@AuthenticationPrincipal AuthUser me, @PathVariable Long id) {
+        return documents.quota(me, id);
     }
 
     @Checkpoint({Menus.EMP_LIST})

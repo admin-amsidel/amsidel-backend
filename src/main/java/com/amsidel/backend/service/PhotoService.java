@@ -29,11 +29,11 @@ import java.time.Instant;
 public class PhotoService {
 
     /** The web app shrinks photos to about 100 KB; this only stops oversized or wrong files. */
-    public static final int MAX_BYTES = 2 * 1024 * 1024;
 
     private final EmployeeRepository employeeRepository;
     private final EmployeePhotoRepository photoRepository;
     private final EmployeeService employeeService;
+    private final UploadLimits limits;
 
     @Transactional(readOnly = true)
     public EmployeePhoto myPhoto(AuthUser me) {
@@ -92,13 +92,11 @@ public class PhotoService {
         return EmployeeResponse.from(employee);
     }
 
-    private static byte[] read(MultipartFile file) {
+    private byte[] read(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest("Choose a photo to upload");
         }
-        if (file.getSize() > MAX_BYTES) {
-            throw ApiException.badRequest("Photo must be 2 MB or smaller");
-        }
+        UploadLimits.check(file.getSize(), limits.getProfilePhoto(), "Photo");
         try {
             return file.getBytes();
         } catch (IOException e) {

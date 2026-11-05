@@ -52,7 +52,7 @@ public class BrandController {
         return brandService.saveRazorpay(id, request);
     }
 
-    /** PNG or JPEG, up to 1 MB. */
+    /** PNG or JPEG. */
     @PostMapping("/{id}/logo")
     public Brand uploadLogo(@PathVariable Long id, @RequestParam("file") MultipartFile file) {
         return brandService.saveLogo(id, file);
@@ -63,7 +63,7 @@ public class BrandController {
         return brandService.deleteLogo(id);
     }
 
-    /** The UPI payment QR printed on invoices: PNG or JPEG with a readable upi://pay QR code, up to 2 MB. */
+    /** The UPI payment QR printed on invoices: PNG or JPEG with a readable upi://pay QR code. */
     @PostMapping("/{id}/upi-qr")
     public Brand uploadUpiQr(@PathVariable Long id, @RequestParam("file") MultipartFile file) {
         return brandService.saveUpiQr(id, file);

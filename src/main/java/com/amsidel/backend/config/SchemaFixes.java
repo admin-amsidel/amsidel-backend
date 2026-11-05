@@ -55,7 +55,7 @@ public class SchemaFixes implements ApplicationRunner {
     /** Columns that now hold longer values: table.column and the length (ddl update never widens them). */
     private static final Object[][] WIDER = {{"projects.status", 30}, {"project_updates.status", 30}};
 
-    private static final String[] NOW_OPTIONAL = {"online_payments.gateway_key_id", "online_payments.gateway_order_id", "attendance.photo_path"};
+    private static final String[] NOW_OPTIONAL = {"online_payments.gateway_key_id", "online_payments.gateway_order_id", "attendance.photo_path", "employee_documents.stored_path"};
 
     /** Done once (kept in doc_sequences): news saved as "customers" when that meant the website became Public. */
     private static final String NEWS_PUBLIC_DONE = "SETUP-NEWS-PUBLIC";

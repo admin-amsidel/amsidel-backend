@@ -34,9 +34,8 @@ public class BrandService {
     private final BrandRepository brandRepository;
     private final BrandLogoRepository logoRepository;
     private final BrandUpiQrRepository qrRepository;
+    private final UploadLimits limits;
 
-    /** Logos are small images; 1 MB is plenty. */
-    private static final int MAX_LOGO = 1024 * 1024;
 
     @Transactional(readOnly = true)
     public List<Brand> findAll() {
@@ -118,9 +117,7 @@ public class BrandService {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest("Choose a logo to upload");
         }
-        if (file.getSize() > MAX_LOGO) {
-            throw ApiException.badRequest("The logo must be 1 MB or smaller");
-        }
+        UploadLimits.check(file.getSize(), limits.getBrandLogo(), "The logo");
         byte[] bytes;
         try {
             bytes = file.getBytes();
@@ -152,7 +149,7 @@ public class BrandService {
     // ---- UPI payment QR ----
 
     /**
-     * The brand's UPI QR code for invoices (PNG or JPEG, up to 2 MB). When it can be read, it must be a UPI payment QR,
+     * The brand's UPI QR code for invoices (PNG or JPEG). When it can be read, it must be a UPI payment QR,
      * and the UPI ID it pays to is shown (and becomes the brand's when it has none); upiQrPayee null = could not read it.
      */
     @Transactional
@@ -161,9 +158,7 @@ public class BrandService {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest("Choose the QR code picture to upload");
         }
-        if (file.getSize() > 2 * 1024 * 1024) {
-            throw ApiException.badRequest("The QR code picture must be 2 MB or smaller");
-        }
+        UploadLimits.check(file.getSize(), limits.getUpiQr(), "The QR code picture");
         byte[] bytes;
         try {
             bytes = file.getBytes();
