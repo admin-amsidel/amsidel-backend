@@ -73,6 +73,11 @@ public class Project {
     @JoinColumn(name = "owner_id")
     private Employee owner;
 
+    /** Who brought the project in, if anyone: they may earn a commission when it is settled. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "agent_id")
+    private Agent agent;
+
     /** The people working on it. */
     @ManyToMany
     @JoinTable(name = "project_members", joinColumns = @JoinColumn(name = "project_id"),

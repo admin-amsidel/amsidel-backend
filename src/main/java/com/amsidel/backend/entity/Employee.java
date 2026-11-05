@@ -67,6 +67,11 @@ public class Employee {
     @JoinColumn(name = "reports_to_id")
     private Employee reportsTo;
 
+    /** Approves this person's attendance and work log; null = the person they report to. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approver_id")
+    private Employee approver;
+
     @Column(nullable = false, length = 150)
     private String name;
 
@@ -129,7 +134,7 @@ public class Employee {
     @Column(nullable = false)
     private boolean active = true;
 
-    /** Leave of the people reporting to this person is approved automatically (set by owners and admins); null = no. */
+    /** Auto approve: leave, attendance and work log of the people this person approves for count at once (set by owners and admins); null = no. */
     @Column(name = "auto_approve_reports")
     private Boolean autoApproveReports;
 

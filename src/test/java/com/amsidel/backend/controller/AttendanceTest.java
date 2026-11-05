@@ -334,6 +334,14 @@ class AttendanceTest {
         create("Esha Export", "at.esha", "EMPLOYEE", leadId);
         String esha = signIn("at.esha");
         checkIn(esha, photo("png"), "OFFICE", "10", "76", "15").andExpect(status().isCreated());
+        // waiting for the lead: not present yet
+        postJson(esha, "/api/attendance/check-out", "{}").andExpect(status().isOk());
+        byte[] waiting = mockMvc.perform(get("/api/attendance/export").header("Authorization", auth(xlead))
+                        .param("all", "true").param("from", TODAY.toString()).param("to", TODAY.toString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertThat(XlsxRead.rowWith(waiting, "Summary", "Esha Export").get(5)).isEqualTo("0");
+        assertThat(XlsxRead.rowWith(waiting, "Daily", "Esha Export")).contains("Waiting for approval");
+        approveAll();
 
         // the lead: themselves and their team, the last week
         byte[] file = mockMvc.perform(get("/api/attendance/export").header("Authorization", auth(xlead))
@@ -349,7 +357,7 @@ class AttendanceTest {
         String today = TODAY.format(java.time.format.DateTimeFormatter.ofPattern("dd-MMM-yyyy", java.util.Locale.ENGLISH));
         // on a Sunday or a holiday the status also says so ("… · weekly off")
         assertThat(XlsxRead.rowWith(file, "Daily", "Esha Export", today)).contains("Office")
-                .anyMatch(cell -> cell.startsWith("Present (not checked out)"));
+                .anyMatch(cell -> cell.startsWith("Present"));
         assertThat(XlsxRead.rows(file, "Daily").stream().filter(r -> r.contains("Esha Export")).count()).isEqualTo(7);
         assertThat(XlsxRead.rowWith(file, "Entries", "Esha Export", today)).contains("Office", "10.00000, 76.00000");
 
@@ -418,6 +426,16 @@ class AttendanceTest {
         out.write(exif);
         out.write(jpeg, 2, jpeg.length - 2);
         return new MockMultipartFile("photo", "capture.jpg", "image/jpeg", out.toByteArray());
+    }
+
+    /** The owner approves everything waiting, as an approver would. */
+    private void approveAll() throws Exception {
+        String queue = mockMvc.perform(get("/api/work-approvals").header("Authorization", auth(owner))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        List<Integer> attendance = JsonPath.read(queue, "$.attendance[?(@.decidable == true)].id");
+        List<Integer> logs = JsonPath.read(queue, "$.workLogs[*].id");
+        mockMvc.perform(post("/api/work-approvals/decide").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"attendanceIds\":%s,\"workLogIds\":%s,\"approve\":true}".formatted(attendance, logs)))
+                .andExpect(status().isOk());
     }
 
     private String create(String name, String userId, String role, String reportsTo) throws Exception {

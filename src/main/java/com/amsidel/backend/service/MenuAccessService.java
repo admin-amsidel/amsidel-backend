@@ -87,6 +87,9 @@ public class MenuAccessService {
             // whoever has people reporting to them sets their goals and rates them, whatever their user type
             codes.addAll(Menus.FOR_TEAM_LEADS);
         }
+        if (me.approvesWork()) {
+            codes.add(Menus.WORK_APPROVALS);
+        }
         return codes;
     }
 

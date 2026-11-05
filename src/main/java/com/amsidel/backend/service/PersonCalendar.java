@@ -67,6 +67,15 @@ final class PersonCalendar {
         return !workingDay(d) || wholeDayLeave(d);
     }
 
+    /** The time expected on a day: nothing when closed or on a whole day's leave, half on a half day's. */
+    long requiredMinutes(LocalDate d) {
+        if (dailyHours == null || off(d)) {
+            return 0;
+        }
+        long minutes = dailyHours.multiply(BigDecimal.valueOf(60)).longValue();
+        return approvedLeave(d) != null ? minutes / 2 : minutes;
+    }
+
     /** The time expected today: half on a half day's leave. */
     long targetMinutes() {
         if (dailyHours == null) {

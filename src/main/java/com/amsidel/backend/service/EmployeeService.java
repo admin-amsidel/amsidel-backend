@@ -219,6 +219,7 @@ public class EmployeeService {
         employee.setBrand(brand);
         employee.setDesignation(resolveDesignation(request.getDesignationId(), employee));
         employee.setReportsTo(resolveReportsTo(request.getReportsToId(), employee));
+        employee.setApprover(resolveApprover(request.getApproverId(), employee));
         employee.setName(request.getName().trim());
         employee.setAddress(trimToNull(request.getAddress()));
         employee.setPhone(Phones.normalize(request.getPhone(), "Phone"));
@@ -265,6 +266,18 @@ public class EmployeeService {
                     + "; choose one of " + (employee.getBrand() == null ? "the group-wide designations" : employee.getBrand().getName() + "'s"));
         }
         return designation;
+    }
+
+    /** The approver must exist and be someone else. */
+    private Employee resolveApprover(Long approverId, Employee employee) {
+        if (approverId == null) {
+            return null;
+        }
+        if (approverId.equals(employee.getId())) {
+            throw ApiException.badRequest("Someone cannot approve their own attendance and work log");
+        }
+        return employeeRepository.findWithBrandById(approverId)
+                .orElseThrow(() -> ApiException.badRequest("Approver not found: " + approverId));
     }
 
     /** The superior must exist, and the chain above them must not lead back to this employee. */

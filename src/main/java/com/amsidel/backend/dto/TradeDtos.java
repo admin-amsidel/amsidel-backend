@@ -73,6 +73,9 @@ public final class TradeDtos {
 
         private Long ownerId;
 
+        /** Who brought the project in; optional. */
+        private Long agentId;
+
         @Size(max = 50, message = "At most 50 people on a project")
         private List<Long> memberIds;
 
@@ -143,6 +146,19 @@ public final class TradeDtos {
         private String note;
     }
 
+    /** Closing a project. With an agent on it, what they earned has to be said: 0 means nothing. */
+    @Data
+    public static class SettleBody {
+        @Size(max = 1000)
+        private String text;
+
+        @DecimalMin(value = "0", message = "The commission cannot be negative")
+        private BigDecimal commissionAmount;
+
+        @Size(max = 500, message = "The remarks can be at most 500 characters")
+        private String commissionRemarks;
+    }
+
     @Data
     public static class CommentBody {
         @NotBlank(message = "Write the comment")
@@ -173,7 +189,11 @@ public final class TradeDtos {
                               List<PersonRef> members, LocalDate startDate, LocalDate endDate, String remarks, ProjectMoney money,
                               List<SalesRow> bills, List<PaymentView> payments, List<TaskView> tasks, List<HistoryView> history,
                               String createdByName, Instant createdAt, String updatedByName, Instant updatedAt, Instant completedAt,
-                              boolean editable, boolean admin) {
+                              boolean editable, boolean admin, AgentRef agent) {
+    }
+
+    /** Who brought the project in. */
+    public record AgentRef(Long id, String code, String name, String phone, boolean commissionPaid) {
     }
 
     // ---- product types ----

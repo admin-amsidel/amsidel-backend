@@ -95,6 +95,7 @@ class WorkLogTest {
         task(owner, "MSC-301", "Export check", "OPEN", traineeId).andExpect(status().isCreated());
         LocalDate day = TODAY.minusDays(40);
         log(trainee, day, "MSC-301", "4", "Glass order follow-up").andExpect(status().isCreated());
+        approveAll();
 
         byte[] file = mockMvc.perform(get("/api/worklog/export").header("Authorization", auth(lead))
                         .param("employeeId", traineeId).param("from", day.toString()).param("to", day.plusDays(6).toString()))
@@ -239,6 +240,7 @@ class WorkLogTest {
         log(other, day, code, "2", "Not mine").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("Task " + code + " is not assigned to you"));
         log(trainee, day, "NO-SUCH-TASK", "1", "Unknown").andExpect(status().isBadRequest());
+        approveAll();
 
         mockMvc.perform(put("/api/tasks/" + id).header("Authorization", auth(owner))
                         .contentType(MediaType.APPLICATION_JSON).content(taskJson(code, "Kumar residence windows", "CLOSED", traineeId)))
@@ -270,6 +272,7 @@ class WorkLogTest {
                 .andExpect(status().isCreated())), "$.id"));
         log(trainee, TODAY.minusDays(21), "MSC-401", "2", "Measured the ground floor").andExpect(status().isCreated());
         log(trainee, TODAY.minusDays(20), "MSC-401", "3.5", "Measured the first floor").andExpect(status().isCreated());
+        approveAll();
 
         mockMvc.perform(get("/api/tasks/" + id + "/logs").header("Authorization", auth(owner)))
                 .andExpect(status().isOk())
@@ -350,6 +353,16 @@ class WorkLogTest {
         return mockMvc.perform(get("/api/worklog").header("Authorization", auth(token))
                 .param("from", from.toString()).param("to", to.toString())
                 .param("employeeId", employeeId == null ? "" : employeeId));
+    }
+
+    /** The owner approves everything waiting, as an approver would. */
+    private void approveAll() throws Exception {
+        String queue = mockMvc.perform(get("/api/work-approvals").header("Authorization", auth(owner))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        List<Integer> attendance = JsonPath.read(queue, "$.attendance[?(@.decidable == true)].id");
+        List<Integer> logs = JsonPath.read(queue, "$.workLogs[*].id");
+        mockMvc.perform(post("/api/work-approvals/decide").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"attendanceIds\":%s,\"workLogIds\":%s,\"approve\":true}".formatted(attendance, logs)))
+                .andExpect(status().isOk());
     }
 
     private String create(String name, String userId, String role, String designation, String reportsTo) throws Exception {

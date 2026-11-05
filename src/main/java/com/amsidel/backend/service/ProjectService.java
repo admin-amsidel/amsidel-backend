@@ -42,6 +42,7 @@ public class ProjectService {
     private final TradeAccess access;
     private final TradeHistoryLog history;
     private final ProjectStageService stages;
+    private final AgentService agents;
 
     // ---- reading ----
 
@@ -107,7 +108,12 @@ public class ProjectService {
         String ownerBefore = p.getOwner() == null ? null : p.getOwner().getName();
         String teamBefore = team(p);
         String statusBefore = p.getStatus();
+        Agent agentBefore = p.getAgent();
         fill(me, p, body);
+        if (!Objects.equals(agentBefore == null ? null : agentBefore.getId(), p.getAgent() == null ? null : p.getAgent().getId())) {
+            agents.agentChanged(p);
+            changes.add("Agent", agentBefore == null ? null : agentBefore.getName(), p.getAgent() == null ? null : p.getAgent().getName());
+        }
         changes.add("Customer", customerBefore, p.getCustomer().getName())
                 .add("Owner", ownerBefore, p.getOwner() == null ? null : p.getOwner().getName())
                 .add("Team", teamBefore, team(p)).add("Status", stages.name(statusBefore), stages.name(p.getStatus()));
@@ -155,7 +161,8 @@ public class ProjectService {
 
     /** Closed with the money done: locked for everyone but owners and admins (who may settle with money still due). */
     @Transactional
-    public ProjectView settle(AuthUser me, Long id, String note) {
+    public ProjectView settle(AuthUser me, Long id, SettleBody body) {
+        String note = body.getText();
         canWrite(me);
         Project p = full(me, id);
         if (p.isSettled()) {
@@ -173,6 +180,7 @@ public class ProjectService {
         p.setSettledBy(access.me(me));
         p.setUpdatedBy(access.me(me));
         projectRepository.saveAndFlush(p);
+        agents.recordAtSettlement(me, p, body.getCommissionAmount(), body.getCommissionRemarks());
         log(me, p, "SETTLED", "Paid " + PayslipPdf.rupees(m.paid()) + " of " + PayslipPdf.rupees(m.toPay())
                 + (m.due().signum() > 0 ? "; " + PayslipPdf.rupees(m.due()) + " left unpaid" : "") + (blank(note) == null ? "" : ": " + note.strip()));
         return view(me, p);
@@ -199,6 +207,7 @@ public class ProjectService {
     public void delete(AuthUser me, Long id) {
         access.requireAdmin(me, "Only an admin or owner can delete a project");
         Project p = full(me, id);
+        agents.projectDeleted(p);
         List<SalesDoc> bills = salesRepository.forProject(id);
         bills.forEach(d -> d.setProject(null));
         taskRepository.deleteAll(taskRepository.forProject(id));
@@ -311,6 +320,7 @@ public class ProjectService {
         p.setName(body.getName().strip());
         p.setDescription(blank(body.getDescription()));
         p.setOwner(person(p, body.getOwnerId()));
+        p.setAgent(agents.forProject(p, body.getAgentId()));
         Set<Employee> team = new LinkedHashSet<>();
         for (Long memberId : body.getMemberIds() == null ? List.<Long>of() : body.getMemberIds()) {
             team.add(person(p, memberId));
@@ -491,6 +501,7 @@ public class ProjectService {
                 p.getRemarks(), money(p, docs), docs.stream().map(SalesService::row).toList(), pays, tasks, history.ofProject(p.getId()),
                 p.getCreatedBy() == null ? null : p.getCreatedBy().getName(), p.getCreatedAt(),
                 p.getUpdatedBy() == null ? null : p.getUpdatedBy().getName(), p.getUpdatedAt(), p.getCompletedAt(),
-                !p.isSettled() || access.admin(me), access.admin(me));
+                !p.isSettled() || access.admin(me), access.admin(me),
+                p.getAgent() == null ? null : new AgentRef(p.getAgent().getId(), p.getAgent().getCode(), p.getAgent().getName(), p.getAgent().getPhone(), agents.paid(p)));
     }
 }

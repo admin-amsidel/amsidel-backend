@@ -399,6 +399,7 @@ class PerformanceTest {
         json(post("/api/worklog/entries"), emp[1], """
                 {"workDate":"%s","taskId":"%s","hours":1,"description":"Fixed frames"}""".formatted(TODAY.minusDays(1), code))
                 .andExpect(status().isCreated());
+        approveAll();
 
         // one Task worklog goal per person: its sub-tasks are their tasks, with the hours they logged
         String body = """
@@ -512,6 +513,16 @@ class PerformanceTest {
     private ResultActions json(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request, String token,
                                String body) throws Exception {
         return mockMvc.perform(request.header("Authorization", auth(token)).contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    /** The owner approves everything waiting, as an approver would. */
+    private void approveAll() throws Exception {
+        String queue = mockMvc.perform(get("/api/work-approvals").header("Authorization", auth(owner))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        List<Integer> attendance = JsonPath.read(queue, "$.attendance[?(@.decidable == true)].id");
+        List<Integer> logs = JsonPath.read(queue, "$.workLogs[*].id");
+        mockMvc.perform(post("/api/work-approvals/decide").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"attendanceIds\":%s,\"workLogIds\":%s,\"approve\":true}".formatted(attendance, logs)))
+                .andExpect(status().isOk());
     }
 
     private String create(String name, String userId, String role, String reportsTo) throws Exception {

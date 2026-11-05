@@ -277,7 +277,8 @@ public class TeamDashboardService {
         LocalDate last = YearMonth.from(today).atEndOfMonth();
 
         Map<Long, Map<LocalDate, BigDecimal>> hoursOf = showHours ? hours(ids, from, to) : Map.of();
-        Map<Long, Map<LocalDate, List<Attendance>>> daysOf = showAttendance ? attendance(ids, from, to) : Map.of();
+        Set<Long> waitingToday = new HashSet<>();
+        Map<Long, Map<LocalDate, List<Attendance>>> daysOf = showAttendance ? attendance(ids, from, to, today, waitingToday) : Map.of();
         Map<Long, List<LeaveSpan>> leaveOf = showAttendance ? approvedLeave(ids, from, to) : Map.of();
         Map<Long, List<LeaveBalance>> balancesOf = showLeave ? leave.balancesOfTeam(team) : Map.of();
         Map<Long, int[]> tasksOf = new HashMap<>();
@@ -315,7 +316,7 @@ public class TeamDashboardService {
                 checkedIn = days.containsKey(today);
                 expected = cal.workingDay(today) && !cal.wholeDayLeave(today);
                 minutes = days.getOrDefault(today, List.of()).stream().mapToLong(a -> minutesOf(a, now)).sum();
-                status = checkedIn ? "CHECKED_IN" : cal.wholeDayLeave(today) ? "ON_LEAVE" : expected ? "NOT_IN" : "OFF";
+                status = checkedIn ? "CHECKED_IN" : waitingToday.contains(id) ? "WAITING" : cal.wholeDayLeave(today) ? "ON_LEAVE" : expected ? "NOT_IN" : "OFF";
                 week = cal.period(monday, sunday, days.keySet());
                 month = cal.period(first, last, days.keySet());
             }
@@ -359,10 +360,17 @@ public class TeamDashboardService {
         return out;
     }
 
-    private Map<Long, Map<LocalDate, List<Attendance>>> attendance(List<Long> ids, LocalDate from, LocalDate to) {
+    /** Approved entries only; waitingToday gets the people whose check-in today is with their approver. */
+    private Map<Long, Map<LocalDate, List<Attendance>>> attendance(List<Long> ids, LocalDate from, LocalDate to, LocalDate today, Set<Long> waitingToday) {
         Map<Long, Map<LocalDate, List<Attendance>>> out = new HashMap<>();
         if (!ids.isEmpty()) {
             for (Attendance a : attendances.ofPeople(ids, from, to)) {
+                if (!a.counts()) {
+                    if (a.getApproval() == com.amsidel.backend.entity.ApprovalStatus.PENDING && a.getWorkDate().equals(today)) {
+                        waitingToday.add(a.getEmployee().getId());
+                    }
+                    continue;
+                }
                 out.computeIfAbsent(a.getEmployee().getId(), k -> new HashMap<>()).computeIfAbsent(a.getWorkDate(), k -> new ArrayList<>()).add(a);
             }
         }

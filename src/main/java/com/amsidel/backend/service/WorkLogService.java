@@ -8,15 +8,19 @@ import com.amsidel.backend.dto.*;
 import com.amsidel.backend.entity.*;
 import com.amsidel.backend.exception.ApiException;
 import com.amsidel.backend.exception.ResourceNotFoundException;
+import com.amsidel.backend.repository.AttendanceRepository;
 import com.amsidel.backend.repository.EmployeeRepository;
 import com.amsidel.backend.repository.LeaveRequestRepository;
 import com.amsidel.backend.repository.WorkLogRepository;
 import com.amsidel.backend.security.AuthUser;
+import com.amsidel.backend.security.Menus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -41,12 +45,17 @@ public class WorkLogService {
     private final TaskService taskService;
     private final TeamAccess access;
     private final OfficeHolidays officeHolidays;
+    private final WorkApprovalService approvals;
+    private final AttendanceRepository attendances;
+    private final MenuAccessService menuAccess;
+    private final Set<java.time.DayOfWeek> weeklyOffs;
     private final ZoneId zone;
 
     public WorkLogService(WorkLogRepository logRepository, WorkRuleService ruleService,
                           EmployeeRepository employeeRepository, LeaveRequestRepository leaveRepository,
-                          TaskService taskService, TeamAccess access, OfficeHolidays officeHolidays,
-                          @Value("${app.leave.zone}") ZoneId zone) {
+                          TaskService taskService, TeamAccess access, OfficeHolidays officeHolidays, WorkApprovalService approvals,
+                          AttendanceRepository attendances, MenuAccessService menuAccess,
+                          @Value("${app.leave.weekly-offs}") Set<java.time.DayOfWeek> weeklyOffs, @Value("${app.leave.zone}") ZoneId zone) {
         this.logRepository = logRepository;
         this.ruleService = ruleService;
         this.employeeRepository = employeeRepository;
@@ -54,6 +63,10 @@ public class WorkLogService {
         this.taskService = taskService;
         this.access = access;
         this.officeHolidays = officeHolidays;
+        this.approvals = approvals;
+        this.attendances = attendances;
+        this.menuAccess = menuAccess;
+        this.weeklyOffs = weeklyOffs;
         this.zone = zone;
     }
 
@@ -84,7 +97,72 @@ public class WorkLogService {
                 .map(h -> new WorkLogMonth.Holiday(h.getKey(), h.getValue()))
                 .toList();
         return new WorkLogMonth(person.getId(), person.getName(), person.getEmpNumber(), person.getJoinedDate(), from, to, today(),
-                target(person), person.getId().equals(me.id()), entries, leave, holidays);
+                target(person), person.getId().equals(me.id()), entries, leave, holidays, dayAttendance(person, from, to),
+                menuAccess.givenItself(com.amsidel.backend.security.AuthUser.of(person), Menus.ATT_HOURS_CHECK));
+    }
+
+    /** Checked-in time day by day; an entry still open today counts up to now, and a rejected one not at all. */
+    private List<WorkLogMonth.DayAttendance> dayAttendance(Employee person, LocalDate from, LocalDate to) {
+        LocalDate today = today();
+        Instant now = Instant.now();
+        Map<LocalDate, long[]> days = new TreeMap<>();
+        for (Attendance a : attendances.forEmployee(person.getId(), from, to)) {
+            if (a.getApproval() == ApprovalStatus.REJECTED) {
+                continue;
+            }
+            long[] d = days.computeIfAbsent(a.getWorkDate(), k -> new long[4]);
+            d[3] += a.getApproval() == ApprovalStatus.PENDING ? 1 : 0;
+            boolean open = a.getCheckOutAt() == null;
+            if (open && !a.getWorkDate().equals(today)) {
+                continue;
+            }
+            d[a.counts() ? 0 : 1] += Duration.between(a.getCheckInAt(), open ? now : a.getCheckOutAt()).toMinutes();
+            d[2] += open ? 1 : 0;
+        }
+        return days.entrySet().stream().map(e -> new WorkLogMonth.DayAttendance(e.getKey(), e.getValue()[0], e.getValue()[1], e.getValue()[2] > 0, e.getValue()[3] > 0)).toList();
+    }
+
+    /** Checked-in time against the work hour rule (see AttendanceShortfall); the caller has the page's tick. */
+    @Transactional(readOnly = true)
+    public AttendanceShortfall shortfall(AuthUser me, Long employeeId, LocalDate from, LocalDate to) {
+        if (to.isBefore(from) || ChronoUnit.DAYS.between(from, to) > MAX_RANGE_DAYS) {
+            throw ApiException.badRequest("Ask for at most " + MAX_RANGE_DAYS + " days at a time");
+        }
+        Employee person = employee(employeeId == null ? me.id() : employeeId);
+        if (!canView(me, person)) {
+            throw ApiException.forbidden("You can only see your own attendance and that of people below you");
+        }
+        WorkLogMonth m = monthOf(me, person, from, to);
+        LocalDate today = today();
+        Map<LocalDate, String> holidays = new HashMap<>();
+        m.holidays().forEach(h -> holidays.put(h.date(), h.name()));
+        PersonCalendar cal = new PersonCalendar(today, m.joinedDate(), m.target().dailyMinHours(), m.leave(), holidays, weeklyOffs);
+        Map<LocalDate, WorkLogMonth.DayAttendance> byDay = new HashMap<>();
+        m.attendance().forEach(a -> byDay.put(a.date(), a));
+        List<AttendanceShortfall.Row> rows = new ArrayList<>();
+        long required = 0;
+        long worked = 0;
+        long waiting = 0;
+        long shortBy = 0;
+        for (LocalDate d = from; !d.isAfter(to) && !d.isAfter(today); d = d.plusDays(1)) {
+            long need = cal.requiredMinutes(d);
+            WorkLogMonth.DayAttendance a = byDay.get(d);
+            long done = a == null ? 0 : a.minutes();
+            long wait = a == null ? 0 : a.waitingMinutes();
+            boolean isToday = d.equals(today);
+            if (need == 0 && done + wait == 0) {
+                continue;
+            }
+            long missing = isToday ? 0 : Math.max(0, need - done - wait);
+            rows.add(new AttendanceShortfall.Row(d, isToday, need, done, wait, missing));
+            if (!isToday) {
+                required += need;
+                worked += done;
+                waiting += wait;
+                shortBy += missing;
+            }
+        }
+        return new AttendanceShortfall(m.target().dailyMinHours(), m.target().source(), required, worked, waiting, shortBy, rows);
     }
 
     /** People whose work log I may look at (not me): everyone below me, plus my scope as owner or admin. */
@@ -106,6 +184,7 @@ public class WorkLogService {
         // every entry is against an open task assigned to this person
         log.setTask(taskService.loggable(person.getId(), request.getTaskId()));
         apply(log, request);
+        log.setApproval(approvals.startingStatus(person));
         return WorkLogEntry.from(logRepository.save(log));
     }
 
@@ -123,6 +202,11 @@ public class WorkLogService {
             log.setTask(taskService.loggable(log.getEmployee().getId(), request.getTaskId()));
         }
         apply(log, request);
+        // a change goes back to the approver, whatever was decided before
+        log.setApproval(approvals.startingStatus(log.getEmployee()));
+        log.setDecidedBy(null);
+        log.setDecidedAt(null);
+        log.setDecisionNote(null);
         return WorkLogEntry.from(log);
     }
 

@@ -29,6 +29,11 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
     @Query("select a from Attendance a where a.employee.id in :ids and a.workDate between :from and :to")
     List<Attendance> ofPeople(@Param("ids") Collection<Long> ids, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
+    /** Entries waiting for a decision, with what the queue shows. */
+    @Query("select a from Attendance a join fetch a.employee e left join fetch e.brand left join fetch e.designation left join fetch e.reportsTo"
+            + " left join fetch e.approver where a.approval = :status order by a.workDate, a.id")
+    List<Attendance> waiting(@Param("status") com.amsidel.backend.entity.ApprovalStatus status);
+
     @Query("select a from Attendance a where a.workDate = :day and a.employee.id in :employeeIds order by a.entryNo")
     List<Attendance> onDay(@Param("day") LocalDate day, @Param("employeeIds") Collection<Long> employeeIds);
 

@@ -55,6 +55,26 @@ public class WorkLog {
     @Column(nullable = false, length = 1000)
     private String description;
 
+    /** With the person's approver; null = from before approvals, which counts as approved. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval", length = 10)
+    private ApprovalStatus approval;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "decided_by_id")
+    private Employee decidedBy;
+
+    @Column(name = "decided_at")
+    private java.time.Instant decidedAt;
+
+    @Column(name = "decision_note", length = 500)
+    private String decisionNote;
+
+    /** Only approved time counts. */
+    public boolean counts() {
+        return approval == null || approval == ApprovalStatus.APPROVED;
+    }
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;

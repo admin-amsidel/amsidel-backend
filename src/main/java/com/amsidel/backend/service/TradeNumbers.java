@@ -41,6 +41,12 @@ public class TradeNumbers {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
+    public String agent(Brand brand) {
+        String prefix = brand.getCode().toUpperCase(Locale.ROOT) + "AGT";
+        return prefix + "-" + String.format("%04d", take(prefix));
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
     public String customer(Brand brand) {
         String prefix = brand.getCode().toUpperCase(Locale.ROOT) + "C";
         return prefix + "-" + String.format("%04d", take(prefix));

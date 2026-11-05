@@ -37,6 +37,10 @@ public interface SalesDocRepository extends JpaRepository<SalesDoc, Long> {
     @Query("select d from SalesDoc d join fetch d.customer join fetch d.brand where d.project.id = :projectId order by d.docDate, d.id")
     List<SalesDoc> forProject(@Param("projectId") Long projectId);
 
+    /** The bills of several projects at once, for lists. */
+    @Query("select d from SalesDoc d join fetch d.project where d.project.id in :projectIds")
+    List<SalesDoc> forProjects(@Param("projectIds") java.util.Collection<Long> projectIds);
+
     @Query("select d from SalesDoc d where d.quotation.id = :quotationId and d.status <> 'CANCELLED'")
     List<SalesDoc> fromQuotation(@Param("quotationId") Long quotationId);
 

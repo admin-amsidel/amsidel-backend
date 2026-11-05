@@ -13,6 +13,7 @@ import com.amsidel.backend.dto.MeetingDtos;
 import com.amsidel.backend.dto.PayslipDtos.MyPay;
 import com.amsidel.backend.dto.WorkLogMonth;
 import com.amsidel.backend.dto.WorkTarget;
+import com.amsidel.backend.entity.ApprovalStatus;
 import com.amsidel.backend.entity.Role;
 import com.amsidel.backend.entity.TaskStatus;
 import com.amsidel.backend.entity.WorkTask;
@@ -149,7 +150,7 @@ public class DashboardService {
     }
 
     private Hours hours(LocalDate today, WorkLogMonth month, PersonCalendar cal) {
-        Map<LocalDate, BigDecimal> perDay = month.entries().stream()
+        Map<LocalDate, BigDecimal> perDay = month.entries().stream().filter(e -> e.approval() == ApprovalStatus.APPROVED)
                 .collect(Collectors.toMap(e -> e.workDate(), e -> e.hours(), BigDecimal::add));
         List<DayHours> days = new ArrayList<>();
         BigDecimal week = BigDecimal.ZERO;
@@ -170,16 +171,20 @@ public class DashboardService {
         boolean working = cal.workingDay(today) && !cal.wholeDayLeave(today);
         long target = working ? cal.targetMinutes() : 0;
         // a check-in on a day with no hours expected still shows as attended
+        boolean present = now != null && now.counted();
         Integer percent = target > 0 ? (int) Math.min(100, minutes * 100 / target)
-                : now != null ? Integer.valueOf(100) : working ? Integer.valueOf(0) : null;
+                : present ? Integer.valueOf(100) : working ? Integer.valueOf(0) : null;
+        // only days with approved time count as attended
+        Set<LocalDate> attended = days.values().stream().filter(AttendanceDaySummary::counted).map(AttendanceDaySummary::workDate).collect(Collectors.toSet());
+        boolean waiting = now != null && now.entries().stream().anyMatch(e -> e.approval() == ApprovalStatus.PENDING);
         return new Attendance(now != null, working, now == null ? null : now.firstIn(), minutes, target, percent,
-                cal.period(PersonCalendar.monday(today), PersonCalendar.sunday(today), days.keySet()),
-                cal.period(YearMonth.from(today).atDay(1), YearMonth.from(today).atEndOfMonth(), days.keySet()));
+                cal.period(PersonCalendar.monday(today), PersonCalendar.sunday(today), attended),
+                cal.period(YearMonth.from(today).atDay(1), YearMonth.from(today).atEndOfMonth(), attended), waiting);
     }
 
     /** The closed entries, and the one still open up to now. */
     private static long minutesSoFar(AttendanceDaySummary day) {
-        long open = day.entries().stream().filter(e -> e.checkOut() == null)
+        long open = day.entries().stream().filter(e -> e.checkOut() == null && e.approval() == ApprovalStatus.APPROVED)
                 .mapToLong((AttendanceRecord e) -> Duration.between(e.checkIn().at(), Instant.now()).toMinutes()).sum();
         return day.workedMinutes() + open;
     }

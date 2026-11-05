@@ -35,7 +35,7 @@ public class EmployeeTokenConverter implements Converter<Jwt, AbstractAuthentica
     public AbstractAuthenticationToken convert(Jwt jwt) {
         Long id = Long.valueOf(jwt.getSubject());
         SignedInCache.Entry employee = cache.get(id, () -> employeeRepository.findWithBrandById(id),
-                        employeeRepository::existsByReportsTo_IdAndActiveTrue)
+                        employeeRepository::existsByReportsTo_IdAndActiveTrue, employeeRepository::existsByApprover_IdAndActiveTrue)
                 .filter(SignedInCache.Entry::active)
                 .orElseThrow(() -> new InvalidBearerTokenException("Account is not active"));
 

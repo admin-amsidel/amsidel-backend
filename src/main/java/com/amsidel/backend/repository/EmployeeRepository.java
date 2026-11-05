@@ -25,7 +25,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     /** Everyone, or one brand's people when brandId is given. */
     @Query("select e from Employee e left join fetch e.brand b left join fetch e.designation"
-            + " left join fetch e.reportsTo where (:brandId is null or b.id = :brandId) order by e.name")
+            + " left join fetch e.reportsTo left join fetch e.approver where (:brandId is null or b.id = :brandId) order by e.name")
     List<Employee> search(@Param("brandId") Long brandId);
 
     /** Active people who report directly to this person, most senior first. */
@@ -80,6 +80,9 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     /** Does anyone active report to this person? */
     boolean existsByReportsTo_IdAndActiveTrue(Long employeeId);
+
+    /** Is this person anyone's approver? */
+    boolean existsByApprover_IdAndActiveTrue(Long employeeId);
 
     /** Active people with a date of birth (for the birthdays on the dashboard). */
     @Query("select e from Employee e left join fetch e.designation left join fetch e.brand where e.active = true and e.dob is not null")

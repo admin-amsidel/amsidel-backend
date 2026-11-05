@@ -35,7 +35,10 @@ public record AttendanceRecord(
         Long workedMinutes,
         Device device,
         /** A photo was taken (always for a field visit; optional at the office or at home). */
-        boolean hasPhoto
+        boolean hasPhoto,
+        /** With the approver; only approved time counts. */
+        com.amsidel.backend.entity.ApprovalStatus approval,
+        String decisionNote
 ) {
 
     /** Where and when; flags are LOCATION_MISSING and LOW_ACCURACY. */
@@ -59,7 +62,8 @@ public record AttendanceRecord(
         Long worked = a.getCheckOutAt() == null ? null : Duration.between(a.getCheckInAt(), a.getCheckOutAt()).toMinutes();
         return new AttendanceRecord(a.getId(), e.getId(), e.getName(), e.getEmpNumber(), a.getWorkDate(), a.getEntryNo(),
                 a.getWorkMode(), a.getPlace(), in, out, a.getCheckOutNote(), worked,
-                new Device(a.getDevicePlatform(), a.getDeviceOs(), a.getAppVersion()), a.getPhotoPath() != null);
+                new Device(a.getDevicePlatform(), a.getDeviceOs(), a.getAppVersion()), a.getPhotoPath() != null,
+                a.getApproval() == null ? com.amsidel.backend.entity.ApprovalStatus.APPROVED : a.getApproval(), a.getDecisionNote());
     }
 
     private static List<String> flags(boolean missing, boolean low) {

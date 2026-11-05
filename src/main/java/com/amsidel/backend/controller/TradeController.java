@@ -52,6 +52,7 @@ public class TradeController {
     private final TradePaymentRepository paymentRepository;
     private final TradeHistoryLog historyLog;
     private final ProjectService projects;
+    private final com.amsidel.backend.service.AgentService agents;
     private final ProjectStageService stages;
     @org.springframework.beans.factory.annotation.Value("${app.leave.zone}")
     private java.time.ZoneId zone;
@@ -366,8 +367,14 @@ public class TradeController {
     }
 
     @PostMapping("/projects/{id}/settle")
-    public ProjectView settleProject(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @RequestBody(required = false) CommentBody body) {
-        return projects.settle(me, id, body == null ? null : body.getText());
+    public ProjectView settleProject(@AuthenticationPrincipal AuthUser me, @PathVariable Long id, @Valid @RequestBody(required = false) SettleBody body) {
+        return projects.settle(me, id, body == null ? new SettleBody() : body);
+    }
+
+    /** Who can be named on a project: no money and no UPI ID, as the project's people need only the name. */
+    @GetMapping("/agents")
+    public List<com.amsidel.backend.dto.AgentDtos.Option> agentOptions(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Long brandId) {
+        return agents.options(me, brandId);
     }
 
     @PostMapping("/projects/{id}/reopen")

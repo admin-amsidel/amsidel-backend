@@ -120,4 +120,24 @@ public class Attendance {
     /** Written when closing: how the meeting or the day went. */
     @Column(name = "check_out_note", length = 500)
     private String checkOutNote;
+
+    /** With the person's approver; null = from before approvals, which counts as approved. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval", length = 10)
+    private ApprovalStatus approval;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "decided_by_id")
+    private Employee decidedBy;
+
+    @Column(name = "decided_at")
+    private java.time.Instant decidedAt;
+
+    @Column(name = "decision_note", length = 500)
+    private String decisionNote;
+
+    /** Only approved time counts. */
+    public boolean counts() {
+        return approval == null || approval == ApprovalStatus.APPROVED;
+    }
 }

@@ -26,6 +26,13 @@ public final class Menus {
     public static final String WORKLOG_MY = "WORKLOG_MY";
     public static final String TASKS = "TASKS";
     public static final String WORK_RULES = "WORK_RULES";
+    /** The approver's queue of attendance and work log entries. Approvers and people with someone reporting to them get it anyway. */
+    public static final String WORK_APPROVALS = "WORK_APPROVALS";
+    /**
+     * Not a page: for the person given it, the work log calendar checks attendance against logged hours, and the leave flags
+     * follow attendance. Its own tick, and it counts only when given itself (not through "*"): it changes how days are judged.
+     */
+    public static final String ATT_HOURS_CHECK = "ATT_HOURS_CHECK";
     public static final String EMP_LIST = "EMP_LIST";
     public static final String ORG_CHART = "ORG_CHART";
     public static final String DESIGNATIONS = "DESIGNATIONS";
@@ -116,6 +123,16 @@ public final class Menus {
     public static final String MAIL_PICTURE = "MAIL_PICTURE";
     /** Not a page: attachments (pictures, PDF, Word) on a staff mail (Attach files). */
     public static final String MAIL_ATTACH = "MAIL_ATTACH";
+    /** The agents who bring in projects, in the customer portal: the list, read only. */
+    public static final String AGENTS = "AGENTS";
+    /** What agents have earned: every line, by project, date, month and year. Its own tick: it is money. */
+    public static final String AGENT_COMMISSIONS = "AGENT_COMMISSIONS";
+    /** Not a page: adding agents. */
+    public static final String AGENT_ADD = "AGENT_ADD";
+    /** Not a page: changing agents. */
+    public static final String AGENT_EDIT = "AGENT_EDIT";
+    /** Not a page: moving a commission between queued and settled, with the payment's details. */
+    public static final String AGENT_COMMISSION_STATUS = "AGENT_COMMISSION_STATUS";
     /** The Email menu of the customer portal. */
     public static final String CUST_EMAIL = "CUST_EMAIL";
     /** Customer &amp; supplier email limits per brand: people in one send, emails a day, the office copy. */
@@ -139,7 +156,8 @@ public final class Menus {
             CUST_ADD, CUST_EDIT, CUST_DELETE, MAIL_EMAIL, MAIL_WHATSAPP, MAIL_ALL, MAIL_PICK, MAIL_PICTURE, MAIL_ATTACH, MAIL_CONFIG,
             PERF_TYPE_GENERAL, PERF_TYPE_SALES, PERF_TYPE_ORDERS, PERF_TYPE_WORKLOG, PAY_TAX_REGIME,
             CHAT_GROUP_CREATE, CHAT_GROUP_ADD, TMAIL_CONFIG, TMAIL_EMAIL, TMAIL_WHATSAPP, TMAIL_ALL_CUSTOMERS, TMAIL_ALL_SUPPLIERS,
-            TMAIL_PICK, TMAIL_PICTURE, TMAIL_ATTACH, OFFER_LETTERS, OFFER_EDIT, OFFER_DELETE);
+            TMAIL_PICK, TMAIL_PICTURE, TMAIL_ATTACH, OFFER_LETTERS, OFFER_EDIT, OFFER_DELETE, WORK_APPROVALS, ATT_HOURS_CHECK,
+            AGENT_COMMISSIONS, AGENT_ADD, AGENT_EDIT, AGENT_COMMISSION_STATUS);
     /** Any page of the product portal. */
     public static final String[] PRODUCT_PORTAL = {PROD_HOME, PROD_ITEMS, PROD_TYPES, PROD_SUPPLIERS, PROD_PURCHASES,
             PROD_QUOTES, PROD_ORDERS, PROD_INVOICES, PROD_REPORTS, PROD_PROJECTS, PROD_LEDGER, PROD_RECONCILE, PROD_MAIL, PROD_PAY, PROD_PAY_MANUAL, PROD_PROJECT_STATUS, PROD_STOCK_APPROVE};
@@ -168,6 +186,8 @@ public final class Menus {
             new Def(WORKLOG_MY, "My work log", "Own work log; managers also see their team's", 3001, "WORKLOG", "/portal/worklog", "pi-clock"),
             new Def(TASKS, "Tasks", "Create tasks and assign them to employees", 3002, "WORKLOG", "/portal/worklog/tasks", "pi-list-check"),
             new Def(WORK_RULES, "Work hour rules", "Minimum hours per brand and designation", 3003, "WORKLOG", "/portal/worklog/rules", "pi-sliders-h"),
+            new Def(WORK_APPROVALS, "Work approvals", "Approve or reject the attendance and work log entries of the people you approve for, before they count. Approvers and anyone with people reporting to them get this anyway; its own tick", 3004, "WORKLOG", "/portal/worklog/approvals", "pi-check-circle"),
+            new Def(ATT_HOURS_CHECK, "Check attendance against work log", "For the person given this: the calendar highlights a day with fewer hours checked in than logged, and Half and Full Day Leave follow checked-in time against the work hour rule instead of logged hours; its own tick", 3005, "WORKLOG", null, "pi-exclamation-triangle"),
 
             new Def("EMPLOYEES", "Employees", "Employee records and the organisation", 4000, null, null, "pi-users"),
             new Def(EMP_LIST, "All employees", "Employee list; adding and changing records needs the Admin user type", 4001, "EMPLOYEES", "/portal/employees", "pi-id-card"),
@@ -252,6 +272,14 @@ public final class Menus {
             new Def(CUST_NEW_QUOTE, "New quotation button", "On a customer's page: the New quotation button, which opens a new quotation for the customer in the product portal (also needs Quotations); its own tick", 13001, CUSTOMERS, null, "pi-file-edit"),
             new Def(CUST_NEW_INVOICE, "New invoice button", "On a customer's page: the New invoice button, which opens a new invoice for the customer in the product portal (also needs Invoices); its own tick", 13002, CUSTOMERS, null, "pi-receipt"),
 
+            // agents, and each thing done with them its own tick (giving Agents shows the list only)
+            new Def("AGENTS_GROUP", "Agents", "The people who bring in projects, and their commissions", 13200, null, null, "pi-id-card"),
+            new Def(AGENTS, "Agent list", "The agents: name, phone, address, location, UPI ID and photo. Read only", 13201, "AGENTS_GROUP", "/portal/customers/agents", "pi-users"),
+            new Def(AGENT_COMMISSIONS, "Commissions", "What agents have earned: each line with its project, date and status, and totals by project, date, month, year and agent; its own tick", 13202, "AGENTS_GROUP", "/portal/customers/agents/commissions", "pi-wallet"),
+            new Def(AGENT_ADD, "Add agent", "Add agents; its own tick", 13203, "AGENTS_GROUP", null, "pi-user-plus"),
+            new Def(AGENT_EDIT, "Change agent", "Change an agent's details and make them active or inactive; its own tick", 13204, "AGENTS_GROUP", null, "pi-pencil"),
+            new Def(AGENT_COMMISSION_STATUS, "Change commission status", "Move a commission between Queued and Settled, with the transaction ID, date and remarks of the payment; its own tick", 13205, "AGENTS_GROUP", null, "pi-check-square"),
+
             // customer & supplier email, moved here from the product portal
             new Def(CUST_EMAIL, "Email", "Customer & supplier email and its limits", 13100, null, null, "pi-envelope"),
             // checkpoint 11700 kept from the product portal, so existing access stays as it is
@@ -305,7 +333,7 @@ public final class Menus {
             java.util.Map.entry(TMAIL_ATTACH, List.of("11700")));
 
     /** Given to anyone with people reporting to them, whatever their user type or menu access. */
-    public static final List<String> FOR_TEAM_LEADS = List.of(PERF_TEAM, PERF_TYPE_GENERAL, LEAVE_APPROVALS);
+    public static final List<String> FOR_TEAM_LEADS = List.of(PERF_TEAM, PERF_TYPE_GENERAL, LEAVE_APPROVALS, WORK_APPROVALS);
 
     /**
      * User types that get a menu when it first appears in a database that already has menu access set up

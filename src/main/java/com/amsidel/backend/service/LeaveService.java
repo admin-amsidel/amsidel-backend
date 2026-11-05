@@ -327,7 +327,13 @@ public class LeaveService {
         if (boss == null || !boss.isActive()) {
             return "No reporting person, approved automatically";
         }
-        return Boolean.TRUE.equals(boss.getAutoApproveReports()) ? "Approved automatically (set for " + boss.getName() + "'s team)" : null;
+        if (Boolean.TRUE.equals(boss.getAutoApproveReports())) {
+            return "Approved automatically (set for " + boss.getName() + "'s team)";
+        }
+        // Auto approve on the person's approver covers their leave too
+        Employee approver = employee.getApprover();
+        return approver != null && approver.isActive() && Boolean.TRUE.equals(approver.getAutoApproveReports())
+                ? "Approved automatically (set for " + approver.getName() + "'s people)" : null;
     }
 
     private void checkCanView(AuthUser me, Employee target) {

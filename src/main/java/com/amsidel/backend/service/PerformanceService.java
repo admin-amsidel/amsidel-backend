@@ -633,7 +633,7 @@ public class PerformanceService {
         Long personId = g.getReview().getEmployee().getId();
         List<WorkTask> assigned = workTasks.allAssignedTo(personId);
         Set<Long> logged = workLogs.forEmployee(personId, g.getStartDate(), g.getEndDate()).stream()
-                .filter(w -> w.getTask() != null).map(w -> w.getTask().getId()).collect(Collectors.toSet());
+                .filter(w -> w.counts() && w.getTask() != null).map(w -> w.getTask().getId()).collect(Collectors.toSet());
         Set<Long> have = new HashSet<>();
         g.getTasks().removeIf(t -> {
             Long id = t.getWorkTask() == null ? null : t.getWorkTask().getId();
@@ -710,7 +710,7 @@ public class PerformanceService {
         }
         LocalDate from = worklog.stream().map(Goal::getStartDate).min(Comparator.naturalOrder()).orElseThrow();
         LocalDate to = worklog.stream().map(Goal::getEndDate).max(Comparator.naturalOrder()).orElseThrow();
-        return workLogs.forEmployee(personId, from, to).stream().filter(w -> w.getTask() != null)
+        return workLogs.forEmployee(personId, from, to).stream().filter(w -> w.counts() && w.getTask() != null)
                 .collect(Collectors.groupingBy(w -> w.getTask().getId()));
     }
 

@@ -36,10 +36,11 @@ public final class DashboardDtos {
 
     /**
      * Checked-in time today, against the hours expected today; percent null on a day with none expected and no check-in.
-     * week and month: the working days of each, whole periods, after joining.
+     * week and month: the working days of each, whole periods, after joining. Only approved time counts; waiting: today's
+     * check-in is with the approver.
      */
     public record Attendance(boolean checkedIn, boolean working, Instant firstIn, long minutesToday, long targetMinutes, Integer percent,
-                             Period week, Period month) {
+                             Period week, Period month, boolean waiting) {
     }
 
     /** days: working days in the period; attended: of those, the days checked in; leave: of those not attended, approved leave. */
@@ -102,7 +103,7 @@ public final class DashboardDtos {
     public record TeamProfile(int percent, int complete, int people) {
     }
 
-    /** One person of the team; a figure is null when the viewer does not have the page behind it. status: CHECKED_IN, NOT_IN, ON_LEAVE or OFF. */
+    /** One person of the team; a figure is null when the viewer does not have the page behind it. status: CHECKED_IN, WAITING (with the approver), NOT_IN, ON_LEAVE or OFF. */
     public record Member(Long id, String name, String designationName, String brandCode, String photoPath, Instant photoUpdatedAt,
                          BigDecimal hoursToday, String status, Long minutesToday, Integer tasksCompleted, Integer tasksPending,
                          BigDecimal leaveTaken, BigDecimal leaveRemaining, int profilePercent) {

@@ -10,6 +10,7 @@ import org.springframework.http.ContentDisposition;
 import com.amsidel.backend.dto.AttendanceDay;
 import com.amsidel.backend.dto.AttendanceDaySummary;
 import com.amsidel.backend.dto.AttendanceRecord;
+import com.amsidel.backend.dto.AttendanceShortfall;
 import com.amsidel.backend.dto.AttendanceToday;
 import com.amsidel.backend.dto.CheckInRequest;
 import com.amsidel.backend.dto.CheckOutRequest;
@@ -19,6 +20,7 @@ import com.amsidel.backend.security.AuthUser;
 import com.amsidel.backend.security.Checkpoint;
 import com.amsidel.backend.security.Menus;
 import com.amsidel.backend.service.AttendanceService;
+import com.amsidel.backend.service.WorkLogService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +47,7 @@ public class AttendanceController {
 
     private final AttendanceService attendanceService;
     private final ExportService exportService;
+    private final WorkLogService workLogService;
 
     @Checkpoint({Menus.ATT_CHECKIN})
     @GetMapping("/today")
@@ -68,6 +71,15 @@ public class AttendanceController {
     public AttendanceRecord checkOut(@AuthenticationPrincipal AuthUser me, @Valid @RequestBody CheckOutRequest request,
                                      HttpServletRequest http) {
         return attendanceService.checkOut(me, request, clientIp(http));
+    }
+
+    /** Checked-in time against the work hour rule: mine, or employeeId's when they are below me. */
+    @Checkpoint({Menus.ATT_CHECKIN, Menus.ATT_TEAM})
+    @GetMapping("/shortfall")
+    public AttendanceShortfall shortfall(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Long employeeId,
+                                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return workLogService.shortfall(me, employeeId, from, to);
     }
 
     /** My days, newest first, with their entries (default: the last 30 days). */

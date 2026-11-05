@@ -9,6 +9,7 @@ import com.amsidel.backend.dto.AttendanceRecord;
 import com.amsidel.backend.dto.WorkLogEntry;
 import com.amsidel.backend.dto.WorkLogMonth;
 import com.amsidel.backend.dto.WorkTarget;
+import com.amsidel.backend.entity.ApprovalStatus;
 import com.amsidel.backend.entity.Employee;
 import com.amsidel.backend.entity.WorkMode;
 import com.amsidel.backend.exception.ApiException;
@@ -96,8 +97,8 @@ public class ExportService {
                     "Each check-in and check-out; a field day has one entry per visit. Times are " + zone.getId() + ".",
                     new String[]{"Emp no", "Name", "Date", "Entry", "Work mode", "Place / client", "Check-in", "Check-out",
                             "Hours", "Note at check-out", "Check-in location", "Check-in accuracy (m)",
-                            "Check-out location", "Location issues", "Device", "Check-in IP"},
-                    new int[]{10, 24, 13, 7, 14, -24, 12, 12, 8, -40, 22, 12, 22, 22, -22, 16});
+                            "Check-out location", "Location issues", "Device", "Check-in IP", "Approval"},
+                    new int[]{10, 24, 13, 7, 14, -24, 12, 12, 8, -40, 22, 12, 22, 22, -22, 16, 12});
             double sumHours = 0;
             int sumPresent = 0;
             for (Employee e : people) {
@@ -110,7 +111,10 @@ public class ExportService {
                 long minutes = 0;
                 for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
                     Day day = day(d, cal, today);
-                    AttendanceDaySummary a = days.get(d);
+                    // only approved time counts; a day still with the approver is neither present nor absent
+                    AttendanceDaySummary raw = days.get(d);
+                    AttendanceDaySummary a = raw != null && raw.counted() ? raw : null;
+                    boolean waiting = raw != null && !raw.counted() && raw.entries().stream().anyMatch(x -> x.approval() == ApprovalStatus.PENDING);
                     if (day.working() && !day.beforeJoining() && !d.isAfter(today)) {
                         working++;
                         if (day.leave() != null && day.leaveApproved()) {
@@ -131,6 +135,8 @@ public class ExportService {
                         } else if (!day.working() && day.label() != null) {
                             status += " · " + day.label().toLowerCase(Locale.ENGLISH);
                         }
+                    } else if (waiting) {
+                        status = "Waiting for approval";
                     } else if (day.absent()) {
                         absent++;
                         status = "Absent";
@@ -153,7 +159,7 @@ public class ExportService {
                                 x.place(), time(x.checkIn().at()), x.checkOut() == null ? null : time(x.checkOut().at()),
                                 x.workedMinutes() == null ? null : ExcelBook.Hours.ofMinutes(x.workedMinutes()), x.note(),
                                 where(x.checkIn()), x.checkIn().accuracy() == null ? null : Math.round(x.checkIn().accuracy()),
-                                x.checkOut() == null ? null : where(x.checkOut()), flags(x), device(x), x.checkIn().ip()));
+                                x.checkOut() == null ? null : where(x.checkOut()), flags(x), device(x), x.checkIn().ip(), approval(x.approval())));
                 double hours = Math.round(minutes / 60.0 * 100) / 100.0;
                 summary.row(e.getEmpNumber(), e.getName(), brand(e), designation(e), working, present, office, wfh, field,
                         new ExcelBook.Hours(hours), present == 0 ? null : new ExcelBook.Hours(Math.round(hours / present * 100) / 100.0),
@@ -195,13 +201,15 @@ public class ExportService {
                     new int[]{10, 24, 13, 6, 10, 10, 10, 8, 20, -30});
             ExcelBook.Table entries = book.sheet("Entries", "Work log entries, " + range, "Each logged piece of work.",
                     new String[]{"Emp no", "Name", "Date", "Day", "No", "Task ID", "Task", "Hours", "What was done",
-                            "Logged at", "Last changed"},
-                    new int[]{10, 24, 13, 6, 5, 12, -30, 8, -60, 18, 18});
+                            "Logged at", "Last changed", "Approval"},
+                    new int[]{10, 24, 13, 6, 5, 12, -30, 8, -60, 18, 18, 12});
             double sumLogged = 0, sumNeeded = 0;
             for (Employee e : people) {
                 WorkLogMonth cal = workLogService.monthOf(me, e, from, to);
                 WorkTarget t = cal.target();
                 double dailyMin = t.dailyMinHours().doubleValue();
+                Map<LocalDate, WorkLogMonth.DayAttendance> checkedIn = cal.attendance().stream()
+                        .collect(Collectors.toMap(WorkLogMonth.DayAttendance::date, Function.identity()));
                 Map<LocalDate, List<WorkLogEntry>> byDay = cal.entries().stream()
                         .collect(Collectors.groupingBy(WorkLogEntry::workDate));
                 int working = 0, logged = 0, half = 0, full = 0;
@@ -209,7 +217,12 @@ public class ExportService {
                 for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
                     Day day = day(d, cal, today);
                     List<WorkLogEntry> list = byDay.getOrDefault(d, List.of());
-                    double total = round(list.stream().mapToDouble(x -> x.hours().doubleValue()).sum());
+                    // only approved hours count
+                    double total = round(list.stream().filter(x -> x.approval() == ApprovalStatus.APPROVED).mapToDouble(x -> x.hours().doubleValue()).sum());
+                    double waitingHours = list.stream().filter(x -> x.approval() == ApprovalStatus.PENDING).mapToDouble(x -> x.hours().doubleValue()).sum();
+                    WorkLogMonth.DayAttendance in = checkedIn.get(d);
+                    // the leave flags: as on the calendar, what may yet count is not held against the day
+                    double judged = cal.hoursCheck() ? (in == null ? 0 : (in.minutes() + in.waitingMinutes()) / 60.0) : total + waitingHours;
                     // an approved leave or a holiday lowers what the day needs, as on the calendar
                     double off = !day.working() ? dailyMin : day.leaveApproved() ? (day.leaveHalf() ? dailyMin / 2 : dailyMin) : 0;
                     double required = day.closed() || day.beforeJoining() ? 0 : Math.max(0, dailyMin - off);
@@ -223,10 +236,10 @@ public class ExportService {
                             leaveDays += day.leaveHalf() ? 0.5 : 1;
                         }
                         if (past && !day.leaveApproved()) {
-                            if (total < t.fullDayBelow().doubleValue()) {
+                            if (judged < t.fullDayBelow().doubleValue()) {
                                 status = "Full Day Leave";
                                 full++;
-                            } else if (total < t.halfDayBelow().doubleValue()) {
+                            } else if (judged < t.halfDayBelow().doubleValue()) {
                                 status = "Half Day Leave";
                                 half++;
                             } else {
@@ -248,7 +261,7 @@ public class ExportService {
                             list.size(), status, day.detail());
                     for (WorkLogEntry x : list.stream().sorted(Comparator.comparingInt(WorkLogEntry::sequence)).toList()) {
                         entries.row(e.getEmpNumber(), e.getName(), d, dow(d), x.sequence(), x.taskId(), x.taskTitle(),
-                                ExcelBook.Hours.of(x.hours()), x.description(), local(x.createdAt()), local(x.updatedAt()));
+                                ExcelBook.Hours.of(x.hours()), x.description(), local(x.createdAt()), local(x.updatedAt()), approval(x.approval()));
                     }
                 }
                 summary.row(e.getEmpNumber(), e.getName(), brand(e), designation(e), ExcelBook.Hours.of(t.dailyMinHours()),
@@ -268,6 +281,14 @@ public class ExportService {
             entries.done();
             return new Export(fileName("WorkLog", people, all, from, to), book.bytes());
         }
+    }
+
+    private static String approval(ApprovalStatus status) {
+        return switch (status) {
+            case PENDING -> "Waiting";
+            case APPROVED -> "Approved";
+            case REJECTED -> "Rejected";
+        };
     }
 
     // ---- what a day was ----

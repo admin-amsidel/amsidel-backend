@@ -25,7 +25,18 @@ public record WorkLogMonth(
         List<WorkLogEntry> entries,
         List<LeaveSpan> leave,
         /** Office holidays in the range: no hours expected. */
-        List<Holiday> holidays) {
+        List<Holiday> holidays,
+        /** Checked-in time on each day that has any. */
+        List<DayAttendance> attendance,
+        /** This person has the Check attendance against work log tick. */
+        boolean hoursCheck) {
+
+    /**
+     * Minutes approved, and waiting for approval; open: still checked in today, with the time so far in those figures;
+     * waiting: an entry is with the approver, even one with no minutes yet.
+     */
+    public record DayAttendance(LocalDate date, long minutes, long waitingMinutes, boolean open, boolean waiting) {
+    }
 
     /** Leave covering fromDate..toDate (Sundays inside a span are weekly offs, not leave). */
     public record Holiday(LocalDate date, String name) {

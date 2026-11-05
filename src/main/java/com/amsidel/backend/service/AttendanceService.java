@@ -60,11 +60,12 @@ public class AttendanceService {
     private final TeamAccess access;
     private final AttendancePhotoStore photos;
     private final MenuAccessService menuAccess;
+    private final WorkApprovalService approvals;
     private final ZoneId zone;
     private final double lowAccuracyMetres;
 
     public AttendanceService(AttendanceRepository attendanceRepository, EmployeeRepository employeeRepository,
-                             TeamAccess access, AttendancePhotoStore photos, MenuAccessService menuAccess,
+                             TeamAccess access, AttendancePhotoStore photos, MenuAccessService menuAccess, WorkApprovalService approvals,
                              @Value("${app.attendance.zone}") ZoneId zone,
                              @Value("${app.attendance.low-accuracy-metres:200}") double lowAccuracyMetres) {
         this.attendanceRepository = attendanceRepository;
@@ -72,6 +73,7 @@ public class AttendanceService {
         this.access = access;
         this.photos = photos;
         this.menuAccess = menuAccess;
+        this.approvals = approvals;
         this.zone = zone;
         this.lowAccuracyMetres = lowAccuracyMetres;
     }
@@ -123,6 +125,7 @@ public class AttendanceService {
         a.setPlace(place);
         a.setWorkMode(request.getWorkMode());
         a.setCheckInAt(Instant.now());
+        a.setApproval(approvals.startingStatus(person));
         Location where = location(request.getLatitude(), request.getLongitude(), request.getAccuracy());
         a.setCheckInLatitude(where.latitude());
         a.setCheckInLongitude(where.longitude());

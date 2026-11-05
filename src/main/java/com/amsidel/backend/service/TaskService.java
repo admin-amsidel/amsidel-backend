@@ -103,7 +103,7 @@ public class TaskService {
         if (!inScope(me, task.getBrand())) {
             throw ApiException.forbidden("You can only see tasks of your own brand");
         }
-        List<TaskResponse.LogEntry> entries = logRepository.forTask(id).stream().map(TaskResponse.LogEntry::from).toList();
+        List<TaskResponse.LogEntry> entries = logRepository.forTask(id).stream().filter(com.amsidel.backend.entity.WorkLog::counts).map(TaskResponse.LogEntry::from).toList();
         BigDecimal total = entries.stream().map(TaskResponse.LogEntry::hours).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new TaskResponse.TaskLogs(TaskResponse.from(task, total), entries);
     }

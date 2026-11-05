@@ -51,7 +51,10 @@ public class EmployeeRequest {
     /** Direct superior's employee id; optional. */
     private Long reportsToId;
 
-    /** Leave of the people reporting to this person is approved automatically; only owners and admins can set it. */
+    /** Approves this person's attendance and work log; optional: without one, the person they report to does. */
+    private Long approverId;
+
+    /** Auto approve: leave, attendance and work log of the people this person approves for count at once; only owners and admins can set it. */
     private Boolean autoApproveReports;
 
     @Size(max = 500)

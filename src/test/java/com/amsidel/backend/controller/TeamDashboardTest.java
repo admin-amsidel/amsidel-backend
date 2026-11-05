@@ -91,6 +91,9 @@ class TeamDashboardTest {
         json(post("/api/worklog/entries"), far, "{\"workDate\":\"%s\",\"taskId\":\"TEAM-3\",\"hours\":5,\"description\":\"Elsewhere\"}".formatted(TODAY)).andExpect(status().isCreated());
         mockMvc.perform(multipart("/api/attendance/check-in").param("workMode", "WFH").param("platform", "web").header("Authorization", auth(worker)))
                 .andExpect(status().isCreated());
+        // checked out, and everything approved: only approved time counts
+        json(post("/api/attendance/check-out"), worker, "{}").andExpect(status().isOk());
+        approveAll();
         // the managers can see their team's attendance and pay
         for (String id : List.of(bossId, leadId)) {
             menuAccess.save(AccessSubject.EMPLOYEE, id, List.of("1001", "1002", "2001", "2002", "3001", "7004", "8000"));
@@ -208,6 +211,16 @@ class TeamDashboardTest {
 
     private ResultActions brandPart(String name, String token, long brandId) throws Exception {
         return mockMvc.perform(get("/api/dashboard/team/" + name).param("brandId", String.valueOf(brandId)).header("Authorization", auth(token))).andExpect(status().isOk());
+    }
+
+    /** The owner approves everything waiting, as an approver would. */
+    private void approveAll() throws Exception {
+        String queue = mockMvc.perform(get("/api/work-approvals").header("Authorization", auth(owner))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        List<Integer> attendance = JsonPath.read(queue, "$.attendance[?(@.decidable == true)].id");
+        List<Integer> logs = JsonPath.read(queue, "$.workLogs[*].id");
+        mockMvc.perform(post("/api/work-approvals/decide").header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"attendanceIds\":%s,\"workLogIds\":%s,\"approve\":true}".formatted(attendance, logs)))
+                .andExpect(status().isOk());
     }
 
     private String meeting(String title, LocalDate date, String personId) {

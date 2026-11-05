@@ -4,6 +4,7 @@
  */
 package com.amsidel.backend.dto;
 
+import com.amsidel.backend.entity.ApprovalStatus;
 import com.amsidel.backend.entity.WorkMode;
 
 import java.time.Instant;
@@ -24,13 +25,17 @@ public record AttendanceDaySummary(
         Instant firstIn,
         /** Null while an entry is still open. */
         Instant lastOut,
-        /** Sum of the closed entries. */
+        /** Sum of the closed entries that are approved: only those count. */
         long workedMinutes,
         /** An entry is still open (working, or at a visit). */
         boolean open,
         List<WorkMode> modes,
         List<String> flags,
-        List<AttendanceRecord> entries
+        List<AttendanceRecord> entries,
+        /** Sum of the closed entries still waiting for approval. */
+        long waitingMinutes,
+        /** Some entry of the day is approved, so the person counts as present. */
+        boolean counted
 ) {
 
     /** From one person's entries for one day, in entry order. */
@@ -38,7 +43,9 @@ public record AttendanceDaySummary(
         AttendanceRecord first = entries.get(0);
         boolean open = entries.stream().anyMatch(e -> e.checkOut() == null);
         Instant lastOut = open ? null : entries.stream().map(e -> e.checkOut().at()).max(Instant::compareTo).orElse(null);
-        long worked = entries.stream().map(AttendanceRecord::workedMinutes).filter(Objects::nonNull).mapToLong(Long::longValue).sum();
+        long worked = minutes(entries, ApprovalStatus.APPROVED);
+        long waiting = minutes(entries, ApprovalStatus.PENDING);
+        boolean counted = entries.stream().anyMatch(e -> e.approval() == ApprovalStatus.APPROVED);
         List<WorkMode> modes = List.copyOf(new LinkedHashSet<>(entries.stream().map(AttendanceRecord::workMode).toList()));
         LinkedHashSet<String> flags = new LinkedHashSet<>();
         for (AttendanceRecord e : entries) {
@@ -48,6 +55,10 @@ public record AttendanceDaySummary(
             }
         }
         return new AttendanceDaySummary(first.employeeId(), first.name(), first.empNumber(), first.workDate(),
-                first.checkIn().at(), lastOut, worked, open, modes, List.copyOf(flags), List.copyOf(entries));
+                first.checkIn().at(), lastOut, worked, open, modes, List.copyOf(flags), List.copyOf(entries), waiting, counted);
+    }
+
+    private static long minutes(List<AttendanceRecord> entries, ApprovalStatus status) {
+        return entries.stream().filter(e -> e.approval() == status).map(AttendanceRecord::workedMinutes).filter(Objects::nonNull).mapToLong(Long::longValue).sum();
     }
 }
