@@ -28,6 +28,11 @@ public interface WorkLogRepository extends JpaRepository<WorkLog, Long> {
     @Query("select w.task.id, sum(w.hours) from WorkLog w where w.task is not null group by w.task.id")
     List<Object[]> hoursPerTask();
 
+    /** {employee id, day, hours} for everyone in a team. */
+    @Query("select w.employee.id, w.workDate, sum(w.hours) from WorkLog w where w.employee.id in :ids and w.workDate between :from and :to"
+            + " group by w.employee.id, w.workDate")
+    List<Object[]> hoursPerDay(@Param("ids") java.util.Collection<Long> ids, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
     @Query("select coalesce(max(w.sequence), 0) from WorkLog w where w.employee.id = :employeeId and w.workDate = :day")
     int lastSequence(@Param("employeeId") Long employeeId, @Param("day") LocalDate day);
 

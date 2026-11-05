@@ -39,6 +39,16 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     List<LeaveRequest> overlapping(@Param("employeeId") Long employeeId, @Param("statuses") Collection<LeaveStatus> statuses,
                                    @Param("from") LocalDate from, @Param("to") LocalDate to);
 
+    /** A team's leave of one status touching a date range. */
+    @Query("select r from LeaveRequest r join fetch r.leaveType where r.employee.id in :ids"
+            + " and r.status = :status and r.fromDate <= :to and r.toDate >= :from")
+    List<LeaveRequest> overlappingOfPeople(@Param("ids") Collection<Long> ids, @Param("status") LeaveStatus status,
+                                           @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /** A team's requests, as forEmployee gives one person's. */
+    @Query("select r from LeaveRequest r join fetch r.leaveType where r.employee.id in :ids order by r.fromDate desc")
+    List<LeaveRequest> ofPeople(@Param("ids") Collection<Long> ids);
+
     @Query("select count(r) from LeaveRequest r where r.employee.id = :employeeId and r.status in :statuses"
             + " and r.fromDate <= :to and r.toDate >= :from")
     long countOverlapping(@Param("employeeId") Long employeeId, @Param("statuses") Collection<LeaveStatus> statuses,

@@ -18,5 +18,9 @@ public interface EmployeeDocumentRepository extends JpaRepository<EmployeeDocume
     @Query("select d from EmployeeDocument d left join fetch d.uploadedBy where d.employee.id = :employeeId")
     List<EmployeeDocument> forEmployee(@Param("employeeId") Long employeeId);
 
+    /** {employee id, type} of a team's documents. */
+    @Query("select d.employee.id, d.type from EmployeeDocument d where d.employee.id in :ids")
+    List<Object[]> typesOfPeople(@Param("ids") java.util.Collection<Long> ids);
+
     Optional<EmployeeDocument> findByEmployeeIdAndType(Long employeeId, DocumentType type);
 }

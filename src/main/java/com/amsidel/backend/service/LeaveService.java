@@ -385,12 +385,36 @@ public class LeaveService {
     /** Balances in the plan in force: the plan's types (one no longer in use only if it has been taken). */
     private List<LeaveBalance> balances(Employee employee) {
         List<LeavePlan> plans = planService.ofBrand(brandIdOf(employee));
+        if (LeavePlanService.covering(plans, today()) == null) {
+            return List.of();
+        }
+        return balances(plans, requestRepository.forEmployee(employee.getId()), grantRepository.forEmployee(employee.getId()));
+    }
+
+    /** Each person's balances in their brand's plan in force, read for the whole team at once (the dashboard). */
+    @Transactional(readOnly = true)
+    public Map<Long, List<LeaveBalance>> balancesOfTeam(List<Employee> team) {
+        if (team.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = team.stream().map(Employee::getId).toList();
+        Map<Long, List<LeaveRequest>> requests = requestRepository.ofPeople(ids).stream().collect(Collectors.groupingBy(r -> r.getEmployee().getId()));
+        Map<Long, List<LeaveGrant>> grants = grantRepository.ofPeople(ids).stream().collect(Collectors.groupingBy(g -> g.getEmployee().getId()));
+        Map<Long, List<LeavePlan>> plansOf = new HashMap<>();
+        Map<Long, List<LeaveBalance>> out = new HashMap<>();
+        for (Employee e : team) {
+            long brandKey = brandIdOf(e) == null ? 0L : brandIdOf(e);
+            List<LeavePlan> plans = plansOf.computeIfAbsent(brandKey, k -> planService.ofBrand(brandIdOf(e)));
+            out.put(e.getId(), balances(plans, requests.getOrDefault(e.getId(), List.of()), grants.getOrDefault(e.getId(), List.of())));
+        }
+        return out;
+    }
+
+    private List<LeaveBalance> balances(List<LeavePlan> plans, List<LeaveRequest> requests, List<LeaveGrant> grants) {
         LeavePlan plan = LeavePlanService.covering(plans, today());
         if (plan == null) {
             return List.of();
         }
-        List<LeaveRequest> requests = requestRepository.forEmployee(employee.getId());
-        List<LeaveGrant> grants = grantRepository.forEmployee(employee.getId());
         Set<Long> usedTypes = requests.stream().filter(r -> plan.covers(r.getFromDate())).map(r -> r.getLeaveType().getId()).collect(Collectors.toSet());
         return plan.getLines().stream()
                 .filter(l -> l.getLeaveType().isActive() || usedTypes.contains(l.getLeaveType().getId()))

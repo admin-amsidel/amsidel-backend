@@ -36,6 +36,20 @@ public interface WorkTaskRepository extends JpaRepository<WorkTask, Long> {
     @Query("select t from WorkTask t join t.assignees a where a.id = :employeeId order by t.code")
     List<WorkTask> allAssignedTo(@Param("employeeId") Long employeeId);
 
+    /** Tasks this person has marked complete on their task worklog goals. */
+    @Query("select distinct t.workTask.id from GoalTask t where t.goal.review.employee.id = :employeeId"
+            + " and t.workTask is not null and t.completedAt is not null")
+    List<Long> markedCompleteBy(@Param("employeeId") Long employeeId);
+
+    /** {employee id, task} for everyone in a team, by code. */
+    @Query("select a.id, t from WorkTask t join t.assignees a where a.id in :ids order by t.code")
+    List<Object[]> assignedToPeople(@Param("ids") java.util.Collection<Long> ids);
+
+    /** {employee id, task id} of the tasks a team has marked complete on their task worklog goals. */
+    @Query("select t.goal.review.employee.id, t.workTask.id from GoalTask t where t.goal.review.employee.id in :ids"
+            + " and t.workTask is not null and t.completedAt is not null")
+    List<Object[]> markedCompleteByPeople(@Param("ids") java.util.Collection<Long> ids);
+
     boolean existsByCodeIgnoreCase(String code);
 
     /** Highest generated code (TSK-0007), used to make the next one. */

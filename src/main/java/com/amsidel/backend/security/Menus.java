@@ -35,6 +35,10 @@ public final class Menus {
     public static final String OFFER_EDIT = "OFFER_EDIT";
     /** Not a page: deleting an offer letter after it is issued. */
     public static final String OFFER_DELETE = "OFFER_DELETE";
+    /** Not a page: adding meetings on the Overview's calendar, and changing or deleting the ones you added. */
+    public static final String MEETING_ADD = "MEETING_ADD";
+    /** Not a page: the notification bell by the chat button. Without it the page makes no notification calls at all. */
+    public static final String NOTIFICATIONS = "NOTIFICATIONS";
     public static final String EMAIL = "EMAIL";
     public static final String STAFF_MAIL = "STAFF_MAIL";
     /** Staff email limits per brand: people in one send, emails a day, and the day's count. */
@@ -145,6 +149,10 @@ public final class Menus {
     }
 
     public static final List<Def> ALL = List.of(
+            // the dashboard itself is for everyone, like My profile; only adding meetings needs a tick
+            new Def(MEETING_ADD, "Add meetings", "On the Overview's calendar: add meetings, and change or delete the ones you added. Everyone sees the meetings they are in without this", 500, null, null, "pi-calendar-plus"),
+            new Def(NOTIFICATIONS, "Notifications", "The bell by the chat button: meetings about to start or under way, and meetings that have closed. Without this tick there is no bell, and no calls to check for notifications", 600, null, null, "pi-bell"),
+
             new Def("ATTENDANCE", "Attendance", "Check-in / check-out and field visits", 1000, null, null, "pi-map-marker"),
             new Def(ATT_CHECKIN, "Check in", "Own check-in, check-out and field visits", 1001, "ATTENDANCE", "/portal/attendance", "pi-camera"),
             new Def(ATT_TEAM, "Team attendance", "Attendance, photos and locations of the people below you", 1002, "ATTENDANCE", "/portal/attendance/team", "pi-users"),
@@ -202,7 +210,7 @@ public final class Menus {
             new Def(TEAM_PAY, "Team pay", "The pay of the people reporting to you, as they see it in My pay: salary, published payslips (PDF) and pay for the year; owners and admins see everyone in their scope, by brand and person. Read-only", 7004, "PAYROLL", "/portal/payroll/team-pay", "pi-users"),
 
             new Def("ADMIN", "Administration", "Portal set-up", 9000, null, null, "pi-shield"),
-            new Def(NEWS, "News & announcements", "Add, change and remove the news on the dashboard (and the offers on the website): discounts, promotions, birthdays, important notices", 9003, "ADMIN", "/portal/admin/news", "pi-megaphone"),
+            new Def(NEWS, "News & announcements", "Add, change and remove the news on the home page (and the offers on the website): discounts, promotions, birthdays, important notices", 9003, "ADMIN", "/portal/admin/news", "pi-megaphone"),
             new Def(BRANDS, "Brands", "The group's brands: details, logo, owners and GST number; changing them needs the Owner user type", 9002, "ADMIN", "/portal/admin/brands", "pi-building"),
             new Def(MENU_ACCESS, "Menu access", "Which user types and designations see which menus; changing it needs the Admin user type", 9001, "ADMIN", "/portal/admin/menu-access", "pi-lock"),
 

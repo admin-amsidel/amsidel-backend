@@ -195,7 +195,8 @@ class LeavePlanTest {
         // reporting to someone who is set to auto-approve those below them: approved at once
         json(put("/api/employees/" + boss[0]), owner, employeeJson("Boss Auto", boss[2], "MANAGER", null, true)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.autoApproveReports").value(true));
-        apply(emp[1], "CL", workingDay(today.plusDays(3))).andExpect(jsonPath("$.status").value("APPROVED"))
+        // 4 days on, not 3: when the last one was a Saturday, a day later would move back onto that same Saturday
+        apply(emp[1], "CL", workingDay(today.plusDays(4))).andExpect(jsonPath("$.status").value("APPROVED"))
                 .andExpect(jsonPath("$.decisionNote").value(containsString("Approved automatically")));
     }
 

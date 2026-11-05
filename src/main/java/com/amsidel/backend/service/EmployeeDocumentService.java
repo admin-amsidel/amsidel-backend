@@ -100,7 +100,30 @@ public class EmployeeDocumentService {
     @Transactional(readOnly = true)
     public ProfileStatus status(AuthUser me, Long employeeId) {
         Employee e = target(me, employeeId);
-        Map<DocumentType, EmployeeDocument> have = byType(e.getId());
+        List<ProfileItem> items = items(e, byType(e.getId()).keySet());
+        int done = (int) items.stream().filter(ProfileItem::done).count();
+        return new ProfileStatus(done * 100 / items.size(), done, items.size(), items);
+    }
+
+    /** How complete each person's profile is, read for the whole team at once (the dashboard). */
+    @Transactional(readOnly = true)
+    public Map<Long, Integer> percents(List<Employee> team) {
+        if (team.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, java.util.Set<DocumentType>> have = new java.util.HashMap<>();
+        for (Object[] r : documentRepository.typesOfPeople(team.stream().map(Employee::getId).toList())) {
+            have.computeIfAbsent((Long) r[0], k -> java.util.EnumSet.noneOf(DocumentType.class)).add((DocumentType) r[1]);
+        }
+        Map<Long, Integer> out = new java.util.HashMap<>();
+        for (Employee e : team) {
+            List<ProfileItem> items = items(e, have.getOrDefault(e.getId(), java.util.Set.of()));
+            out.put(e.getId(), (int) items.stream().filter(ProfileItem::done).count() * 100 / items.size());
+        }
+        return out;
+    }
+
+    private static List<ProfileItem> items(Employee e, java.util.Set<DocumentType> have) {
         List<ProfileItem> items = new ArrayList<>();
         String personal = "Personal details";
         items.add(new ProfileItem("photo", "Photo", personal, e.getPhotoUpdatedAt() != null || filled(e.getPhotoPath())));
@@ -114,10 +137,9 @@ public class EmployeeDocumentService {
         items.add(new ProfileItem("pan", "PAN", bank, filled(e.getPanNumber())));
         items.add(new ProfileItem("bankAccount", "Bank account and IFSC", bank, filled(e.getBankAccountNumber()) && filled(e.getIfscCode())));
         for (DocumentType t : DocumentType.values()) {
-            items.add(new ProfileItem("doc:" + t.name(), t.label(), "Documents", have.containsKey(t)));
+            items.add(new ProfileItem("doc:" + t.name(), t.label(), "Documents", have.contains(t)));
         }
-        int done = (int) items.stream().filter(ProfileItem::done).count();
-        return new ProfileStatus(done * 100 / items.size(), done, items.size(), items);
+        return items;
     }
 
     /** Me, or someone I manage (owners and admins); 403 / 404 otherwise. */

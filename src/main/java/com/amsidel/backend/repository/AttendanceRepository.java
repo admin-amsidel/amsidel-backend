@@ -26,6 +26,9 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
     List<Attendance> forEmployee(@Param("employeeId") Long employeeId, @Param("from") LocalDate from,
                                  @Param("to") LocalDate to);
 
+    @Query("select a from Attendance a where a.employee.id in :ids and a.workDate between :from and :to")
+    List<Attendance> ofPeople(@Param("ids") Collection<Long> ids, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
     @Query("select a from Attendance a where a.workDate = :day and a.employee.id in :employeeIds order by a.entryNo")
     List<Attendance> onDay(@Param("day") LocalDate day, @Param("employeeIds") Collection<Long> employeeIds);
 
