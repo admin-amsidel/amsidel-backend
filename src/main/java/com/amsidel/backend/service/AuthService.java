@@ -37,6 +37,7 @@ public class AuthService {
     private final PinChecks pinChecks;
     private final TransactionTemplate transaction;
     private final TokenService tokenService;
+    private final com.amsidel.backend.security.SignedInCache signedIn;
     private final int maxFailedAttempts;
     /** Checked against when the user ID does not exist, so both cases take the same time. */
     private final String dummyHash;
@@ -46,12 +47,14 @@ public class AuthService {
                        PinChecks pinChecks,
                        TransactionTemplate transaction,
                        TokenService tokenService,
+                       com.amsidel.backend.security.SignedInCache signedIn,
                        @Value("${app.login.max-failed-attempts}") int maxFailedAttempts) {
         this.employeeRepository = employeeRepository;
         this.passwordEncoder = passwordEncoder;
         this.pinChecks = pinChecks;
         this.transaction = transaction;
         this.tokenService = tokenService;
+        this.signedIn = signedIn;
         this.maxFailedAttempts = maxFailedAttempts;
         this.dummyHash = passwordEncoder.encode("no-such-user-1!");
     }
@@ -96,6 +99,9 @@ public class AuthService {
         employee.setFailedAttempts(0);
         employee.setLockedUntil(null);
         employee.setLastLoginAt(now);
+        employee.setSessionExpired(false);
+        // that update tells no one, and the next call must see the session as running
+        signedIn.evict(employee.getId());
         return issue(employee);
     }
 
@@ -158,6 +164,9 @@ public class AuthService {
         employee.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         employee.setMustChangePassword(false);
         employee.setPasswordChangedAt(Instant.now());
+        // the new token starts a new session, which the session check must time from
+        employee.setLastLoginAt(Instant.now());
+        employee.setSessionExpired(false);
         return issue(employee);
     }
 

@@ -31,17 +31,19 @@ public class ProjectStageService {
     public record StageView(String code, String name, Phase phase, int sortOrder, boolean active) {
     }
 
-    private record Seed(String code, String name, Phase phase) {
+    private record Seed(String code, String name, Phase phase, int sortOrder) {
     }
 
     private static final List<Seed> SEEDS = List.of(
-            new Seed(ProjectStage.QUEUED, "Queued", Phase.OPEN),
-            new Seed("QUOTATION_ISSUED", "Quotation issued", Phase.OPEN),
-            new Seed("QUOTATION_APPROVED", "Quotation approved", Phase.OPEN),
-            new Seed("CONFIRMED", "Confirmed", Phase.OPEN),
-            new Seed(ProjectStage.STARTED, "Started", Phase.OPEN),
-            new Seed(ProjectStage.COMPLETED, "Completed", Phase.DONE),
-            new Seed(ProjectStage.CANCELLED, "Cancelled", Phase.CANCELLED));
+            new Seed(ProjectStage.QUEUED, "Queued", Phase.OPEN, 10),
+            new Seed(ProjectStage.QUOTATION_ISSUED, "Quotation issued", Phase.OPEN, 20),
+            new Seed("QUOTATION_APPROVED", "Quotation approved", Phase.OPEN, 30),
+            new Seed(ProjectStage.SALES_ORDER_ISSUED, "Sales order issued", Phase.OPEN, 35),
+            new Seed("CONFIRMED", "Confirmed", Phase.OPEN, 40),
+            new Seed(ProjectStage.STARTED, "Started", Phase.OPEN, 50),
+            new Seed(ProjectStage.INVOICE_ISSUED, "Invoice issued", Phase.OPEN, 55),
+            new Seed(ProjectStage.COMPLETED, "Completed", Phase.DONE, 60),
+            new Seed(ProjectStage.CANCELLED, "Cancelled", Phase.CANCELLED, 70));
 
     private final ProjectStageRepository repository;
 
@@ -49,15 +51,13 @@ public class ProjectStageService {
     @Order(Ordered.HIGHEST_PRECEDENCE)
     @Transactional
     public void seed() {
-        int order = 0;
         for (Seed s : SEEDS) {
-            order += 10;
             if (!repository.existsById(s.code())) {
                 ProjectStage st = new ProjectStage();
                 st.setCode(s.code());
                 st.setName(s.name());
                 st.setPhase(s.phase());
-                st.setSortOrder(order);
+                st.setSortOrder(s.sortOrder());
                 st.setUpdatedAt(Instant.now());
                 repository.save(st);
             }

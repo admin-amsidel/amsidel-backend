@@ -115,7 +115,7 @@ public final class PerformanceViews {
                            Instant selfRatedAt, BigDecimal managerRating, String managerComment, String managerRatedBy,
                            Instant managerRatedAt, boolean canSelfRate, boolean canManagerRate, boolean canEdit,
                            GoalType type, BigDecimal targetAmount, BigDecimal achievedAmount, BigDecimal achievedPercent,
-                           List<SalesEntryView> salesEntries, boolean canRecord, List<OrderLineView> orders) {
+                           List<SalesEntryView> salesEntries, boolean canRecord, List<OrderLineView> orders, List<com.amsidel.backend.dto.ManualSalesDtos.GoalLine> manualLines) {
     }
 
     public record AchievementView(Long id, String title, String category, LocalDate achievedOn, String details,

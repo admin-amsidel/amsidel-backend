@@ -20,7 +20,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -50,8 +49,9 @@ public class LeaveExpiryNotifier {
     private final String fromName;
     private final boolean signInReady;
     private final ZoneId zone;
+    private final com.amsidel.backend.service.SchedulerSwitch schedulers;
 
-    public LeaveExpiryNotifier(LeavePlanRepository plans, EmployeeRepository employees, BrandMailSenders brandSenders,
+    public LeaveExpiryNotifier(LeavePlanRepository plans, EmployeeRepository employees, BrandMailSenders brandSenders, com.amsidel.backend.service.SchedulerSwitch schedulers,
                                ObjectProvider<JavaMailSender> defaultSender,
                                @Value("${spring.mail.username:}") String username, @Value("${spring.mail.password:}") String password,
                                @Value("${app.mail.from:}") String from, @Value("${app.mail.from-name:Amsidel Group}") String fromName,
@@ -59,6 +59,7 @@ public class LeaveExpiryNotifier {
         this.plans = plans;
         this.employees = employees;
         this.brandSenders = brandSenders;
+        this.schedulers = schedulers;
         this.defaultSender = defaultSender;
         this.from = StringUtils.hasText(from) ? from.trim() : username.trim();
         this.fromName = fromName;
@@ -66,9 +67,11 @@ public class LeaveExpiryNotifier {
         this.zone = zone;
     }
 
-    @Scheduled(cron = "${app.leave.expiry-cron:0 0 8 * * *}", zone = "${app.leave.zone:Asia/Kolkata}")
     @Transactional
     public void run() {
+        if (!schedulers.allowed(com.amsidel.backend.service.SchedulerSwitch.Job.LEAVE_EXPIRY)) {
+            return;
+        }
         LocalDate today = LocalDate.now(zone);
         List<LeavePlan> all = plans.allFull();
         for (LeavePlan p : all) {

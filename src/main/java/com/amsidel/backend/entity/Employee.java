@@ -169,6 +169,13 @@ public class Employee {
 
     private Instant lastLoginAt;
 
+    /** Set when the sign-in ran past its time (by the session check) or the person signed out; cleared by signing in. Null = no. */
+    @Column(name = "is_session_expired")
+    private Boolean sessionExpired;
+
+    /** Tokens issued before this moment are refused, even after a new sign-in clears the flag. */
+    private Instant sessionExpiredAt;
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;

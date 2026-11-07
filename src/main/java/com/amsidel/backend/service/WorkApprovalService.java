@@ -37,13 +37,15 @@ public class WorkApprovalService {
     private final AttendanceRepository attendances;
     private final WorkLogRepository workLogs;
     private final EmployeeRepository employees;
+    private final ManualSalesService manualSales;
     private final ZoneId zone;
 
-    public WorkApprovalService(AttendanceRepository attendances, WorkLogRepository workLogs, EmployeeRepository employees,
+    public WorkApprovalService(AttendanceRepository attendances, WorkLogRepository workLogs, EmployeeRepository employees, ManualSalesService manualSales,
                                @Value("${app.leave.zone}") ZoneId zone) {
         this.attendances = attendances;
         this.workLogs = workLogs;
         this.employees = employees;
+        this.manualSales = manualSales;
         this.zone = zone;
     }
 
@@ -87,10 +89,12 @@ public class WorkApprovalService {
                         a.getCheckOutAt() == null ? null : Duration.between(a.getCheckInAt(), a.getCheckOutAt()).toMinutes(),
                         a.getCheckOutNote(), a.getPhotoPath() != null, decidable(a, today)))
                 .toList();
-        List<WorkLogItem> logs = workLogs.waiting(ApprovalStatus.PENDING).stream()
-                .filter(w -> canDecide(me, w.getEmployee()))
+        List<WorkLog> waiting = workLogs.waiting(ApprovalStatus.PENDING).stream().filter(w -> canDecide(me, w.getEmployee())).toList();
+        // the approver sees what the sales entry says before it counts
+        var sales = manualSales.viewsFor(waiting.stream().map(WorkLog::getId).toList());
+        List<WorkLogItem> logs = waiting.stream()
                 .map(w -> new WorkLogItem(w.getId(), person(w.getEmployee()), w.getWorkDate(), w.getTaskId(),
-                        w.getTask() == null ? null : w.getTask().getTitle(), w.getHours(), w.getDescription()))
+                        w.getTask() == null ? null : w.getTask().getTitle(), w.getHours(), w.getDescription(), sales.get(w.getId())))
                 .toList();
         return new Queue(attendance, logs);
     }

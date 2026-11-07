@@ -62,6 +62,14 @@ public class WorkTask {
     @JoinColumn(name = "customer_id")
     private Customer customer;
 
+    /** A Manual Sales worklog task (its details in ManualSalesTask): kept off the Tasks page and out of Task worklog goals. Null = no. */
+    @Column(name = "manual_sales")
+    private Boolean manualSales;
+
+    public boolean isManualSalesTask() {
+        return Boolean.TRUE.equals(manualSales);
+    }
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by")
     private Employee createdBy;

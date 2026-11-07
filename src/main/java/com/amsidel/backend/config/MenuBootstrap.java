@@ -93,8 +93,23 @@ public class MenuBootstrap implements ApplicationRunner {
                 }
                 grantDesignations(d);
                 takeOver(d);
+                if (Menus.WAS_FOR_EVERYONE.contains(code)) {
+                    grantEveryone(d);
+                }
             });
         }
+    }
+
+    /** Every user type and person with ticks of their own; "*" already covers it, and a designation only adds to a user type's. */
+    private void grantEveryone(Menus.Def d) {
+        Set<String> given = new java.util.HashSet<>();
+        for (MenuAccess a : accessRepository.findAll()) {
+            boolean all = MenuAccess.ALL.equals(a.getCheckpoint());
+            if (!all && a.getSubjectType() != AccessSubject.DESIGNATION && given.add(a.getSubjectType() + ":" + a.getSubjectKey())) {
+                grantOnce(a.getSubjectType(), a.getSubjectKey(), String.valueOf(d.checkpoint()));
+            }
+        }
+        log.info("Menu {} given to the {} user types and people who have ticks", d.name(), given.size());
     }
 
     /**
@@ -138,8 +153,8 @@ public class MenuBootstrap implements ApplicationRunner {
     private void defaults() {
         grant("OWNER", List.of(MenuAccess.ALL));
         grant("ADMIN", List.of(MenuAccess.ALL));
-        grant("MANAGER", List.of("1001", "1002", "2001", "2002", "3001", "6001", "6002", "6004", "6005", "6006", "6007", "8000"));
-        grant("EMPLOYEE", List.of("1001", "2001", "3001", "6001", "8000"));
+        grant("MANAGER", List.of("400", "1001", "1002", "2001", "2002", "3001", "6001", "6002", "6004", "6005", "6006", "6007", "8000"));
+        grant("EMPLOYEE", List.of("400", "1001", "2001", "3001", "6001", "8000"));
         Menus.ALL.forEach(this::grantDesignations);
         log.info("Created the default menu access for each user type");
     }

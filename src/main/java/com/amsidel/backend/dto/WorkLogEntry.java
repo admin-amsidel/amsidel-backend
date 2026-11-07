@@ -24,13 +24,20 @@ public record WorkLogEntry(
         LocalDateTime updatedAt,
         /** With the approver; only approved hours count. */
         com.amsidel.backend.entity.ApprovalStatus approval,
-        String decisionNote) {
+        String decisionNote,
+        /** On a Manual Sales worklog task; null on any other. */
+        ManualSalesDtos.EntryView manualSales) {
 
     /** Call inside a transaction: reads the task. */
     public static WorkLogEntry from(WorkLog w) {
+        return from(w, null);
+    }
+
+    /** Call inside a transaction: reads the task. */
+    public static WorkLogEntry from(WorkLog w, ManualSalesDtos.EntryView manualSales) {
         return new WorkLogEntry(w.getId(), w.getWorkDate(), w.getSequence(), w.getTaskId(),
                 w.getTask() == null ? null : w.getTask().getTitle(), w.getHours(),
                 w.getDescription(), w.getCreatedAt(), w.getUpdatedAt(),
-                w.getApproval() == null ? com.amsidel.backend.entity.ApprovalStatus.APPROVED : w.getApproval(), w.getDecisionNote());
+                w.getApproval() == null ? com.amsidel.backend.entity.ApprovalStatus.APPROVED : w.getApproval(), w.getDecisionNote(), manualSales);
     }
 }

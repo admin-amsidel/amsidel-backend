@@ -96,7 +96,7 @@ class TeamDashboardTest {
         approveAll();
         // the managers can see their team's attendance and pay
         for (String id : List.of(bossId, leadId)) {
-            menuAccess.save(AccessSubject.EMPLOYEE, id, List.of("1001", "1002", "2001", "2002", "3001", "7004", "8000"));
+            menuAccess.save(AccessSubject.EMPLOYEE, id, List.of("400", "1001", "1002", "2001", "2002", "3001", "7004", "8000"));
         }
     }
 
@@ -165,7 +165,7 @@ class TeamDashboardTest {
         person("Under U", "team.under", "EMPLOYEE", dw, id);
         String mini = signIn("team.mini");
         // My work log only: hours and tasks, and leave since anyone with people reporting to them gets Approvals; no team attendance or pay
-        menuAccess.save(AccessSubject.EMPLOYEE, id, List.of("3001"));
+        menuAccess.save(AccessSubject.EMPLOYEE, id, List.of("400", "3001"));
         part("summary", mini).andExpect(jsonPath("$.people").value(1));
         part("hours", mini).andExpect(jsonPath("$.today").value(0));
         for (String refused : List.of("attendance", "pay")) {

@@ -19,13 +19,14 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * The Overview page, for everyone signed in, and only about me or the people below me. Each part of the page is asked for
+ * The Overview page, for those with its tick, and only about me or the people below me. Each part of the page is asked for
  * on its own, so the first figures show as soon as they are read and a slow part keeps nothing else waiting. A part follows
  * its page's tick: without it the answer is empty (mail: no rows). Under /team, brandId takes one brand for those who may
  * (0 = people without a brand).
  */
 @RestController
 @RequestMapping("/api/dashboard")
+@com.amsidel.backend.security.Checkpoint({com.amsidel.backend.security.Menus.OVERVIEW})
 @RequiredArgsConstructor
 public class DashboardController {
 

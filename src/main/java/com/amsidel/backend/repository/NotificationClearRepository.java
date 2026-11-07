@@ -16,6 +16,10 @@ import java.util.List;
 
 public interface NotificationClearRepository extends JpaRepository<NotificationClear, Long> {
 
+    @Modifying
+    @Query("delete from NotificationClear c where c.employeeId = :employeeId")
+    void deleteAllForEmployee(@Param("employeeId") Long employeeId);
+
     List<NotificationClear> findByEmployeeId(Long employeeId);
 
     boolean existsByEmployeeIdAndMeetingIdAndKind(Long employeeId, Long meetingId, NotificationClear.Kind kind);

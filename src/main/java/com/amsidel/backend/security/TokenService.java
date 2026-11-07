@@ -13,7 +13,6 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
@@ -22,21 +21,21 @@ import java.time.temporal.ChronoUnit;
 public class TokenService {
 
     private final JwtEncoder jwtEncoder;
-    private final Duration validity;
+    private final com.amsidel.backend.service.SessionSettings sessions;
     private final String issuer;
 
     public TokenService(JwtEncoder jwtEncoder,
-                        @Value("${app.jwt.validity}") Duration validity,
+                        com.amsidel.backend.service.SessionSettings sessions,
                         @Value("${app.jwt.issuer}") String issuer) {
         this.jwtEncoder = jwtEncoder;
-        this.validity = validity;
+        this.sessions = sessions;
         this.issuer = issuer;
     }
 
     public IssuedToken issue(Employee employee) {
         // whole seconds, matching the precision of the "iat" claim (see EmployeeTokenConverter)
         Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
-        Instant expiresAt = now.plus(validity);
+        Instant expiresAt = now.plus(sessions.maxValidity());
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(issuer)
                 .subject(String.valueOf(employee.getId()))

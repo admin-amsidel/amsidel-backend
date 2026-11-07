@@ -37,10 +37,18 @@ public class AuthController {
     private final BankDetailsService bankDetailsService;
     private final EmployeeService employeeService;
     private final UploadLimits uploadLimits;
+    private final com.amsidel.backend.service.SessionService sessions;
 
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    /** Ends my session, so I no longer count as signed in and my token stops working. */
+    @PostMapping("/logout")
+    @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
+    public void logout(@AuthenticationPrincipal AuthUser me) {
+        sessions.signOut(me);
     }
 
     @GetMapping("/me")

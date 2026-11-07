@@ -16,8 +16,14 @@ import java.util.Optional;
 public interface WorkTaskRepository extends JpaRepository<WorkTask, Long> {
 
     @Query("select distinct t from WorkTask t left join fetch t.assignees left join fetch t.brand left join fetch t.customer"
-            + " left join fetch t.createdBy where (:status is null or t.status = :status) order by t.createdAt desc")
+            + " left join fetch t.createdBy where (:status is null or t.status = :status) and (t.manualSales is null or t.manualSales = false)"
+            + " order by t.createdAt desc")
     List<WorkTask> search(@Param("status") TaskStatus status);
+
+    /** The Manual Sales worklog's tasks. */
+    @Query("select distinct t from WorkTask t left join fetch t.assignees left join fetch t.brand left join fetch t.createdBy"
+            + " where (:status is null or t.status = :status) and t.manualSales = true order by t.code desc")
+    List<WorkTask> searchManual(@Param("status") TaskStatus status);
 
     /** Tasks for this customer (a customer that has any cannot be deleted). */
     boolean existsByCustomerId(Long customerId);
@@ -32,8 +38,8 @@ public interface WorkTaskRepository extends JpaRepository<WorkTask, Long> {
     @Query("select t from WorkTask t join t.assignees a where a.id = :employeeId and t.status = :status order by t.code")
     List<WorkTask> assignedTo(@Param("employeeId") Long employeeId, @Param("status") TaskStatus status);
 
-    /** Every task assigned to one person, whatever its status (the sub-tasks of their task worklog goal). */
-    @Query("select t from WorkTask t join t.assignees a where a.id = :employeeId order by t.code")
+    /** Every task assigned to one person, whatever its status (the sub-tasks of their task worklog goal, which never has Manual Sales ones). */
+    @Query("select t from WorkTask t join t.assignees a where a.id = :employeeId and (t.manualSales is null or t.manualSales = false) order by t.code")
     List<WorkTask> allAssignedTo(@Param("employeeId") Long employeeId);
 
     /** Tasks this person has marked complete on their task worklog goals. */

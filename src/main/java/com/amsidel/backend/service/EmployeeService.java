@@ -51,6 +51,8 @@ public class EmployeeService {
     private final PasswordEncoder passwordEncoder;
     private final SignedInCache signedIn;
     private final UserTypeService userTypes;
+    private final org.springframework.transaction.support.TransactionTemplate transactions;
+    private final TimeZones timeZones;
 
     @Transactional(readOnly = true)
     public List<EmployeeResponse> list(AuthUser me, Long brandId) {
@@ -135,6 +137,130 @@ public class EmployeeService {
                         }
                     });
         }
+    }
+
+    // ---- the employee generator ----
+
+    private static final int MAX_GENERATED = 500;
+
+    public record GenerateBody(
+            @jakarta.validation.constraints.NotNull(message = "Choose the brand") Long brandId,
+            @jakarta.validation.constraints.NotNull(message = "Choose the designation") Long designationId,
+            @jakarta.validation.constraints.NotNull(message = "Give the number of employees")
+            @jakarta.validation.constraints.Min(value = 1, message = "Give at least 1 employee")
+            @jakarta.validation.constraints.Max(value = MAX_GENERATED, message = "Give at most 500 employees at a time") Integer count,
+            @jakarta.validation.constraints.NotBlank(message = "Give the password") String password,
+            @jakarta.validation.constraints.NotNull(message = "Say whether this is a temporary password") Boolean temporaryPassword,
+            Long reportsToId) {
+    }
+
+    public record Generated(int count, String first, String last, boolean temporaryPassword, String brandCode, String designationName, String reportsToName) {
+    }
+
+    /** Someone they can report to. */
+    public record Superior(Long id, String name, String empNumber, String designationName, String brandCode) {
+    }
+
+    public record NextNumber(String next) {
+    }
+
+    @Transactional(readOnly = true)
+    public NextNumber nextGenerated(AuthUser me, Long brandId) {
+        Brand brand = resolveBrand(brandId, new Employee());
+        checkCanAssign(me, Role.EMPLOYEE, brandId);
+        return new NextNumber(freeNumbers(brand, 1).getFirst());
+    }
+
+    /** Who a brand's generated employees can report to: its active people, and the group-level ones such as owners. */
+    @Transactional(readOnly = true)
+    public List<Superior> generatorSuperiors(AuthUser me, Long brandId) {
+        resolveBrand(brandId, new Employee());
+        checkCanAssign(me, Role.EMPLOYEE, brandId);
+        return employeeRepository.search(null).stream().filter(e -> canLeadGenerated(e, brandId))
+                .map(e -> new Superior(e.getId(), e.getName(), e.getEmpNumber(), e.getDesignation() == null ? null : e.getDesignation().getName(), e.getBrand() == null ? null : e.getBrand().getCode()))
+                .sorted(java.util.Comparator.comparing(Superior::name, String.CASE_INSENSITIVE_ORDER)).toList();
+    }
+
+    private static boolean canLeadGenerated(Employee e, Long brandId) {
+        return e.isActive() && (e.getBrand() == null || e.getBrand().getId().equals(brandId));
+    }
+
+    /**
+     * Test employees: plain employees of the brand with the next numbers as their employee number and name, and as their
+     * user ID in small letters, all with the one password. All or nothing. The password is worked out once and first: that
+     * is slow, and no connection is held meanwhile.
+     */
+    public Generated generate(AuthUser me, GenerateBody body) {
+        if (!PinPolicy.isValid(body.password())) {
+            throw ApiException.badRequest(PinPolicy.RULE);
+        }
+        checkCanAssign(me, Role.EMPLOYEE, body.brandId());
+        String hash = passwordEncoder.encode(body.password());
+        boolean temporary = body.temporaryPassword();
+        Generated done = transactions.execute(status -> {
+            Brand brand = resolveBrand(body.brandId(), new Employee());
+            Employee check = new Employee();
+            check.setBrand(brand);
+            Designation designation = resolveDesignation(body.designationId(), check);
+            Employee reportsTo = resolveReportsTo(body.reportsToId(), check);
+            if (reportsTo != null && !canLeadGenerated(reportsTo, body.brandId())) {
+                throw ApiException.badRequest(reportsTo.getName() + " cannot be chosen: choose an active person of " + brand.getName() + " or a group-level person");
+            }
+            UserType type = userTypes.forEmployee(null, Role.EMPLOYEE, null);
+            Instant now = Instant.now();
+            java.time.LocalDate today = java.time.LocalDate.now(timeZones.of(me));
+            List<String> numbers = freeNumbers(brand, body.count());
+            List<Employee> made = new java.util.ArrayList<>();
+            for (String number : numbers) {
+                Employee e = new Employee();
+                e.setEmpNumber(number);
+                e.setUserId(AuthService.normalizeUserId(number));
+                e.setName(number);
+                e.setRole(Role.EMPLOYEE);
+                e.setUserType(type);
+                e.setBrand(brand);
+                e.setDesignation(designation);
+                e.setReportsTo(reportsTo);
+                e.setJoinedDate(today);
+                e.setPasswordHash(hash);
+                e.setMustChangePassword(temporary);
+                e.setPasswordChangedAt(now);
+                made.add(e);
+            }
+            employeeRepository.saveAll(made);
+            employeeRepository.flush();
+            // whoever they report to now leads a team, which opens the team menus and approvals
+            teamsChanged();
+            return new Generated(numbers.size(), numbers.getFirst(), numbers.getLast(), temporary, brand.getCode(), designation.getName(), reportsTo == null ? null : reportsTo.getName());
+        });
+        log.info("Employee generator: {} employees {} to {} made by employee {} ({} password)", done.count(), done.first(), done.last(), me.id(), temporary ? "temporary" : "permanent");
+        return done;
+    }
+
+    /** The next numbers after the brand's highest, leaving out any whose number or user ID someone already has. */
+    private List<String> freeNumbers(Brand brand, int count) {
+        String prefix = brand.getCode().toUpperCase(Locale.ROOT);
+        Set<String> takenNumbers = new HashSet<>();
+        Set<String> takenUserIds = new HashSet<>();
+        long highest = 0;
+        for (Object[] row : employeeRepository.allNumbersAndUserIds()) {
+            String number = ((String) row[0]).toUpperCase(Locale.ROOT);
+            takenNumbers.add(number);
+            takenUserIds.add((String) row[1]);
+            String rest = number.startsWith(prefix) ? number.substring(prefix.length()) : "";
+            // as a number, not as text: DW10000 comes after DW9999
+            if (rest.matches("\\d{1,15}")) {
+                highest = Math.max(highest, Long.parseLong(rest));
+            }
+        }
+        List<String> free = new java.util.ArrayList<>();
+        for (long next = highest + 1; free.size() < count; next++) {
+            String number = String.format("%s%04d", prefix, next);
+            if (!takenNumbers.contains(number) && !takenUserIds.contains(AuthService.normalizeUserId(number))) {
+                free.add(number);
+            }
+        }
+        return free;
     }
 
     /** Sets a temporary PIN, releases a locked account and signs the person out everywhere. */

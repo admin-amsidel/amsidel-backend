@@ -51,13 +51,14 @@ public class PerformanceService {
     private final SalesDocRepository salesDocs;
     private final WorkTaskRepository workTasks;
     private final WorkLogRepository workLogs;
+    private final ManualSalesEntryRepository manualSales;
     private final ZoneId zone;
 
     public PerformanceService(ReviewCycleRepository cycleRepository, ReviewRepository reviewRepository,
                               SkillRepository skillRepository, GoalRepository goalRepository,
                               AchievementRepository achievementRepository, EmployeeRepository employeeRepository,
                               BrandRepository brandRepository, TeamAccess access, MenuAccessService menuAccess,
-                              SalesDocRepository salesDocs, WorkTaskRepository workTasks, WorkLogRepository workLogs,
+                              SalesDocRepository salesDocs, WorkTaskRepository workTasks, WorkLogRepository workLogs, ManualSalesEntryRepository manualSales,
                               @Value("${app.leave.zone}") ZoneId zone) {
         this.cycleRepository = cycleRepository;
         this.reviewRepository = reviewRepository;
@@ -71,6 +72,7 @@ public class PerformanceService {
         this.salesDocs = salesDocs;
         this.workTasks = workTasks;
         this.workLogs = workLogs;
+        this.manualSales = manualSales;
         this.zone = zone;
     }
 
@@ -335,9 +337,10 @@ public class PerformanceService {
         if (!review.getEmployee().getId().equals(me.id())) {
             throw ApiException.forbidden("Only the person can rate their own goal");
         }
-        if (g.isSales() || g.isOrders() || g.isWorklog()) {
+        if (g.isSales() || g.isOrders() || g.isManualSales() || g.isWorklog()) {
             throw ApiException.badRequest(g.isWorklog() ? "Rate each task when you mark it complete"
                     : g.isOrders() ? "A sales-order goal's self rating is worked out from your confirmed orders"
+                    : g.isManualSales() ? "A Manual Sales worklog goal's self rating is worked out from your approved sales orders"
                     : "A sales goal's self rating is worked out from the amounts you record");
         }
         requireOpen(review.getCycle());
@@ -363,7 +366,7 @@ public class PerformanceService {
         }
         readOrders(g);
         if (!selfDone(g, today())) {
-            throw ApiException.badRequest(g.isSales() || g.isOrders() ? "Wait for the first achievement (or the goal's end date)"
+            throw ApiException.badRequest(g.isSales() || g.isOrders() || g.isManualSales() ? "Wait for the first achievement (or the goal's end date)"
                     : "The person rates the goal first");
         }
         if (body.getComment() == null || body.getComment().isBlank()) {
@@ -506,13 +509,14 @@ public class PerformanceService {
 
     /** The person's part is done: rated (general), or something recorded or the end date come (sales). */
     private static boolean selfDone(Goal g, LocalDate today) {
-        return g.getSelfRating() != null || ((g.isSales() || g.isOrders()) && !today.isBefore(g.getEndDate()));
+        return g.getSelfRating() != null || ((g.isSales() || g.isOrders() || g.isManualSales()) && !today.isBefore(g.getEndDate()));
     }
 
     private static void requireGeneral(Goal g) {
-        if (g.isSales() || g.isOrders() || g.isWorklog()) {
+        if (g.isSales() || g.isOrders() || g.isManualSales() || g.isWorklog()) {
             throw ApiException.badRequest(g.isWorklog() ? "A Task worklog goal's progress comes from the tasks marked complete"
                     : g.isOrders() ? "A sales-order goal's progress comes from the confirmed orders"
+                    : g.isManualSales() ? "A Manual Sales worklog goal's progress comes from the approved sales orders"
                     : "A sales goal's progress comes from the amounts recorded");
         }
     }
@@ -525,6 +529,10 @@ public class PerformanceService {
      * the order in full. The self rating follows achieved / target, as for sales goals.
      */
     private void readOrders(Goal g) {
+        if (g.isManualSales()) {
+            readManualSales(g);
+            return;
+        }
         if (!g.isOrders()) {
             return;
         }
@@ -539,6 +547,41 @@ public class PerformanceService {
     }
 
     /** What the confirmed orders add up to before GST (what counts towards the target). */
+    /** The target is reached by sales orders; the quotations and invoices are lines of the goal too, for the review. */
+    private void readManualSales(Goal g) {
+        g.setManualSales(manualSales.approvedFor(g.getReview().getEmployee().getId(), g.getStartDate(), g.getEndDate()));
+        BigDecimal reached = manuallyOrdered(g);
+        if (reached.signum() == 0) {
+            g.setSelfRating(null);
+            return;
+        }
+        double stars = Math.max(0.5, Math.min(5, Math.round(Math.min(ratio(reached, g.getTargetAmount()), 1) * 10) / 2.0));
+        g.setSelfRating(BigDecimal.valueOf(stars).setScale(1, java.math.RoundingMode.HALF_UP));
+    }
+
+    private static BigDecimal manuallyOrdered(Goal g) {
+        return g.getManualSales().stream().filter(e -> e.getKind() == ManualSalesKind.SALES_ORDER).map(ManualSalesEntry::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** The goal's lines follow the viewer's Sales figures ticks; the amount reaching the target shows to all who see the goal. */
+    private boolean seesKind(ManualSalesEntry e) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof AuthUser me)) {
+            return false;
+        }
+        return menuAccess.can(me, switch (e.getKind()) {
+            case QUOTATION -> Menus.SALES_COL_QUOTATIONS;
+            case SALES_ORDER -> Menus.SALES_COL_ORDERS;
+            case INVOICE -> Menus.SALES_COL_INVOICES;
+        });
+    }
+
+    private static com.amsidel.backend.dto.ManualSalesDtos.GoalLine manualLine(ManualSalesEntry e) {
+        LocalDate day = e.getWorkLog().getWorkDate();
+        return new com.amsidel.backend.dto.ManualSalesDtos.GoalLine(e.getId(), day, day.toString().substring(0, 7), e.getKind(), e.getKind().label(), e.getDocumentNumber(),
+                e.getDocumentDate(), e.getAmount(), e.getSalesTask().getTask().getCode(), e.getSalesTask().getCustomerName(), e.getSalesTask().getProjectName(), e.getSalesTask().getAgentName());
+    }
+
     private static BigDecimal ordered(Goal g) {
         return g.getOrders().stream().map(SalesDoc::getTaxable).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
@@ -735,7 +778,7 @@ public class PerformanceService {
                 one(progressOf(g)), tasks, g.getSelfRating(), null, g.getSelfRatedAt(), g.getManagerRating(), null,
                 g.getManagerRatedBy() == null ? null : g.getManagerRatedBy().getName(), g.getManagerRatedAt(),
                 false, false, rights.admin() || rights.manager(), GoalType.TASK_WORKLOG, null, null, null,
-                List.of(), false, List.of());
+                List.of(), false, List.of(), List.of());
     }
 
     /** May I set a goal of this type? (Goal type ticks under Performance; owners and admins have all.) */
@@ -745,6 +788,7 @@ public class PerformanceService {
             case SALES -> Menus.PERF_TYPE_SALES;
             case SALES_ORDER -> Menus.PERF_TYPE_ORDERS;
             case TASK_WORKLOG -> Menus.PERF_TYPE_WORKLOG;
+            case MANUAL_SALES -> Menus.PERF_TYPE_MANUAL_SALES;
         };
         if (!menuAccess.can(me, code)) {
             throw ApiException.forbidden("You may not set goals of this type. Ask your admin for \"Goal type\" under Performance in Menu access.");
@@ -892,7 +936,8 @@ public class PerformanceService {
         List<PerformanceRequests.TaskBody> tasks = body.getTasks() == null ? List.of() : body.getTasks();
         GoalType type = body.getType() == null ? GoalType.GENERAL : body.getType();
         boolean sales = type == GoalType.SALES;
-        boolean orders = type == GoalType.SALES_ORDER;
+        // a Manual Sales worklog goal is set like a sales-order one: a target, and its lines come on their own
+        boolean orders = type == GoalType.SALES_ORDER || type == GoalType.MANUAL_SALES;
         boolean worklog = type == GoalType.TASK_WORKLOG;
         if (worklog && !tasks.isEmpty()) {
             throw ApiException.badRequest("A Task worklog goal's sub-tasks are the work log tasks assigned to the person; they are added on their own");
@@ -902,7 +947,8 @@ public class PerformanceService {
                 throw ApiException.badRequest("Give the goal's target amount");
             }
             if (!tasks.isEmpty()) {
-                throw ApiException.badRequest("A sales-order goal has no sub-tasks: each confirmed order is a line of it");
+                throw ApiException.badRequest(type == GoalType.MANUAL_SALES ? "A Manual Sales worklog goal has no sub-tasks: each approved entry is a line of it"
+                        : "A sales-order goal has no sub-tasks: each confirmed order is a line of it");
             }
         }
         if (g.getId() != null && type != GoalType.SALES && !g.getSalesEntries().isEmpty()) {
@@ -1012,22 +1058,24 @@ public class PerformanceService {
         boolean ended = !today.isBefore(g.getEndDate());
         boolean sales = g.isSales();
         boolean orders = g.isOrders();
+        boolean manual = g.isManualSales();
         List<TaskView> tasks = g.getTasks().stream().map(t -> !sales ? TaskView.of(t)
                 : new TaskView(t.getId(), t.getTitle(), t.getWeightage(), t.getStartDate(), t.getEndDate(),
                 (int) Math.min(100, Math.round(ratio(achieved(g, t), t.getTargetAmount()) * 100)), t.getTargetAmount(), achieved(g, t))).toList();
-        BigDecimal achieved = sales ? achieved(g) : orders ? ordered(g) : null;
+        BigDecimal achieved = sales ? achieved(g) : orders ? ordered(g) : manual ? manuallyOrdered(g) : null;
         return new GoalView(g.getId(), g.getTitle(), g.getDescription(), g.getWeightage(), g.getStartDate(), g.getEndDate(),
                 one(progressOf(g)), tasks, g.getSelfRating(), g.getSelfComment(),
                 g.getSelfRatedAt(), g.getManagerRating(), g.getManagerComment(),
                 g.getManagerRatedBy() == null ? null : g.getManagerRatedBy().getName(), g.getManagerRatedAt(),
-                !sales && !orders && rights.self() && ended && g.getManagerRating() == null,
+                !sales && !orders && !manual && rights.self() && ended && g.getManagerRating() == null,
                 rights.manager() && selfDone(g, today),
                 rights.admin() || (rights.manager() && g.getManagerRating() == null),
-                sales ? GoalType.SALES : orders ? GoalType.SALES_ORDER : GoalType.GENERAL, g.getTargetAmount(), achieved,
-                sales || orders ? one(ratio(achieved, g.getTargetAmount()) * 100) : null,
+                sales ? GoalType.SALES : orders ? GoalType.SALES_ORDER : manual ? GoalType.MANUAL_SALES : GoalType.GENERAL, g.getTargetAmount(), achieved,
+                sales || orders || manual ? one(ratio(achieved, g.getTargetAmount()) * 100) : null,
                 sales ? g.getSalesEntries().stream().map(SalesEntryView::of).toList() : List.of(),
                 sales && rights.self() && g.getManagerRating() == null,
-                orders ? g.getOrders().stream().map(this::orderLine).toList() : List.of());
+                orders ? g.getOrders().stream().map(this::orderLine).toList() : List.of(),
+                manual ? g.getManualSales().stream().filter(this::seesKind).map(PerformanceService::manualLine).toList() : List.of());
     }
 
     /** % done: achieved / target for a sales goal (at most 100); else weighted sub-tasks, or the goal's own %. */
@@ -1037,6 +1085,9 @@ public class PerformanceService {
         }
         if (g.isOrders()) {
             return Math.min(100, ratio(ordered(g), g.getTargetAmount()) * 100);
+        }
+        if (g.isManualSales()) {
+            return Math.min(100, ratio(manuallyOrdered(g), g.getTargetAmount()) * 100);
         }
         if (g.getTasks().isEmpty()) {
             return g.getProgress();

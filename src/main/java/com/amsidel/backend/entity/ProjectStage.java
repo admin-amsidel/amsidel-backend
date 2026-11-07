@@ -27,6 +27,9 @@ public class ProjectStage {
     /** Set when a sales order of the project is confirmed. */
     public static final String CONFIRMED = "CONFIRMED";
     public static final String COMPLETED = "COMPLETED";
+    public static final String QUOTATION_ISSUED = "QUOTATION_ISSUED";
+    public static final String SALES_ORDER_ISSUED = "SALES_ORDER_ISSUED";
+    public static final String INVOICE_ISSUED = "INVOICE_ISSUED";
     public static final String CANCELLED = "CANCELLED";
 
     /** What a status means for the work. */

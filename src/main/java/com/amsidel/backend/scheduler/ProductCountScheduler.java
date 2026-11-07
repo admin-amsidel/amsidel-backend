@@ -7,7 +7,6 @@ package com.amsidel.backend.scheduler;
 import com.amsidel.backend.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,11 +20,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProductCountScheduler {
 
     private final ProductRepository productRepository;
+    private final com.amsidel.backend.service.SchedulerSwitch schedulers;
 
-    @Scheduled(initialDelayString = "${app.scheduler.product-count.initial-delay:PT1M}",
-               fixedDelayString = "${app.scheduler.product-count.interval:PT15M}")
     @Transactional(readOnly = true)
     public void logProductCounts() {
+        if (!schedulers.allowed(com.amsidel.backend.service.SchedulerSwitch.Job.PRODUCT_COUNT)) {
+            return;
+        }
         try {
             long total = productRepository.count();
             long active = productRepository.countByActiveTrue();

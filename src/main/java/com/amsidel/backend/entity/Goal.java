@@ -91,6 +91,15 @@ public class Goal {
         return type == GoalType.SALES_ORDER;
     }
 
+    /** Reached by the person's approved Manual Sales worklog entries (worked out when read, never typed in). */
+    public boolean isManualSales() {
+        return type == GoalType.MANUAL_SALES;
+    }
+
+    /** Manual Sales worklog goals: the approved entries in its dates, filled in when the goal is read (not stored). */
+    @Transient
+    private List<ManualSalesEntry> manualSales = List.of();
+
     /** Sales-order goals: the confirmed orders counted, filled in when the goal is read (not stored). */
     @Transient
     private List<SalesDoc> orders = List.of();

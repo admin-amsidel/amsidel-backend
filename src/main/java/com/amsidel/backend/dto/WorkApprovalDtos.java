@@ -27,7 +27,8 @@ public final class WorkApprovalDtos {
                                  Long minutes, String note, boolean hasPhoto, boolean decidable) {
     }
 
-    public record WorkLogItem(Long id, Person person, LocalDate date, String taskId, String taskTitle, BigDecimal hours, String description) {
+    public record WorkLogItem(Long id, Person person, LocalDate date, String taskId, String taskTitle, BigDecimal hours, String description,
+                              ManualSalesDtos.EntryView manualSales) {
     }
 
     public record Queue(List<AttendanceItem> attendance, List<WorkLogItem> workLogs) {

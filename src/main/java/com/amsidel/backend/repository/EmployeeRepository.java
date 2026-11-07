@@ -52,9 +52,22 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
      */
     @Transactional
     @Modifying
-    @Query("update Employee e set e.failedAttempts = 0, e.lockedUntil = null, e.lastLoginAt = :now where e.id = :id and e.passwordHash = :hash"
+    @Query("update Employee e set e.failedAttempts = 0, e.lockedUntil = null, e.lastLoginAt = :now, e.sessionExpired = false where e.id = :id and e.passwordHash = :hash"
             + " and e.active = true and e.lockedAt is null and (e.lockedUntil is null or e.lockedUntil <= :now)")
     int recordSignIn(@Param("id") Long id, @Param("hash") String hash, @Param("now") Instant now);
+
+    /** Sign-ins from before the cutoff not yet marked: the session check. */
+    @Modifying
+    @Query("update Employee e set e.sessionExpired = true, e.sessionExpiredAt = :now where e.lastLoginAt < :cutoff and (e.sessionExpired is null or e.sessionExpired = false)")
+    int expireSessions(@Param("cutoff") Instant cutoff, @Param("now") Instant now);
+
+    @Modifying
+    @Query("update Employee e set e.sessionExpired = true, e.sessionExpiredAt = :now where e.id = :id")
+    int endSession(@Param("id") Long id, @Param("now") Instant now);
+
+    /** Signed in since then and not ended. */
+    @Query("select e from Employee e left join fetch e.brand where e.active = true and e.lastLoginAt >= :since and (e.sessionExpired is null or e.sessionExpired = false)")
+    List<Employee> signedInSince(@Param("since") Instant since);
 
     /** Everyone, or one brand's people when brandId is given. */
     @Query("select e from Employee e left join fetch e.brand b left join fetch e.designation"
@@ -107,6 +120,10 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     }
 
     boolean existsByEmpNumberIgnoreCase(String empNumber);
+
+    /** {employee number, user ID} of everyone: the employee generator looks for free ones in one read, not one per person. */
+    @Query("select e.empNumber, e.userId from Employee e")
+    List<Object[]> allNumbersAndUserIds();
 
     /** Highest employee number with this prefix, used to generate the next one. */
     Optional<Employee> findTopByEmpNumberStartingWithOrderByEmpNumberDesc(String prefix);

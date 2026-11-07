@@ -19,5 +19,7 @@ public enum GoalType {
      * One goal per person and cycle whose sub-tasks are the work log tasks assigned to them (added as they are
      * assigned); each shows the hours they logged against it, is marked complete with a self rating, then reviewed.
      */
-    TASK_WORKLOG
+    TASK_WORKLOG,
+    /** A target amount reached by the person's approved Manual Sales worklog sales orders; for brands without the product portal. */
+    MANUAL_SALES
 }

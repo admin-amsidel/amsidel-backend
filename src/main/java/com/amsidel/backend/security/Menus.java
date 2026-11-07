@@ -155,8 +155,29 @@ public final class Menus {
     public static final String TMAIL_PICTURE = "TMAIL_PICTURE";
     /** Not a page: attachments on a customer &amp; supplier email (Attach files). */
     public static final String TMAIL_ATTACH = "TMAIL_ATTACH";
+    /** Not pages: which Manual Sales figures someone sees, wherever they show. */
+    public static final String SALES_COL_QUOTATIONS = "SALES_COL_QUOTATIONS";
+    public static final String SALES_COL_ORDERS = "SALES_COL_ORDERS";
+    public static final String SALES_COL_INVOICES = "SALES_COL_INVOICES";
+    /** Not a page: deleting employees who have no records, on Employees and on an employee's page. */
+    public static final String EMP_DELETE = "EMP_DELETE";
+    /** Administration > Employee generator: many test employees at once. */
+    public static final String EMP_GENERATOR = "EMP_GENERATOR";
+    /** Administration > Configuration: the settings that override the properties file. */
+    public static final String CONFIGURATIONS = "CONFIGURATIONS";
+    /** The employee portal's Overview page. */
+    public static final String OVERVIEW = "OVERVIEW";
+    /** Not pages: sections of the Overview, each with its own tick. */
+    public static final String OVERVIEW_STORAGE = "OVERVIEW_STORAGE";
+    public static final String OVERVIEW_SALES = "OVERVIEW_SALES";
+    public static final String OVERVIEW_ACTIVE_USERS = "OVERVIEW_ACTIVE_USERS";
+    /** Not a page: Manual Sales worklog tasks are offered in the person's work log, with the sales details asked for on each entry. */
+    public static final String MANUAL_SALES_LOG = "MANUAL_SALES_LOG";
+    public static final String MANUAL_SALES_TASKS = "MANUAL_SALES_TASKS";
+    public static final String MANUAL_SALES_DETAILS = "MANUAL_SALES_DETAILS";
+    public static final String PERF_TYPE_MANUAL_SALES = "PERF_TYPE_MANUAL_SALES";
     /** Sub-menus that a tick on their parent menu does not give: each needs its own tick. */
-    public static final java.util.Set<String> OWN_TICK = java.util.Set.of(STORAGE_USAGE, STORAGE_DELETE, PROD_STOCK_APPROVE, ATT_NO_PHOTO, CUST_NEW_QUOTE, CUST_NEW_INVOICE,
+    public static final java.util.Set<String> OWN_TICK = java.util.Set.of(SALES_COL_QUOTATIONS, SALES_COL_ORDERS, SALES_COL_INVOICES, EMP_DELETE, EMP_GENERATOR, CONFIGURATIONS, OVERVIEW_STORAGE, OVERVIEW_SALES, OVERVIEW_ACTIVE_USERS, MANUAL_SALES_LOG, MANUAL_SALES_TASKS, MANUAL_SALES_DETAILS, PERF_TYPE_MANUAL_SALES, STORAGE_USAGE, STORAGE_DELETE, PROD_STOCK_APPROVE, ATT_NO_PHOTO, CUST_NEW_QUOTE, CUST_NEW_INVOICE,
             CUST_ADD, CUST_EDIT, CUST_DELETE, MAIL_EMAIL, MAIL_WHATSAPP, MAIL_ALL, MAIL_PICK, MAIL_PICTURE, MAIL_ATTACH, MAIL_CONFIG,
             PERF_TYPE_GENERAL, PERF_TYPE_SALES, PERF_TYPE_ORDERS, PERF_TYPE_WORKLOG, PAY_TAX_REGIME,
             CHAT_GROUP_CREATE, CHAT_GROUP_ADD, TMAIL_CONFIG, TMAIL_EMAIL, TMAIL_WHATSAPP, TMAIL_ALL_CUSTOMERS, TMAIL_ALL_SUPPLIERS,
@@ -171,6 +192,10 @@ public final class Menus {
     }
 
     public static final List<Def> ALL = List.of(
+            new Def(OVERVIEW, "Overview", "The employee portal's Overview page: my hours, attendance, leave, tasks, pay and meetings. Without this tick the page is not offered", 400, null, null, "pi-th-large"),
+            new Def(OVERVIEW_STORAGE, "Overview: Storage section", "On the Overview: how much space is used and what takes it. Giving the Overview does not give this", 401, OVERVIEW, null, "pi-database"),
+            new Def(OVERVIEW_SALES, "Overview: My sales section", "On the Overview: Manual Sales worklog figures by week, month and year. The team's also needs Sales, invoice & quotation details. Giving the Overview does not give this", 402, OVERVIEW, null, "pi-receipt"),
+            new Def(OVERVIEW_ACTIVE_USERS, "Overview: Active users section", "On the Overview: how many people are signed in now, and who. Owners and admins with every menu have it; anyone else only if given this. Giving the Overview does not give this", 403, OVERVIEW, null, "pi-users"),
             // the dashboard itself is for everyone, like My profile; only adding meetings needs a tick
             new Def(MEETING_ADD, "Add meetings", "On the Overview's calendar: add meetings, and change or delete the ones you added. Everyone sees the meetings they are in without this", 500, null, null, "pi-calendar-plus"),
             new Def(NOTIFICATIONS, "Notifications", "The bell by the chat button: meetings about to start or under way, and meetings that have closed. Without this tick there is no bell, and no calls to check for notifications", 600, null, null, "pi-bell"),
@@ -192,6 +217,8 @@ public final class Menus {
             new Def(WORK_RULES, "Work hour rules", "Minimum hours per brand and designation", 3003, "WORKLOG", "/portal/worklog/rules", "pi-sliders-h"),
             new Def(WORK_APPROVALS, "Work approvals", "Approve or reject the attendance and work log entries of the people you approve for, before they count. Approvers and anyone with people reporting to them get this anyway; its own tick", 3004, "WORKLOG", "/portal/worklog/approvals", "pi-check-circle"),
             new Def(ATT_HOURS_CHECK, "Check attendance against work log", "For the person given this: the calendar highlights a day with fewer hours checked in than logged, and Half and Full Day Leave follow checked-in time against the work hour rule instead of logged hours; its own tick", 3005, "WORKLOG", null, "pi-exclamation-triangle"),
+            new Def(MANUAL_SALES_LOG, "Manual Sales worklog", "For brands without the product portal: log Manual Sales tasks in the work log, with the status and the quotation, sales order or invoice details. Its own tick", 3006, "WORKLOG", null, "pi-receipt"),
+            new Def(MANUAL_SALES_TASKS, "Manual sales tasks", "Create Manual Sales worklog tasks (customer, project and agent typed by hand) and assign them. Its own tick", 3007, "WORKLOG", "/portal/manual-sales/tasks", "pi-list-check"),
 
             new Def("EMPLOYEES", "Employees", "Employee records and the organisation", 4000, null, null, "pi-users"),
             new Def(EMP_LIST, "All employees", "Employee list; adding and changing records needs the Admin user type", 4001, "EMPLOYEES", "/portal/employees", "pi-id-card"),
@@ -200,6 +227,11 @@ public final class Menus {
             new Def(OFFER_LETTERS, "Issue offer letter", "Write, issue and download offer letters (PDF with the brand's logo); kept for later. Once issued a letter is locked. Its own tick (giving Employees does not give it)", 4004, "EMPLOYEES", "/portal/offer-letters", "pi-file-edit"),
             new Def(OFFER_EDIT, "Change issued offer letter", "Change an offer letter after it is issued; the PDF is made again and the change is recorded. Its own tick", 4005, "EMPLOYEES", null, "pi-pencil"),
             new Def(OFFER_DELETE, "Delete issued offer letter", "Delete an offer letter after it is issued, on the Offer letters screen or from the Storage list. Its own tick", 4006, "EMPLOYEES", null, "pi-trash"),
+            new Def(MANUAL_SALES_DETAILS, "Sales, invoice & quotation details", "Manual Sales worklog figures and entries of the person and everyone they may see, with filters. Its own tick", 4007, "EMPLOYEES", "/portal/manual-sales/details", "pi-chart-bar"),
+            new Def(EMP_DELETE, "Delete employees", "Delete employees for good. Only those with no records go: anyone with attendance, work logs, leave, pay or tasks stays, and can be disabled instead. Its own tick", 4008, "EMPLOYEES", null, "pi-trash"),
+            new Def(SALES_COL_QUOTATIONS, "Sales figures: Quotations column", "Manual Sales figures: see quotations on the Overview, the details page, the tasks page and goals. Its own tick", 4009, "EMPLOYEES", null, "pi-file"),
+            new Def(SALES_COL_ORDERS, "Sales figures: Sales orders column", "Manual Sales figures: see sales orders on the Overview, the details page, the tasks page and goals. Its own tick", 4010, "EMPLOYEES", null, "pi-file-check"),
+            new Def(SALES_COL_INVOICES, "Sales figures: Invoices column", "Manual Sales figures: see invoices on the Overview, the details page, the tasks page and goals. Not given to anyone by default. Its own tick", 4011, "EMPLOYEES", null, "pi-receipt"),
 
             new Def(EMAIL, "Email", "Staff email and its limits", 5100, null, null, "pi-envelope"),
             // checkpoint 5000 kept from when it was a menu of its own, so existing access stays as it is
@@ -222,6 +254,7 @@ public final class Menus {
             new Def(PERF_TYPE_SALES, "Goal type: Sales & marketing", "Team performance: set Sales & marketing goals (a target amount; the person records what they achieved); its own tick", 6005, "PERFORMANCE", null, "pi-chart-line"),
             new Def(PERF_TYPE_ORDERS, "Goal type: Sales orders", "Team performance: set Sales orders goals (a target reached by confirmed sales orders); its own tick", 6006, "PERFORMANCE", null, "pi-check-square"),
             new Def(PERF_TYPE_WORKLOG, "Goal type: Task worklog", "Team performance: set the Task worklog goal (the person's work log tasks as sub-tasks, with their logged hours, completion, self rating and review); its own tick", 6007, "PERFORMANCE", null, "pi-clock"),
+            new Def(PERF_TYPE_MANUAL_SALES, "Goal type: Manual Sales worklog", "Team performance: set Manual Sales worklog goals (a target reached by the person's approved manual sales orders); its own tick", 6008, "PERFORMANCE", null, "pi-receipt"),
 
             new Def("PAYROLL", "Payroll", "Salaries, monthly payslips and your own pay", 7000, null, null, "pi-wallet"),
             new Def(PAY_TAX_MANUAL, "Manual income tax", "On Salaries: choose the Manual tax regime and type a salary's income tax by hand (the new and old regimes work it out); its own tick", 7090, null, null, "pi-calculator"),
@@ -239,6 +272,8 @@ public final class Menus {
             new Def(MENU_ACCESS, "Menu access", "Which user types and designations see which menus; changing it needs the Admin user type", 9001, "ADMIN", "/portal/admin/menu-access", "pi-lock"),
             new Def(STORAGE_USAGE, "Storage", "How much of the database is used, and every stored file with its size, type, brand and who uploaded it; files can be opened, personal documents included. Its own tick", 9010, "ADMIN", "/portal/admin/storage", "pi-database"),
             new Def(STORAGE_DELETE, "Delete stored files", "Delete files from the Storage list to free space; this cannot be undone. Its own tick", 9011, "ADMIN", null, "pi-trash"),
+            new Def(CONFIGURATIONS, "Configuration", "Add, change and delete the settings that override the properties file, such as how long a sign-in lasts. Takes effect at once. Its own tick", 9020, "ADMIN", "/portal/admin/configurations", "pi-cog"),
+            new Def(EMP_GENERATOR, "Employee generator", "Create many test employees at once: real accounts with the next numbers of a brand and one password. Its own tick", 9021, "ADMIN", "/portal/admin/employee-generator", "pi-user-plus"),
 
             // ---- product portal ----
             new Def(PROD_HOME, "Overview", "Product portal: sales, purchases, stock and money owed at a glance", 11000, null, "/portal/products", "pi-chart-bar"),
@@ -311,6 +346,12 @@ public final class Menus {
      * customer & supplier email ticks with that menu (11700).
      */
     public static final java.util.Map<String, List<String>> TAKES_OVER = java.util.Map.ofEntries(
+            // these sections came with the Storage page's tick and the Manual Sales ticks
+            java.util.Map.entry(OVERVIEW_STORAGE, List.of("9010")),
+            java.util.Map.entry(OVERVIEW_SALES, List.of("3006", "4007")),
+            // those who saw these figures keep them; invoices are given one by one, so that they are not for everyone
+            java.util.Map.entry(SALES_COL_QUOTATIONS, List.of("3006", "3007", "4007", "402")),
+            java.util.Map.entry(SALES_COL_ORDERS, List.of("3006", "3007", "4007", "402")),
             java.util.Map.entry(CUSTOMERS, List.of("11301", "11300")),
             java.util.Map.entry(CUST_NEW_QUOTE, List.of("11302", "11300")),
             java.util.Map.entry(CUST_NEW_INVOICE, List.of("11303", "11300")),
@@ -337,6 +378,12 @@ public final class Menus {
             java.util.Map.entry(TMAIL_PICK, List.of("11700")),
             java.util.Map.entry(TMAIL_PICTURE, List.of("11700")),
             java.util.Map.entry(TMAIL_ATTACH, List.of("11700")));
+
+    /**
+     * Menus that were open to everyone before they had a tick: when one first appears, every user type and every person
+     * with ticks of their own gets it, so nobody loses a page.
+     */
+    public static final java.util.Set<String> WAS_FOR_EVERYONE = java.util.Set.of(OVERVIEW);
 
     /** Given to anyone with people reporting to them, whatever their user type or menu access. */
     public static final List<String> FOR_TEAM_LEADS = List.of(PERF_TEAM, PERF_TYPE_GENERAL, LEAVE_APPROVALS, WORK_APPROVALS);

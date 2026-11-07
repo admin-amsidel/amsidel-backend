@@ -48,13 +48,14 @@ public class WorkLogService {
     private final WorkApprovalService approvals;
     private final AttendanceRepository attendances;
     private final MenuAccessService menuAccess;
+    private final ManualSalesService manualSales;
     private final Set<java.time.DayOfWeek> weeklyOffs;
     private final ZoneId zone;
 
     public WorkLogService(WorkLogRepository logRepository, WorkRuleService ruleService,
                           EmployeeRepository employeeRepository, LeaveRequestRepository leaveRepository,
                           TaskService taskService, TeamAccess access, OfficeHolidays officeHolidays, WorkApprovalService approvals,
-                          AttendanceRepository attendances, MenuAccessService menuAccess,
+                          AttendanceRepository attendances, MenuAccessService menuAccess, ManualSalesService manualSales,
                           @Value("${app.leave.weekly-offs}") Set<java.time.DayOfWeek> weeklyOffs, @Value("${app.leave.zone}") ZoneId zone) {
         this.logRepository = logRepository;
         this.ruleService = ruleService;
@@ -66,6 +67,7 @@ public class WorkLogService {
         this.approvals = approvals;
         this.attendances = attendances;
         this.menuAccess = menuAccess;
+        this.manualSales = manualSales;
         this.weeklyOffs = weeklyOffs;
         this.zone = zone;
     }
@@ -86,8 +88,9 @@ public class WorkLogService {
 
     /** The calendar data for any range; the caller checks who may see it (the export). */
     WorkLogMonth monthOf(AuthUser me, Employee person, LocalDate from, LocalDate to) {
-        List<WorkLogEntry> entries = logRepository.forEmployee(person.getId(), from, to).stream()
-                .map(WorkLogEntry::from).toList();
+        List<WorkLog> logs = logRepository.forEmployee(person.getId(), from, to);
+        Map<Long, com.amsidel.backend.dto.ManualSalesDtos.EntryView> sales = manualSales.viewsFor(logs.stream().map(WorkLog::getId).toList());
+        List<WorkLogEntry> entries = logs.stream().map(w -> WorkLogEntry.from(w, sales.get(w.getId()))).toList();
         List<WorkLogMonth.LeaveSpan> leave = leaveRepository.overlapping(person.getId(), SHOWN_LEAVE, from, to).stream()
                 .map(r -> new WorkLogMonth.LeaveSpan(r.getFromDate(), r.getToDate(), r.isHalfDay(),
                         r.getLeaveType().getCode(), r.getLeaveType().getName(), r.getStatus().name()))
@@ -185,7 +188,8 @@ public class WorkLogService {
         log.setTask(taskService.loggable(person.getId(), request.getTaskId()));
         apply(log, request);
         log.setApproval(approvals.startingStatus(person));
-        return WorkLogEntry.from(logRepository.save(log));
+        WorkLog saved = logRepository.save(log);
+        return WorkLogEntry.from(saved, manualSales.saveFor(me, person, saved, request.getManualSales()));
     }
 
     @Transactional
@@ -207,12 +211,14 @@ public class WorkLogService {
         log.setDecidedBy(null);
         log.setDecidedAt(null);
         log.setDecisionNote(null);
-        return WorkLogEntry.from(log);
+        return WorkLogEntry.from(log, manualSales.saveFor(me, log.getEmployee(), log, request.getManualSales()));
     }
 
     @Transactional
     public void delete(AuthUser me, Long id) {
-        logRepository.delete(own(me, id));
+        WorkLog log = own(me, id);
+        manualSales.removeFor(log.getId());
+        logRepository.delete(log);
     }
 
     // ---- minimum hours ----

@@ -80,7 +80,7 @@ class ProjectStatusTest {
     void theProjectStatusesComeFromTheirTable() throws Exception {
         mockMvc.perform(get("/api/trade/project-statuses").header("Authorization", auth(viewer)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].name").value(contains("Queued", "Quotation issued", "Quotation approved", "Confirmed", "Started",
+                .andExpect(jsonPath("$[*].name").value(contains("Queued", "Quotation issued", "Quotation approved", "Sales order issued", "Confirmed", "Started", "Invoice issued",
                         "Completed", "Cancelled")))
                 .andExpect(jsonPath("$[?(@.code == 'COMPLETED')].phase").value(hasItem("DONE")));
         List<Integer> brandIds = JsonPath.read(body(mockMvc.perform(get("/api/brands").header("Authorization", auth(owner)))), "$[?(@.code == 'DW')].id");

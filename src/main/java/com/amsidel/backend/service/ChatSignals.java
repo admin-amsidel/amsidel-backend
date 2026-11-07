@@ -7,7 +7,6 @@ package com.amsidel.backend.service;
 import com.amsidel.backend.exception.ApiException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -32,6 +31,7 @@ public class ChatSignals {
 
     /** /sync closer together than this from one person is refused (app.chat.min-sync-gap-ms; 0 = no limit). */
     private final Duration minGap;
+    private final SchedulerSwitch schedulers;
 
     /** Raised for everyone at once (e.g. the daily clean-up), and on restart the versions start again. */
     private final AtomicLong epoch = new AtomicLong(System.currentTimeMillis());
@@ -40,7 +40,8 @@ public class ChatSignals {
     private final Map<Long, AtomicLong> syncs = new ConcurrentHashMap<>();
     private final Map<Long, AtomicLong> checks = new ConcurrentHashMap<>();
 
-    public ChatSignals(@org.springframework.beans.factory.annotation.Value("${app.chat.min-sync-gap-ms:900}") long minGapMs) {
+    public ChatSignals(SchedulerSwitch schedulers, @org.springframework.beans.factory.annotation.Value("${app.chat.min-sync-gap-ms:900}") long minGapMs) {
+        this.schedulers = schedulers;
         this.minGap = Duration.ofMillis(Math.max(0, minGapMs));
     }
 
@@ -75,8 +76,10 @@ public class ChatSignals {
     }
 
     /** Every hour: how many chat checks came in, so the saving and each customer's cost can be seen. */
-    @Scheduled(fixedRate = 3_600_000, initialDelay = 3_600_000)
     public void report() {
+        if (!schedulers.allowed(SchedulerSwitch.Job.CHAT_REPORT)) {
+            return;
+        }
         java.util.Set<Long> people = new java.util.HashSet<>();
         syncs.forEach((id, n) -> { if (n.get() > 0) people.add(id); });
         checks.forEach((id, n) -> { if (n.get() > 0) people.add(id); });

@@ -120,7 +120,7 @@ class DashboardTest {
         // only Check in: no work log, tasks, leave or pay
         String id = person("Tia T", "dash.tia", dw);
         String tia = signIn("dash.tia");
-        menuAccess.save(AccessSubject.EMPLOYEE, id, List.of("1001"));
+        menuAccess.save(AccessSubject.EMPLOYEE, id, List.of("400", "1001"));
         part("attendance", tia).andExpect(jsonPath("$.checkedIn").value(false));
         for (String refused : List.of("hours", "tasks", "leave", "pay")) {
             assertThat(body(part(refused, tia))).as(refused).isEmpty();

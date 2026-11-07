@@ -28,7 +28,8 @@ public class StorageController {
 
     private final StorageService service;
 
-    @Checkpoint({Menus.STORAGE_USAGE})
+    /** The figures only, so the Overview's section does not need the Storage page. */
+    @Checkpoint({Menus.STORAGE_USAGE, Menus.OVERVIEW_STORAGE})
     @GetMapping("/summary")
     public Summary summary(@AuthenticationPrincipal AuthUser me, @RequestParam(defaultValue = "false") boolean refresh) {
         return service.summary(me, refresh);

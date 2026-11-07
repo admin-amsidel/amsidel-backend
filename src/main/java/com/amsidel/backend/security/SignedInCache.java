@@ -27,7 +27,7 @@ public class SignedInCache {
 
     /** What the token check needs; no PIN hash or personal details. */
     public record Entry(AuthUser user, boolean active, boolean mustChangePassword, Instant passwordChangedAt,
-                        Instant expiresAt) {
+                        Instant sessionExpiredAt, Instant expiresAt) {
     }
 
     private final Map<Long, Entry> entries = new ConcurrentHashMap<>();
@@ -49,7 +49,7 @@ public class SignedInCache {
             return Optional.of(entry);
         }
         Optional<Entry> fresh = loader.get().map(e -> new Entry(AuthUser.of(e, leadsTeam.test(id), approvesWork.test(id)), e.isActive(), e.isMustChangePassword(),
-                e.getPasswordChangedAt(), now.plus(ttl)));
+                e.getPasswordChangedAt(), e.getSessionExpiredAt(), now.plus(ttl)));
         fresh.ifPresentOrElse(f -> entries.put(id, f), () -> entries.remove(id));
         return fresh;
     }

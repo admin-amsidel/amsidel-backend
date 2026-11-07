@@ -83,6 +83,7 @@ public class SecurityConfig {
                         .anyRequest().hasAnyRole(EVERY_ROLE))
                 .oauth2ResourceServer(rs -> rs
                         .bearerTokenResolver(new AsdTokenResolver())
+                        .authenticationEntryPoint(new SessionEntryPoint())
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(tokenConverter)));
         return http.build();
     }

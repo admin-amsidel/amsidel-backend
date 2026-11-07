@@ -33,4 +33,8 @@ public class WorkLogRequest {
     @NotBlank
     @Size(max = 1000)
     private String description;
+
+    /** On a Manual Sales worklog task: the status, and the quotation, sales order or invoice details. */
+    @jakarta.validation.Valid
+    private com.amsidel.backend.dto.ManualSalesDtos.EntryBody manualSales;
 }

@@ -50,7 +50,11 @@ public record EmployeeResponse(
         Instant lockedAt,
         Instant lastLoginAt,
         Long userTypeId,
-        String userTypeName) {
+        String userTypeName,
+        /** The last sign-in ran out or was ended. */
+        boolean sessionExpired,
+        /** Their brand's time zone, which their times are shown in; null = the company's default (India). */
+        String timeZone) {
 
     /** Call inside a transaction: reads the brand, designation and manager. */
     public static EmployeeResponse from(Employee e) {
@@ -92,6 +96,8 @@ public record EmployeeResponse(
                 e.getLockedAt(),
                 e.getLastLoginAt(),
                 e.getUserType() == null ? null : e.getUserType().getId(),
-                e.getUserType() == null ? null : e.getUserType().getName());
+                e.getUserType() == null ? null : e.getUserType().getName(),
+                Boolean.TRUE.equals(e.getSessionExpired()),
+                e.getBrand() == null ? null : e.getBrand().getTimeZone());
     }
 }

@@ -4,6 +4,7 @@
  */
 package com.amsidel.backend.service;
 
+import com.amsidel.backend.entity.Brand;
 import com.amsidel.backend.exception.ApiException;
 import com.amsidel.backend.repository.BrandRepository;
 import com.amsidel.backend.security.AuthUser;
@@ -30,10 +31,15 @@ public class TimeZones {
     }
 
     public ZoneId of(AuthUser me) {
-        if (me.brandId() == null) {
-            return defaultZone;
-        }
-        String id = brands.timeZoneOf(me.brandId());
+        return me.brandId() == null ? defaultZone : named(brands.timeZoneOf(me.brandId()));
+    }
+
+    /** A brand's zone, from what is already loaded; the default with no brand or none set. */
+    public ZoneId of(Brand brand) {
+        return brand == null ? defaultZone : named(brand.getTimeZone());
+    }
+
+    private ZoneId named(String id) {
         if (!StringUtils.hasText(id)) {
             return defaultZone;
         }

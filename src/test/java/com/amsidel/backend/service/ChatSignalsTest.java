@@ -16,7 +16,7 @@ class ChatSignalsTest {
 
     @Test
     void aSecondSyncWithinTheGapIsRefused() {
-        ChatSignals s = new ChatSignals(60_000);
+        ChatSignals s = new ChatSignals(null, 60_000);
         s.syncing(1L);
         assertThatThrownBy(() -> s.syncing(1L)).isInstanceOf(ApiException.class).hasMessageContaining("Too many");
         s.syncing(2L); // someone else is not held back
@@ -24,7 +24,7 @@ class ChatSignalsTest {
 
     @Test
     void theVersionMovesOnlyForThoseConcerned() {
-        ChatSignals s = new ChatSignals(0);
+        ChatSignals s = new ChatSignals(null, 0);
         String a = s.version(1L);
         String b = s.version(2L);
         s.changed(List.of(1L));

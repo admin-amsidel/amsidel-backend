@@ -13,9 +13,11 @@ import com.amsidel.backend.exception.ResourceNotFoundException;
 import com.amsidel.backend.repository.BrandRepository;
 import com.amsidel.backend.repository.CustomerRepository;
 import com.amsidel.backend.repository.EmployeeRepository;
+import com.amsidel.backend.repository.ManualSalesTaskRepository;
 import com.amsidel.backend.repository.WorkLogRepository;
 import com.amsidel.backend.repository.WorkTaskRepository;
 import com.amsidel.backend.security.AuthUser;
+import com.amsidel.backend.security.Menus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +35,7 @@ import java.util.*;
 public class TaskService {
 
     private static final String PREFIX = "TSK-";
+    private static final String MANUAL_SALES_PREFIX = "MS-";
 
     private final WorkTaskRepository taskRepository;
     private final EmployeeRepository employeeRepository;
@@ -40,6 +43,8 @@ public class TaskService {
     private final WorkLogRepository logRepository;
     private final CustomerRepository customerRepository;
     private final PerformanceService performance;
+    private final ManualSalesTaskRepository manualSalesTasks;
+    private final MenuAccessService menuAccess;
 
     @Transactional(readOnly = true)
     public List<TaskResponse> list(AuthUser me, TaskStatus status) {
@@ -65,7 +70,19 @@ public class TaskService {
 
     @Transactional(readOnly = true)
     public List<MyTask> mine(AuthUser me) {
-        return taskRepository.assignedTo(me.id(), TaskStatus.OPEN).stream().map(MyTask::from).toList();
+        // a Manual Sales task is there only for someone given that tick
+        boolean manual = menuAccess.can(me, Menus.MANUAL_SALES_LOG);
+        return taskRepository.assignedTo(me.id(), TaskStatus.OPEN).stream()
+                .filter(t -> !t.isManualSalesTask() || manual)
+                .map(t -> {
+                    if (!t.isManualSalesTask()) {
+                        return MyTask.from(t);
+                    }
+                    var info = manualSalesTasks.findById(t.getId()).orElse(null);
+                    Brand brand = t.getBrand() != null ? t.getBrand() : employeeRepository.findWithBrandById(me.id()).map(Employee::getBrand).orElse(null);
+                    return MyTask.manual(t, ManualSalesService.symbol(brand), info == null ? null : info.getCustomerName(),
+                            info == null ? null : info.getProjectName(), info == null ? null : info.getAgentName());
+                }).toList();
     }
 
     @Transactional
@@ -83,6 +100,9 @@ public class TaskService {
     public TaskResponse update(AuthUser me, Long id, TaskRequest request) {
         WorkTask task = taskRepository.findFull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Task not found: " + id));
+        if (task.isManualSalesTask()) {
+            throw ApiException.badRequest("Change " + task.getCode() + " under Manual sales tasks");
+        }
         if (!inScope(me, task.getBrand())) {
             throw ApiException.forbidden("You can only change tasks of your own brand");
         }
@@ -93,6 +113,28 @@ public class TaskService {
         task.getAssignees().forEach(e -> people.add(e.getId()));
         performance.tasksChanged(people);
         return TaskResponse.from(task, hoursPerTask().getOrDefault(task.getId(), BigDecimal.ZERO));
+    }
+
+    /** A Manual Sales worklog task: a work log task with an MS-0001 style code, on no Task worklog goal. */
+    @Transactional
+    public WorkTask createManual(AuthUser me, TaskRequest request) {
+        WorkTask task = new WorkTask();
+        task.setManualSales(true);
+        task.setCreatedBy(employeeRepository.findById(me.id())
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found: " + me.id())));
+        apply(me, task, request);
+        return taskRepository.saveAndFlush(task);
+    }
+
+    @Transactional
+    public WorkTask updateManual(AuthUser me, Long id, TaskRequest request) {
+        WorkTask task = taskRepository.findFull(id).filter(WorkTask::isManualSalesTask)
+                .orElseThrow(() -> new ResourceNotFoundException("Manual sales task not found: " + id));
+        if (!inScope(me, task.getBrand())) {
+            throw ApiException.forbidden("You can only change tasks of your own brand");
+        }
+        apply(me, task, request);
+        return taskRepository.saveAndFlush(task);
     }
 
     /** The task with every work log entry against it, for those who see the task (the task's page). */
@@ -127,7 +169,7 @@ public class TaskService {
     private void apply(AuthUser me, WorkTask task, TaskRequest request) {
         String code = request.getCode() == null || request.getCode().isBlank() ? null : request.getCode().trim().toUpperCase(Locale.ROOT);
         if (code == null) {
-            code = task.getCode() != null ? task.getCode() : nextCode();
+            code = task.getCode() != null ? task.getCode() : nextCode(task.isManualSalesTask() ? MANUAL_SALES_PREFIX : PREFIX);
         } else if (!code.equals(task.getCode()) && taskRepository.existsByCodeIgnoreCase(code)) {
             throw ApiException.conflict("Task ID " + code + " is already used");
         }
@@ -186,20 +228,20 @@ public class TaskService {
     }
 
     /** TSK-0001, TSK-0002 ... (skips any taken by hand). */
-    private String nextCode() {
-        int next = taskRepository.findTopByCodeStartingWithOrderByCodeDesc(PREFIX)
-                .map(t -> t.getCode().substring(PREFIX.length()))
+    private String nextCode(String prefix) {
+        int next = taskRepository.findTopByCodeStartingWithOrderByCodeDesc(prefix)
+                .map(t -> t.getCode().substring(prefix.length()))
                 .filter(rest -> rest.matches("\\d+"))
                 .map(rest -> Integer.parseInt(rest) + 1)
                 .orElse(1);
-        String code = String.format("%s%04d", PREFIX, next);
+        String code = String.format("%s%04d", prefix, next);
         while (taskRepository.existsByCodeIgnoreCase(code)) {
-            code = String.format("%s%04d", PREFIX, ++next);
+            code = String.format("%s%04d", prefix, ++next);
         }
         return code;
     }
 
-    private static boolean inScope(AuthUser me, Brand brand) {
+    static boolean inScope(AuthUser me, Brand brand) {
         return me.isOwner() || me.brandId() == null || brand == null || me.brandId().equals(brand.getId());
     }
 
