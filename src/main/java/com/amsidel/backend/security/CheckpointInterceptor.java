@@ -34,12 +34,16 @@ public class CheckpointInterceptor implements HandlerInterceptor {
         if (checkpoint == null) {
             checkpoint = method.getBeanType().getAnnotation(Checkpoint.class);
         }
-        if (checkpoint == null) {
+        boolean export = method.hasMethodAnnotation(ExportCheck.class);
+        if (checkpoint == null && !export) {
             return true;
         }
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !(auth.getPrincipal() instanceof AuthUser me) || !menuAccess.can(me, checkpoint.value())) {
+        if (auth == null || !(auth.getPrincipal() instanceof AuthUser me) || (checkpoint != null && !menuAccess.can(me, checkpoint.value()))) {
             throw ApiException.forbidden("You do not have access to this menu. Ask your admin.");
+        }
+        if (export && !menuAccess.can(me, Menus.EXPORT_EXCEL)) {
+            throw ApiException.forbidden("You do not have the Export to Excel tick. Ask your admin.");
         }
         return true;
     }

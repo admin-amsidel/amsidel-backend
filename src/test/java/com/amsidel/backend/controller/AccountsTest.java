@@ -211,8 +211,12 @@ class AccountsTest {
         json(post("/api/accounts/bank/balances"), staff, "{\"brandId\":%d,\"month\":\"%s\",\"balance\":1}".formatted(dw, java.time.YearMonth.from(TODAY).plusMonths(1)))
                 .andExpect(status().isBadRequest());
         reconcile(staff, d0, TODAY, "WEEK").andExpect(jsonPath("$.total.tally.actual").value(106382.0));
+        // the report on the screen, but the file needs the Export to Excel tick too
         mockMvc.perform(get("/api/accounts/reconcile/excel").param("brandId", String.valueOf(dw)).param("from", d0.toString())
                         .param("to", TODAY.toString()).header("Authorization", auth(staff)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/accounts/reconcile/excel").param("brandId", String.valueOf(dw)).param("from", d0.toString())
+                        .param("to", TODAY.toString()).header("Authorization", auth(owner)))
                 .andExpect(status().isOk()).andExpect(header().string("Content-Disposition", containsString("PnL-DW-")));
         mockMvc.perform(get("/api/accounts/bank/template").header("Authorization", auth(staff))).andExpect(status().isOk());
     }

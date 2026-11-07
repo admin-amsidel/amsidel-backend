@@ -26,6 +26,11 @@ public interface DesignationRepository extends JpaRepository<Designation, Long> 
             + " and ((:brandId is null and b.id is null) or b.id = :brandId) and d.id <> :exceptId")
     boolean nameTaken(@Param("name") String name, @Param("brandId") Long brandId, @Param("exceptId") Long exceptId);
 
+    /** Another designation of the same ladder with this short code. */
+    @Query("select count(d) > 0 from Designation d left join d.brand b where lower(d.shortCode) = lower(:code)"
+            + " and ((:brandId is null and b.id is null) or b.id = :brandId) and d.id <> :exceptId")
+    boolean shortCodeTaken(@Param("code") String code, @Param("brandId") Long brandId, @Param("exceptId") Long exceptId);
+
     /** Another designation of the same ladder with this level code. */
     @Query("select count(d) > 0 from Designation d left join d.brand b where d.levelCode = :code"
             + " and ((:brandId is null and b.id is null) or b.id = :brandId) and d.id <> :exceptId")

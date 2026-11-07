@@ -165,6 +165,8 @@ public final class Menus {
     public static final String EMP_GENERATOR = "EMP_GENERATOR";
     /** Administration > Configuration: the settings that override the properties file. */
     public static final String CONFIGURATIONS = "CONFIGURATIONS";
+    /** The Export to Excel buttons, on every screen that has one (a page's own tick does not give it). */
+    public static final String EXPORT_EXCEL = "EXPORT_EXCEL";
     /** The employee portal's Overview page. */
     public static final String OVERVIEW = "OVERVIEW";
     /** Not pages: sections of the Overview, each with its own tick. */
@@ -177,7 +179,7 @@ public final class Menus {
     public static final String MANUAL_SALES_DETAILS = "MANUAL_SALES_DETAILS";
     public static final String PERF_TYPE_MANUAL_SALES = "PERF_TYPE_MANUAL_SALES";
     /** Sub-menus that a tick on their parent menu does not give: each needs its own tick. */
-    public static final java.util.Set<String> OWN_TICK = java.util.Set.of(SALES_COL_QUOTATIONS, SALES_COL_ORDERS, SALES_COL_INVOICES, EMP_DELETE, EMP_GENERATOR, CONFIGURATIONS, OVERVIEW_STORAGE, OVERVIEW_SALES, OVERVIEW_ACTIVE_USERS, MANUAL_SALES_LOG, MANUAL_SALES_TASKS, MANUAL_SALES_DETAILS, PERF_TYPE_MANUAL_SALES, STORAGE_USAGE, STORAGE_DELETE, PROD_STOCK_APPROVE, ATT_NO_PHOTO, CUST_NEW_QUOTE, CUST_NEW_INVOICE,
+    public static final java.util.Set<String> OWN_TICK = java.util.Set.of(EXPORT_EXCEL, SALES_COL_QUOTATIONS, SALES_COL_ORDERS, SALES_COL_INVOICES, EMP_DELETE, EMP_GENERATOR, CONFIGURATIONS, OVERVIEW_STORAGE, OVERVIEW_SALES, OVERVIEW_ACTIVE_USERS, MANUAL_SALES_LOG, MANUAL_SALES_TASKS, MANUAL_SALES_DETAILS, PERF_TYPE_MANUAL_SALES, STORAGE_USAGE, STORAGE_DELETE, PROD_STOCK_APPROVE, ATT_NO_PHOTO, CUST_NEW_QUOTE, CUST_NEW_INVOICE,
             CUST_ADD, CUST_EDIT, CUST_DELETE, MAIL_EMAIL, MAIL_WHATSAPP, MAIL_ALL, MAIL_PICK, MAIL_PICTURE, MAIL_ATTACH, MAIL_CONFIG,
             PERF_TYPE_GENERAL, PERF_TYPE_SALES, PERF_TYPE_ORDERS, PERF_TYPE_WORKLOG, PAY_TAX_REGIME,
             CHAT_GROUP_CREATE, CHAT_GROUP_ADD, TMAIL_CONFIG, TMAIL_EMAIL, TMAIL_WHATSAPP, TMAIL_ALL_CUSTOMERS, TMAIL_ALL_SUPPLIERS,
@@ -273,6 +275,7 @@ public final class Menus {
             new Def(STORAGE_USAGE, "Storage", "How much of the database is used, and every stored file with its size, type, brand and who uploaded it; files can be opened, personal documents included. Its own tick", 9010, "ADMIN", "/portal/admin/storage", "pi-database"),
             new Def(STORAGE_DELETE, "Delete stored files", "Delete files from the Storage list to free space; this cannot be undone. Its own tick", 9011, "ADMIN", null, "pi-trash"),
             new Def(CONFIGURATIONS, "Configuration", "Add, change and delete the settings that override the properties file, such as how long a sign-in lasts. Takes effect at once. Its own tick", 9020, "ADMIN", "/portal/admin/configurations", "pi-cog"),
+            new Def(EXPORT_EXCEL, "Export to Excel", "The Export to Excel buttons on every screen: lists, setup screens, attendance, work log, reports and P&L. The file holds what the person may already see on that screen. Its own tick", 9022, "ADMIN", null, "pi-file-excel"),
             new Def(EMP_GENERATOR, "Employee generator", "Create many test employees at once: real accounts with the next numbers of a brand and one password. Its own tick", 9021, "ADMIN", "/portal/admin/employee-generator", "pi-user-plus"),
 
             // ---- product portal ----

@@ -481,6 +481,7 @@ public class TradeController {
     }
 
     /** sales, purchases, stock, payments or owed, as an Excel file (partyId = the customer or supplier). */
+    @com.amsidel.backend.security.ExportCheck
     @GetMapping("/reports/{report}/excel")
     public ResponseEntity<byte[]> reportExcel(@AuthenticationPrincipal AuthUser me, @PathVariable String report,
                                               @RequestParam(required = false) Long brandId,

@@ -80,6 +80,17 @@ public class DesignationService {
         if (designationRepository.levelTaken(code, brandId, self)) {
             throw ApiException.conflict("Level " + code + " is already used in " + ladder);
         }
+        if (request.getShortCode() != null) {
+            String shortCode = request.getShortCode().strip().toUpperCase(java.util.Locale.ROOT);
+            if (!shortCode.isEmpty() && designationRepository.shortCodeTaken(shortCode, brandId, self)) {
+                throw ApiException.conflict("Short code " + shortCode + " is already used in " + ladder);
+            }
+            designation.setShortCode(shortCode.isEmpty() ? null : shortCode);
+        }
+        if (request.getDescription() != null) {
+            String description = request.getDescription().strip();
+            designation.setDescription(description.isEmpty() ? null : description);
+        }
         // a designation moved to a brand cannot stay with people of other brands
         if (brand != null && designation.getId() != null) {
             long others = employeeRepository.countWithDesignationOutsideBrand(designation.getId(), brandId);

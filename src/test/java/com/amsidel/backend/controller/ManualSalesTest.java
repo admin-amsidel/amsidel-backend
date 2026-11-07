@@ -299,7 +299,7 @@ class ManualSalesTest {
         logEntry(seller[1], code, sale("INVOICE_ISSUED", "CO-INV", today.toString(), "33")).andExpect(status().isCreated());
 
         // quotations and sales orders, no invoices: details, tasks and team figures alike
-        String[] noInvoices = exactly(other, "null", DETAILS, TASKS, "4009", "4010");
+        String[] noInvoices = exactly(other, "null", DETAILS, TASKS, "4009", "4010", "9022");
         details(noInvoices[1], "employeeId", seller[0]).andExpect(status().isForbidden());
         String row = "$[?(@.code == '" + code + "')]";
         listTasks(noInvoices[1], "code", code).andExpect(jsonPath(row + ".quoted", contains(11.0))).andExpect(jsonPath(row + ".ordered", contains(22.0)))
@@ -417,7 +417,7 @@ class ManualSalesTest {
     @Test
     void theExportFollowsTheFiltersAndListsEachEntry() throws Exception {
         String[] a = person(other, "null", WORK_LOG_PAGE, LOG);
-        String[] mgr = person(dw, "null", TASKS);
+        String[] mgr = person(dw, "null", TASKS, "9022");
         String code = task(owner, other, "Export", "Exp Cust", "Exp Proj", "Exp Agent", a[0]);
         LocalDate old = today.minusMonths(3).withDayOfMonth(5);
         logOn(a[1], code, old, sale("SALES_ORDER_ISSUED", "EX-OLD", old.toString(), "700")).andExpect(status().isCreated());

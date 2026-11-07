@@ -122,6 +122,7 @@ public class AccountsController {
         return reconcile.report(me, brandId, from, to, groupBy);
     }
 
+    @com.amsidel.backend.security.ExportCheck
     @GetMapping("/reconcile/excel")
     public ResponseEntity<byte[]> excel(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) Long brandId,
                                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,

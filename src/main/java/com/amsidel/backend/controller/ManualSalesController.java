@@ -41,6 +41,7 @@ public class ManualSalesController {
 
     /** The same filters, as an Excel file. */
     @Checkpoint({Menus.MANUAL_SALES_TASKS})
+    @com.amsidel.backend.security.ExportCheck
     @GetMapping("/tasks/export")
     public org.springframework.http.ResponseEntity<byte[]> export(@AuthenticationPrincipal AuthUser me, @RequestParam(required = false) TaskStatus status,
                                                                   @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,

@@ -51,6 +51,7 @@ public class WorkLogController {
 
     /** Excel file of from..to (up to a year): mine, one person's (employeeId) or mine and my team's (all=true). */
     @Checkpoint({Menus.WORKLOG_MY})
+    @com.amsidel.backend.security.ExportCheck
     @GetMapping("/export")
     public ResponseEntity<byte[]> export(@AuthenticationPrincipal AuthUser me,
                                          @RequestParam(required = false) Long employeeId,

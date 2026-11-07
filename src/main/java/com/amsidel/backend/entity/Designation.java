@@ -41,6 +41,14 @@ public class Designation {
     @Column(nullable = false, length = 100)
     private String name;
 
+    /** The short form, e.g. TL for Team Lead; unique within the ladder. Null on those saved before it existed. */
+    @Column(length = 20)
+    private String shortCode;
+
+    /** What the job is, in a sentence or two. */
+    @Column(length = 500)
+    private String description;
+
     /** Rank in the hierarchy, 1 = Trainee ... 10 = CEO; higher is more senior. */
     @Column(nullable = false)
     private int levelNumber;

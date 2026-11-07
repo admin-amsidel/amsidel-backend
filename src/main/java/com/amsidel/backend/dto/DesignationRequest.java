@@ -14,6 +14,14 @@ public class DesignationRequest {
     @Size(max = 100)
     private String name;
 
+    /** The short form, e.g. TL; missing = keep, empty = none. */
+    @Pattern(regexp = "^[A-Za-z0-9_-]{0,20}$", message = "Short code must be up to 20 letters, numbers, - or _")
+    private String shortCode;
+
+    /** Missing = keep, empty = none. */
+    @Size(max = 500, message = "Description must be 500 characters or fewer")
+    private String description;
+
     @NotNull
     @Min(1)
     @Max(99)

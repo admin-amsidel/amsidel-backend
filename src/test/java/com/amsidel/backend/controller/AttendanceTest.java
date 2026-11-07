@@ -253,6 +253,19 @@ class AttendanceTest {
         checkIn(meena, null, "FIELD", "10", "76", "10").andExpect(status().isBadRequest());
     }
 
+    /** The tick for the Export to Excel buttons, added to what this user type has. */
+    private void giveExport(String type) throws Exception {
+        String list = mockMvc.perform(get("/api/menu-access").header("Authorization", auth(owner))).andReturn().getResponse().getContentAsString();
+        java.util.Set<String> ticks = new java.util.TreeSet<>(java.util.Set.of("9022"));
+        for (java.util.List<String> held : JsonPath.<java.util.List<java.util.List<String>>>read(list, "$[?(@.subjectType == 'ROLE' && @.subjectKey == '" + type + "')].checkpoints")) {
+            ticks.addAll(held);
+        }
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/menu-access/ROLE/" + type)
+                        .header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"checkpoints\":[\"" + String.join("\",\"", ticks) + "\"]}"))
+                .andExpect(status().isOk());
+    }
+
     private void giveMenus(String path, String json) throws Exception {
         mockMvc.perform(put(path).header("Authorization", auth(owner)).contentType(MediaType.APPLICATION_JSON).content(json))
                 .andExpect(status().isOk());
@@ -329,6 +342,8 @@ class AttendanceTest {
 
     @Test
     void attendanceExportsToExcel() throws Exception {
+        giveExport("MANAGER");
+        giveExport("EMPLOYEE");
         String leadId = create("Export Lead", "at.xlead", "MANAGER", null);
         String xlead = signIn("at.xlead");
         create("Esha Export", "at.esha", "EMPLOYEE", leadId);

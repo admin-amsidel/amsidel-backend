@@ -120,6 +120,7 @@ public class AttendanceController {
      * Summary, every day with its status, and each check-in / check-out.
      */
     @Checkpoint({Menus.ATT_CHECKIN, Menus.ATT_TEAM})
+    @com.amsidel.backend.security.ExportCheck
     @GetMapping("/export")
     public ResponseEntity<byte[]> export(@AuthenticationPrincipal AuthUser me,
                                          @RequestParam(required = false) Long employeeId,

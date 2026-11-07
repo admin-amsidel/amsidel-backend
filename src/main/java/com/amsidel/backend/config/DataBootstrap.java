@@ -91,18 +91,18 @@ public class DataBootstrap implements ApplicationRunner {
 
         if (designationRepository.count() == 0) {
             // the group's level plan; owners change it under Designations
-            designation(1, "1", "Trainee");
-            designation(2, "2", "Associate");
-            designation(3, "3", "Team Member");
-            designation(4, "4", "Team Lead");
-            designation(5, "5", "Team Manager");
-            designation(6, "6.1", "Branch Manager / Head");
-            designation(6, "6.2", "Finance Manager");
-            designation(7, "7", "Regional Head / Manager");
-            designation(8, "8.1", "Admin");
-            designation(8, "8.2", "HR Head / Manager");
-            designation(9, "9", "CIO");
-            designation(10, "10", "CEO");
+            designation(1, "1", "Trainee", "TRN");
+            designation(2, "2", "Associate", "ASC");
+            designation(3, "3", "Team Member", "TMB");
+            designation(4, "4", "Team Lead", "TL");
+            designation(5, "5", "Team Manager", "TMG");
+            designation(6, "6.1", "Branch Manager / Head", "BM");
+            designation(6, "6.2", "Finance Manager", "FM");
+            designation(7, "7", "Regional Head / Manager", "RH");
+            designation(8, "8.1", "Admin", "ADM");
+            designation(8, "8.2", "HR Head / Manager", "HR");
+            designation(9, "9", "CIO", "CIO");
+            designation(10, "10", "CEO", "CEO");
             log.info("Created the designation levels");
         }
 
@@ -132,8 +132,9 @@ public class DataBootstrap implements ApplicationRunner {
         }
     }
 
-    private void designation(int levelNumber, String levelCode, String name) {
+    private void designation(int levelNumber, String levelCode, String name, String shortCode) {
         Designation designation = new Designation();
+        designation.setShortCode(shortCode);
         designation.setLevelNumber(levelNumber);
         designation.setLevelCode(levelCode);
         designation.setName(name);
