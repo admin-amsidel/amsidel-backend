@@ -17,6 +17,9 @@ public interface BrandRepository extends JpaRepository<Brand, Long> {
 
     boolean existsByCodeIgnoreCase(String code);
 
+    @Query("select b.colorPalette from Brand b where b.id = :id")
+    String colorPaletteOf(@Param("id") Long id);
+
     @Query("select b.timeZone from Brand b where b.id = :id")
     String timeZoneOf(@Param("id") Long id);
 }

@@ -43,6 +43,7 @@ import java.util.function.Predicate;
 public class MenuAccessService {
 
     private final TimeZones timeZones;
+    private final com.amsidel.backend.repository.BrandRepository brandRepository;
     private final MenuItemRepository menuRepository;
     private final MenuAccessRepository accessRepository;
     private final DesignationRepository designationRepository;
@@ -118,7 +119,8 @@ public class MenuAccessService {
         Snapshot s = snapshot();
         Predicate<MenuItem> allowed = m -> codes == null || codes.contains(m.getCode());
         List<String> list = s.menus().stream().filter(allowed).map(MenuItem::getCode).toList();
-        return new MyAccess(codes == null, list, tree(s, allowed), timeZones.of(me).getId());
+        String palette = me.brandId() == null ? null : brandRepository.colorPaletteOf(me.brandId());
+        return new MyAccess(codes == null, list, tree(s, allowed), timeZones.of(me).getId(), palette);
     }
 
     /** Every menu, for the access screen. */

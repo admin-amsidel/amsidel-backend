@@ -33,6 +33,9 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class BrandService {
 
+    /** The palettes the web app knows (portal/brand-palette.ts). */
+    private static final java.util.Set<String> COLOR_PALETTES = java.util.Set.of("VIVID", "SOFT", "BOLD", "EARTH", "BLUSH");
+
     private final BrandRepository brandRepository;
     private final BrandLogoRepository logoRepository;
     private final BrandUpiQrRepository qrRepository;
@@ -86,6 +89,13 @@ public class BrandService {
                 : request.getUpi().strip().toLowerCase(Locale.ROOT));
         if (request.getCurrency() != null) {
             brand.setCurrency(request.getCurrency());
+        }
+        if (request.getColorPalette() != null) {
+            String palette = request.getColorPalette().strip().toUpperCase(Locale.ROOT);
+            if (!palette.isEmpty() && !COLOR_PALETTES.contains(palette)) {
+                throw ApiException.badRequest("There is no colour palette called " + request.getColorPalette());
+            }
+            brand.setColorPalette(palette.isEmpty() ? null : palette);
         }
         if (request.getTimeZone() != null && !request.getTimeZone().isBlank()) {
             brand.setTimeZone(TimeZones.checked(request.getTimeZone()));

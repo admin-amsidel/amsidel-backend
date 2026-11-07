@@ -83,6 +83,10 @@ public class Brand {
     @Column(length = 3)
     private CurrencyCode currency;
 
+    /** The colours its people see the portal in, a code such as EARTH; null = the standard look. */
+    @Column(length = 20)
+    private String colorPalette;
+
     /** The time zone its people work in, such as Asia/Dubai; null = the company's default (India). */
     @Column(length = 50)
     private String timeZone;
