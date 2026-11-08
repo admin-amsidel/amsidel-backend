@@ -35,7 +35,8 @@ public class WebConfig implements WebMvcConfigurer {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(Arrays.asList(allowedOrigins));
+        // patterns: an exact address (https://amsidel.com) or a wildcard (https://*.amsidel.com = every sub-domain)
+        config.setAllowedOriginPatterns(Arrays.stream(allowedOrigins).map(String::strip).filter(o -> !o.isEmpty()).toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setMaxAge(Duration.ofHours(1));
