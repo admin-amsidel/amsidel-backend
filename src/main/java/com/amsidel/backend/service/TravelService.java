@@ -215,8 +215,9 @@ public class TravelService {
     // ---- the team's claims: approval and settlement ----
 
     @Transactional(readOnly = true)
-    public TeamTravel team(AuthUser me, LocalDate from, LocalDate to, Status status, Long employeeId) {
-        List<Employee> people = scope(me);
+    /** brandId: one brand's people only (0 = those without a brand); empty = everyone I may see. */
+    public TeamTravel team(AuthUser me, LocalDate from, LocalDate to, Status status, Long employeeId, Long brandId) {
+        List<Employee> people = scope(me).stream().filter(e -> ofBrand(e, brandId)).toList();
         List<Long> ids = people.stream().map(Employee::getId).toList();
         LocalDate today = LocalDate.now(timeZones.of(me));
         List<TravelClaim> all = ids.isEmpty() ? List.of() : claims.forPeople(ids, today.minusYears(2).withDayOfMonth(1), today.plusDays(1)).stream()
@@ -456,6 +457,13 @@ public class TravelService {
             return employees.search(null).stream().filter(e -> !e.getId().equals(me.id())).toList();
         }
         return teamAccess.team(me);
+    }
+
+    private static boolean ofBrand(Employee e, Long brandId) {
+        if (brandId == null) {
+            return true;
+        }
+        return brandId == 0 ? e.getBrand() == null : e.getBrand() != null && e.getBrand().getId().equals(brandId);
     }
 
     private boolean canDecide(AuthUser me, TravelClaim c) {

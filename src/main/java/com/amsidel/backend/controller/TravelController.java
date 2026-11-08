@@ -109,8 +109,9 @@ public class TravelController {
                            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                            @RequestParam(required = false) TravelClaim.Status status,
-                           @RequestParam(required = false) Long employeeId) {
-        return service.team(me, from, to, status, employeeId);
+                           @RequestParam(required = false) Long employeeId,
+                           @RequestParam(required = false) Long brandId) {
+        return service.team(me, from, to, status, employeeId, brandId);
     }
 
     @Checkpoint({Menus.TA_TEAM})

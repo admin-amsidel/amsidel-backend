@@ -119,6 +119,12 @@ class TravelTest {
                 .andExpect(jsonPath("$.months[11].month").value(month)).andExpect(jsonPath("$.months[11].settled").value(600.0));
         mockMvc.perform(get("/api/travel/team").header("Authorization", auth(boss[1])).param("status", "SETTLED"))
                 .andExpect(jsonPath("$.claims[0].employeeId").value(Integer.parseInt(me[0]))).andExpect(jsonPath("$.totals.settled").value(600.0));
+        // the Overview's brand choice: that brand's people only
+        mockMvc.perform(get("/api/travel/team").header("Authorization", auth(owner)).param("brandId", String.valueOf(brand)))
+                .andExpect(jsonPath("$.claims[*].employeeId", hasItem(Integer.parseInt(me[0])))).andExpect(jsonPath("$.months[11].settled").value(600.0));
+        int otherBrand = JsonPath.read(body(json(post("/api/brands"), owner, "{\"code\":\"TO\",\"name\":\"Travel Other Brand\"}")), "$.id");
+        mockMvc.perform(get("/api/travel/team").header("Authorization", auth(owner)).param("brandId", String.valueOf(otherBrand)))
+                .andExpect(jsonPath("$.claims").isEmpty()).andExpect(jsonPath("$.totals.settled").value(0.0)).andExpect(jsonPath("$.months[11].settled").value(0.0));
     }
 
     @Test
