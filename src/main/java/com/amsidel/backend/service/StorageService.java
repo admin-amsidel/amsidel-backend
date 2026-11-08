@@ -41,15 +41,17 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * How much the portal stores and the list of stored files, with deleting them to free space. The file sizes come from
- * the register (StoredFile), kept up to date at each upload; the database's own size is asked of the database and
- * remembered for a while, as no one needs it to the minute.
+ * How much the portal stores and the list of stored files, with deleting them to free space. The figures are measured by
+ * a scheduled job three times a day (and by Refresh) and kept in storage_snapshots; the Storage page and the Overview read
+ * the latest of them, so opening them measures nothing however big the data grows. The list of files is read as it is now.
  */
 @Slf4j
 @Service
 public class StorageService {
 
-    private static final Duration REMEMBER = Duration.ofMinutes(10);
+    /** Snapshots kept to compare; older ones go. */
+    private static final Duration KEEP = Duration.ofDays(30);
+    private static final tools.jackson.databind.json.JsonMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
     private static final Set<String> SORTABLE = Set.of("uploadedAt", "sizeBytes", "name", "owner", "fileType");
 
     private final StoredFileRepository files;
@@ -78,10 +80,23 @@ public class StorageService {
     private final Path checkInFolder;
     private final ZoneId zone;
 
-    private record Measured(Database database, List<TableSize> tables, Instant at) {
+    /** One group of stored files in a snapshot. */
+    record FileGroup(String category, String fileType, Long brandId, String brandCode, String location, long files, long bytes, long monthFiles, long monthBytes) {
     }
 
-    private final AtomicReference<Measured> remembered = new AtomicReference<>();
+    /** A snapshot read back, kept while it is the latest. */
+    private record Read(Long id, StorageSnapshot snapshot, List<TableSize> tables, List<FileGroup> files) {
+    }
+
+    private final AtomicReference<Read> latest = new AtomicReference<>();
+    private StorageSnapshotRepository snapshots;
+    private SchedulerSwitch schedulers;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void snapshotsFrom(StorageSnapshotRepository snapshots, SchedulerSwitch schedulers) {
+        this.snapshots = snapshots;
+        this.schedulers = schedulers;
+    }
 
     public StorageService(StoredFileRepository files, StoredFileSync sync, TradeAccess access, MenuAccessService menuAccess, JdbcTemplate jdbc, EntityManager em,
                           TransactionTemplate transaction, EmployeeDocumentRepository documents, EmployeeDocumentFileRepository documentFiles, EmployeeDocumentStore documentDisk,
@@ -119,81 +134,157 @@ public class StorageService {
 
     // ---- the figures ----
 
-    /** Not in one transaction: the sync below runs its own, and takes its time only when the figures are old. */
+    /**
+     * From the latest snapshot (made at once when there is none yet); Refresh measures again first. Those who see one brand
+     * get that brand's files; the database, disk and tables only those who see every brand.
+     */
     public Summary summary(AuthUser me, boolean refresh) {
         boolean all = access.allBrands(me);
         Long scope = access.scope(me, null);
-        Measured m = measured(refresh);
+        Read r = refresh ? read(snapshot()) : latestRead();
+        StorageSnapshot snap = r.snapshot();
 
-        Map<String, long[]> byLocation = new HashMap<>();
-        files.byLocation().forEach(r -> byLocation.put(r[0].toString(), new long[] {((Number) r[1]).longValue(), ((Number) r[2]).longValue()}));
-        long[] inDatabase = byLocation.getOrDefault(StoredFile.Location.DATABASE.name(), new long[2]);
-        long[] onDisk = byLocation.getOrDefault(StoredFile.Location.DISK.name(), new long[2]);
+        List<FileGroup> mine = r.files().stream().filter(g -> scope == null || scope.equals(g.brandId())).toList();
+        long inDatabase = r.files().stream().filter(g -> StoredFile.Location.DATABASE.name().equals(g.location())).mapToLong(FileGroup::bytes).sum();
+        long diskFiles = r.files().stream().filter(g -> StoredFile.Location.DISK.name().equals(g.location())).mapToLong(FileGroup::files).sum();
+        long diskBytes = r.files().stream().filter(g -> StoredFile.Location.DISK.name().equals(g.location())).mapToLong(FileGroup::bytes).sum();
 
-        List<Group> byCategory = files.byCategory(scope).stream()
-                .map(r -> { StoredFileCategory c = (StoredFileCategory) r[0]; return new Group(c.name(), c.getLabel(), ((Number) r[1]).longValue(), ((Number) r[2]).longValue()); })
-                .sorted(Comparator.comparingLong(Group::bytes).reversed()).toList();
-        List<Group> byType = groups(files.byFileType(scope));
-        List<Group> byBrand = files.byBrand(scope).stream()
-                .map(r -> new Group(r[0] == null ? "" : r[0].toString(), r[0] == null ? "Group level" : r[0].toString(), ((Number) r[1]).longValue(), ((Number) r[2]).longValue()))
-                .sorted(Comparator.comparingLong(Group::bytes).reversed()).toList();
-        long count = byCategory.stream().mapToLong(Group::files).sum();
-        long bytes = byCategory.stream().mapToLong(Group::bytes).sum();
+        List<Group> byCategory = grouped(mine, FileGroup::category, key -> categoryLabel(key));
+        List<Group> byType = grouped(mine, FileGroup::fileType, key -> key);
+        List<Group> byBrand = grouped(mine, g -> g.brandCode() == null ? "" : g.brandCode(), key -> key.isEmpty() ? "Group level" : key);
+        long count = mine.stream().mapToLong(FileGroup::files).sum();
+        long bytes = mine.stream().mapToLong(FileGroup::bytes).sum();
+        // added this month: as at the measuring, when it was this month
+        boolean sameMonth = java.time.YearMonth.from(snap.getMeasuredAt().atZone(zone)).equals(java.time.YearMonth.now(zone));
+        long monthFiles = sameMonth ? mine.stream().mapToLong(FileGroup::monthFiles).sum() : 0;
+        long monthBytes = sameMonth ? mine.stream().mapToLong(FileGroup::monthBytes).sum() : 0;
 
-        Instant monthStart = LocalDate.now(zone).withDayOfMonth(1).atStartOfDay(zone).toInstant();
-        Object[] month = files.since(monthStart, scope).getFirst();
-
-        Database database = all ? withFiles(m.database(), inDatabase[1]) : null;
-        return new Summary(database, all ? disk(onDisk) : null, count, bytes, ((Number) month[0]).longValue(), ((Number) month[1]).longValue(),
-                byCategory, byType, byBrand, all ? m.tables() : List.of(),
+        long max = snap.getDatabaseMaxBytes();
+        int percent = !snap.isDatabaseAvailable() || max <= 0 ? 0 : (int) Math.min(100, snap.getDatabaseBytes() * 100 / max);
+        Database database = all ? new Database(snap.isDatabaseAvailable(), snap.getDatabaseBytes(), max, percent, inDatabase,
+                snap.isDatabaseAvailable() ? Math.max(0, snap.getDatabaseBytes() - inDatabase) : 0, snap.getMeasuredAt()) : null;
+        return new Summary(database, all ? new Disk(diskBytes, diskFiles, snap.getDiskTotalBytes(), snap.getDiskUsableBytes()) : null, count, bytes,
+                monthFiles, monthBytes, byCategory, byType, byBrand, all ? r.tables() : List.of(),
                 access.brands(me).stream().map(b -> new BrandOption(b.getId(), b.getCode(), b.getName())).toList(),
                 Arrays.stream(StoredFileCategory.values()).map(c -> new Option(c.name(), c.getLabel())).toList(),
-                menuAccess.can(me, Menus.STORAGE_DELETE));
+                menuAccess.can(me, Menus.STORAGE_DELETE), snap.getMeasuredAt(), nextRun());
     }
 
-    private static List<Group> groups(List<Object[]> rows) {
-        return rows.stream().map(r -> new Group(r[0].toString(), r[0].toString(), ((Number) r[1]).longValue(), ((Number) r[2]).longValue()))
-                .sorted(Comparator.comparingLong(Group::bytes).reversed()).toList();
-    }
-
-    private Database withFiles(Database d, long fileBytes) {
-        return new Database(d.available(), d.usedBytes(), d.maxBytes(), d.percent(), fileBytes, d.available() ? Math.max(0, d.usedBytes() - fileBytes) : 0, d.measuredAt());
-    }
-
-    private Measured measured(boolean refresh) {
-        Measured m = remembered.get();
-        if (!refresh && m != null && m.at().plus(REMEMBER).isAfter(Instant.now())) {
-            return m;
-        }
+    /**
+     * The scheduled job (three times a day by default; its cron and on/off are on the Configuration page) and Refresh:
+     * the register brought up to date, then everything measured and kept as a new snapshot. Snapshots older than 30 days go.
+     */
+    public StorageSnapshot snapshot() {
         sync.sync();
-        long max = maxDatabase.toBytes();
         Instant now = Instant.now();
-        Measured fresh;
+        StorageSnapshot s = new StorageSnapshot();
+        s.setMeasuredAt(now);
+        s.setDatabaseMaxBytes(maxDatabase.toBytes());
+        List<TableSize> tables = List.of();
         try {
             if (!postgres()) {
                 throw new IllegalStateException("not PostgreSQL");
             }
             Long used = jdbc.queryForObject("select pg_database_size(current_database())", Long.class);
-            long size = used == null ? 0 : used;
-            List<TableSize> tables = jdbc.query("select relname, pg_total_relation_size(relid) as bytes, n_live_tup from pg_stat_user_tables order by 2 desc limit 10",
+            s.setDatabaseBytes(used == null ? 0 : used);
+            s.setDatabaseAvailable(true);
+            tables = jdbc.query("select relname, pg_total_relation_size(relid) as bytes, n_live_tup from pg_stat_user_tables order by 2 desc limit 10",
                     (rs, i) -> new TableSize(rs.getString(1), rs.getLong(2), rs.getLong(3)));
-            int percent = max <= 0 ? 0 : (int) Math.min(100, size * 100 / max);
-            fresh = new Measured(new Database(true, size, max, percent, 0, 0, now), tables, now);
         } catch (RuntimeException e) {
             log.debug("The database's size is not available: {}", e.getMessage());
-            fresh = new Measured(new Database(false, 0, max, 0, 0, 0, now), List.of(), now);
         }
-        remembered.set(fresh);
+        long[] disk = diskSpace();
+        s.setDiskTotalBytes(disk[0]);
+        s.setDiskUsableBytes(disk[1]);
+        Instant monthStart = LocalDate.now(zone).withDayOfMonth(1).atStartOfDay(zone).toInstant();
+        List<FileGroup> groups = files.breakdown(monthStart).stream()
+                .map(r -> new FileGroup(r[0].toString(), r[1].toString(), r[2] == null ? null : ((Number) r[2]).longValue(), r[3] == null ? null : r[3].toString(),
+                        r[4].toString(), ((Number) r[5]).longValue(), ((Number) r[6]).longValue(), r[7] == null ? 0 : ((Number) r[7]).longValue(),
+                        r[8] == null ? 0 : ((Number) r[8]).longValue()))
+                .toList();
+        s.setTables(JSON.writeValueAsString(tables));
+        s.setFiles(JSON.writeValueAsString(groups));
+        StorageSnapshot saved = transaction.execute(t -> {
+            StorageSnapshot x = snapshots.save(s);
+            int gone = snapshots.deleteOlderThan(now.minus(KEEP));
+            if (gone > 0) {
+                log.debug("Removed {} old storage snapshot(s)", gone);
+            }
+            return x;
+        });
+        latest.set(new Read(saved.getId(), saved, tables, groups));
+        log.info("Storage measured: database {} bytes, {} file group(s)", s.getDatabaseBytes(), groups.size());
+        return saved;
+    }
+
+    /** For the scheduled job: only while it is switched on; a failure is written to the log, the next run tries again. */
+    public void scheduledSnapshot() {
+        if (schedulers.allowed(SchedulerSwitch.Job.STORAGE)) {
+            snapshot();
+        }
+    }
+
+    private Read latestRead() {
+        StorageSnapshot newest = snapshots.findTopByOrderByMeasuredAtDescIdDesc().orElse(null);
+        if (newest == null) {
+            return read(snapshot());
+        }
+        Read r = latest.get();
+        return r != null && r.id().equals(newest.getId()) ? r : read(newest);
+    }
+
+    private Read read(StorageSnapshot s) {
+        Read r = latest.get();
+        if (r != null && r.id().equals(s.getId())) {
+            return r;
+        }
+        List<TableSize> tables = List.of(JSON.readValue(s.getTables(), TableSize[].class));
+        List<FileGroup> groups = List.of(JSON.readValue(s.getFiles(), FileGroup[].class));
+        Read fresh = new Read(s.getId(), s, tables, groups);
+        latest.set(fresh);
         return fresh;
+    }
+
+    /** When the job runs next, by its cron (null when it is stopped or its cron cannot be read). */
+    private Instant nextRun() {
+        try {
+            if (!schedulers.allowed(SchedulerSwitch.Job.STORAGE)) {
+                return null;
+            }
+            java.time.ZonedDateTime next = org.springframework.scheduling.support.CronExpression.parse(schedulers.cron(SchedulerSwitch.Job.STORAGE))
+                    .next(java.time.ZonedDateTime.now(schedulers.zone()));
+            return next == null ? null : next.toInstant();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static List<Group> grouped(List<FileGroup> rows, java.util.function.Function<FileGroup, String> key,
+                                       java.util.function.Function<String, String> label) {
+        Map<String, long[]> sums = new LinkedHashMap<>();
+        for (FileGroup g : rows) {
+            long[] v = sums.computeIfAbsent(key.apply(g), k -> new long[2]);
+            v[0] += g.files();
+            v[1] += g.bytes();
+        }
+        return sums.entrySet().stream().map(e -> new Group(e.getKey(), label.apply(e.getKey()), e.getValue()[0], e.getValue()[1]))
+                .sorted(Comparator.comparingLong(Group::bytes).reversed()).toList();
+    }
+
+    private static String categoryLabel(String name) {
+        try {
+            return StoredFileCategory.valueOf(name).getLabel();
+        } catch (IllegalArgumentException e) {
+            return name;
+        }
     }
 
     private boolean postgres() {
         return Boolean.TRUE.equals(jdbc.execute((java.sql.Connection c) -> c.getMetaData().getDatabaseProductName().toLowerCase(Locale.ROOT).contains("postgres")));
     }
 
-    private Disk disk(long[] onDisk) {
-        long total = 0;
-        long usable = 0;
+    /** The disk that holds the check-in photos and documents: [total, usable], 0 when it cannot be read. */
+    private long[] diskSpace() {
         try {
             Path existing = checkInFolder;
             while (existing != null && !Files.exists(existing)) {
@@ -201,13 +292,12 @@ public class StorageService {
             }
             if (existing != null) {
                 FileStore store = Files.getFileStore(existing);
-                total = store.getTotalSpace();
-                usable = store.getUsableSpace();
+                return new long[]{store.getTotalSpace(), store.getUsableSpace()};
             }
         } catch (IOException e) {
             log.debug("The disk's size is not available: {}", e.getMessage());
         }
-        return new Disk(onDisk[1], onDisk[0], total, usable);
+        return new long[]{0, 0};
     }
 
     // ---- the list ----
@@ -325,7 +415,13 @@ public class StorageService {
                 notDeleted.add(new NotDeleted(id, name, "It could not be deleted; please try again"));
             }
         }
-        remembered.set(null);
+        if (deleted > 0) {
+            try {
+                snapshot();
+            } catch (RuntimeException e) {
+                log.warn("Storage could not be measured after deleting files: {}", e.getMessage());
+            }
+        }
         return new DeleteResult(deleted, freed, notDeleted);
     }
 

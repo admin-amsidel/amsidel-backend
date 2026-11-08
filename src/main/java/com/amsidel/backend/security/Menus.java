@@ -167,6 +167,8 @@ public final class Menus {
     public static final String CONFIGURATIONS = "CONFIGURATIONS";
     /** The Export to Excel buttons, on every screen that has one (a page's own tick does not give it). */
     public static final String EXPORT_EXCEL = "EXPORT_EXCEL";
+    /** Portal access roles (user types): add, change and delete them, per brand or for every brand. */
+    public static final String USER_TYPES = "USER_TYPES";
     /** Travel allowance: my claims, the team's claims, the rates per km, and the ticks for how a claim may be made and settled. */
     public static final String TA_MY = "TA_MY";
     public static final String TA_TEAM = "TA_TEAM";
@@ -295,6 +297,7 @@ public final class Menus {
             new Def(STORAGE_USAGE, "Storage", "How much of the database is used, and every stored file with its size, type, brand and who uploaded it; files can be opened, personal documents included. Its own tick", 9010, "ADMIN", "/portal/admin/storage", "pi-database"),
             new Def(STORAGE_DELETE, "Delete stored files", "Delete files from the Storage list to free space; this cannot be undone. Its own tick", 9011, "ADMIN", null, "pi-trash"),
             new Def(CONFIGURATIONS, "Configuration", "Add, change and delete the settings that override the properties file, such as how long a sign-in lasts. Takes effect at once. Its own tick", 9020, "ADMIN", "/portal/admin/configurations", "pi-cog"),
+            new Def(USER_TYPES, "Portal access roles", "The roles given to employees for portal access (Admin, Manager and Employee levels), for every brand or one brand; a role in use cannot be changed or deleted. Changing them needs the Owner or Admin user type", 9023, "ADMIN", "/portal/admin/roles", "pi-id-card"),
             new Def(EXPORT_EXCEL, "Export to Excel", "The Export to Excel buttons on every screen: lists, setup screens, attendance, work log, reports and P&L. The file holds what the person may already see on that screen. Its own tick", 9022, "ADMIN", null, "pi-file-excel"),
             new Def(EMP_GENERATOR, "Employee generator", "Create many test employees at once: real accounts with the next numbers of a brand and one password. Its own tick", 9021, "ADMIN", "/portal/admin/employee-generator", "pi-user-plus"),
 
@@ -371,6 +374,8 @@ public final class Menus {
     public static final java.util.Map<String, List<String>> TAKES_OVER = java.util.Map.ofEntries(
             // these sections came with the Storage page's tick and the Manual Sales ticks
             java.util.Map.entry(OVERVIEW_STORAGE, List.of("9010")),
+            // roles were managed on the Menu access page before they had their own
+            java.util.Map.entry(USER_TYPES, List.of("9001")),
             java.util.Map.entry(OVERVIEW_SALES, List.of("3006", "4007")),
             // those who saw these figures keep them; invoices are given one by one, so that they are not for everyone
             java.util.Map.entry(SALES_COL_QUOTATIONS, List.of("3006", "3007", "4007", "402")),

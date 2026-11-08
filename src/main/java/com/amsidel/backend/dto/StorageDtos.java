@@ -39,7 +39,9 @@ public final class StorageDtos {
 
     /** database, disk and tables are for those who see every brand; the rest see their brand's files. */
     public record Summary(Database database, Disk disk, long files, long bytes, long filesThisMonth, long bytesThisMonth, List<Group> byCategory, List<Group> byFileType,
-                          List<Group> byBrand, List<TableSize> tables, List<BrandOption> brands, List<Option> categories, boolean canDelete) {
+                          List<Group> byBrand, List<TableSize> tables, List<BrandOption> brands, List<Option> categories, boolean canDelete,
+                          /** When these figures were measured (the scheduled job, or Refresh); and when the job runs next. */
+                          Instant updatedAt, Instant nextUpdateAt) {
     }
 
     public record FileRow(Long id, String category, String categoryLabel, String fileType, String name, String owner, Long brandId, String brandCode, long sizeBytes,

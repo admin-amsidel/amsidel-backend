@@ -35,6 +35,11 @@ public class UserType {
     @Column(nullable = false, length = 60)
     private String name;
 
+    /** The brand it is for (its people only); null = every brand. The built-in ones are for every brand. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "brand_id")
+    private Brand brand;
+
     /** The access level it stands on. */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

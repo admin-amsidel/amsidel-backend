@@ -44,7 +44,8 @@ public class SchedulerSwitch implements KnownSettings {
         SESSION_CHECK("SCHEDULER_SESSION_CHECK", "Session check: marks expired sessions on the employee"),
         LEAVE_EXPIRY("SCHEDULER_LEAVE_EXPIRY", "Leave plan expiry notice"),
         CHAT_CLEANUP("SCHEDULER_CHAT_CLEANUP", "Team chat clean-up of old messages"),
-        CHAT_REPORT("SCHEDULER_CHAT_REPORT", "Team chat usage line in the server log");
+        CHAT_REPORT("SCHEDULER_CHAT_REPORT", "Team chat usage line in the server log"),
+        STORAGE("SCHEDULER_STORAGE", "Storage figures for the Storage page and the Overview (database, tables, disk and files)");
 
         private final String prefix;
         private final String label;
@@ -74,12 +75,13 @@ public class SchedulerSwitch implements KnownSettings {
                            @Value("${app.scheduler.session-check.cron}") String sessionCheck,
                            @Value("${app.leave.expiry-cron:0 0 8 * * *}") String leaveExpiry,
                            @Value("${app.chat.clean-cron:0 0 7 * * *}") String chatCleanup,
-                           @Value("${app.scheduler.chat-report.cron}") String chatReport) {
+                           @Value("${app.scheduler.chat-report.cron}") String chatReport,
+                           @Value("${app.scheduler.storage.cron:0 0 0/8 * * *}") String storage) {
         this.config = config;
         this.thisMachine = thisMachine;
         this.zone = zone;
         this.fallbacks = Map.of(Job.PRODUCT_COUNT, productCount, Job.SESSION_CHECK, sessionCheck, Job.LEAVE_EXPIRY, leaveExpiry,
-                Job.CHAT_CLEANUP, chatCleanup, Job.CHAT_REPORT, chatReport);
+                Job.CHAT_CLEANUP, chatCleanup, Job.CHAT_REPORT, chatReport, Job.STORAGE, storage);
     }
 
     /** On is always "true" whatever this machine's property says: the row is shared, and one machine must not stop the others. */

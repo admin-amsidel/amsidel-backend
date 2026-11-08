@@ -161,6 +161,54 @@ class StorageTest {
                 .andExpect(jsonPath("$.canDelete").value(true));
     }
 
+    @Autowired
+    private com.amsidel.backend.service.StorageService storageService;
+
+    @Autowired
+    private com.amsidel.backend.repository.StorageSnapshotRepository snapshots;
+
+    @Autowired
+    private com.amsidel.backend.service.ConfigValues config;
+
+    @Autowired
+    private com.amsidel.backend.repository.AppConfigurationRepository configurations;
+
+    @Test
+    void theFiguresComeFromTheLatestSnapshotAndTheJobMakesANewOne() throws Exception {
+        String first = body(mockMvc.perform(get("/api/storage/summary").param("refresh", "true").header("Authorization", auth(owner))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty()).andExpect(jsonPath("$.nextUpdateAt").isNotEmpty()));
+        int filesBefore = JsonPath.read(first, "$.files");
+        String measured = JsonPath.read(first, "$.updatedAt");
+
+        // a new upload: the page keeps showing the snapshot, measuring nothing
+        String[] someone = person(dw);
+        upload("/api/auth/me/documents/PAN_CARD", someone[2], "later.pdf", PDF).andExpect(status().isOk());
+        mockMvc.perform(get("/api/storage/summary").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.files").value(filesBefore)).andExpect(jsonPath("$.updatedAt").value(measured));
+
+        // switched off on the Configuration page: the job does nothing
+        var off = configurations.findById(com.amsidel.backend.service.SchedulerSwitch.Job.STORAGE.code()).orElseThrow();
+        off.setValue("false");
+        configurations.save(off);
+        config.reload();
+        long count = snapshots.count();
+        storageService.scheduledSnapshot();
+        assertThat(snapshots.count()).isEqualTo(count);
+        mockMvc.perform(get("/api/storage/summary").header("Authorization", auth(owner))).andExpect(jsonPath("$.nextUpdateAt").doesNotExist());
+
+        // on again: the scheduled run measures, and the page follows
+        off.setValue("true");
+        configurations.save(off);
+        config.reload();
+        Thread.sleep(5);
+        storageService.scheduledSnapshot();
+        assertThat(snapshots.count()).isEqualTo(count + 1);
+        mockMvc.perform(get("/api/storage/summary").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$.files").value(filesBefore + 1)).andExpect(jsonPath("$.updatedAt", not(measured)));
+        // it runs every 8 hours unless set otherwise
+        assertThat(configurations.findById(com.amsidel.backend.service.SchedulerSwitch.Job.STORAGE.cronCode()).orElseThrow().getValue()).isEqualTo("0 0 0/8 * * *");
+    }
+
     @Test
     void eachActionHasItsTickAndABrandSeesOnlyItsOwn() throws Exception {
         String[] mine = person(dw);

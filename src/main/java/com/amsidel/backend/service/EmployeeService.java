@@ -76,7 +76,7 @@ public class EmployeeService {
 
     @Transactional
     public EmployeeResponse create(AuthUser me, EmployeeRequest request) {
-        UserType type = userTypes.forEmployee(request.getUserTypeId(), request.getRole(), null);
+        UserType type = userTypes.forEmployee(request.getUserTypeId(), request.getRole(), null, request.getBrandId());
         if (type != null) {
             request.setRole(type.getBaseRole());
         }
@@ -101,7 +101,7 @@ public class EmployeeService {
     public EmployeeResponse update(AuthUser me, Long id, EmployeeRequest request) {
         Employee employee = find(id);
         checkCanManage(me, employee);
-        UserType type = userTypes.forEmployee(request.getUserTypeId(), request.getRole(), employee.getUserType());
+        UserType type = userTypes.forEmployee(request.getUserTypeId(), request.getRole(), employee.getUserType(), request.getBrandId());
         if (type != null) {
             request.setRole(type.getBaseRole());
         }
@@ -206,7 +206,7 @@ public class EmployeeService {
             if (reportsTo != null && !canLeadGenerated(reportsTo, body.brandId())) {
                 throw ApiException.badRequest(reportsTo.getName() + " cannot be chosen: choose an active person of " + brand.getName() + " or a group-level person");
             }
-            UserType type = userTypes.forEmployee(null, Role.EMPLOYEE, null);
+            UserType type = userTypes.forEmployee(null, Role.EMPLOYEE, null, null);
             Instant now = Instant.now();
             java.time.LocalDate today = java.time.LocalDate.now(timeZones.of(me));
             List<String> numbers = freeNumbers(brand, body.count());

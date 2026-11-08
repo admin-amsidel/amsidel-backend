@@ -84,18 +84,53 @@ class UserTypeTest {
         mockMvc.perform(delete("/api/user-types/" + employeeType).header("Authorization", auth(owner))).andExpect(status().isBadRequest());
         json(put("/api/user-types/" + ownerType), owner, "{\"name\":\"Owner\",\"baseRole\":\"ADMIN\"}").andExpect(status().isBadRequest());
 
-        // moved to the manager level: its people move with it
+        // in use: not changed either
         json(put("/api/user-types/" + accId), owner, "{\"name\":\"Senior accountant\",\"baseRole\":\"MANAGER\"}")
-                .andExpect(jsonPath("$.name").value("Senior accountant")).andExpect(jsonPath("$.employees").value(1));
-        mockMvc.perform(get("/api/employees/" + id).header("Authorization", auth(owner))).andExpect(jsonPath("$.role").value("MANAGER"));
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error", containsString("cannot be changed while in use")));
+        mockMvc.perform(get("/api/employees/" + id).header("Authorization", auth(owner))).andExpect(jsonPath("$.role").value("EMPLOYEE"));
 
         // given back the built-in Employee type: the custom one can go, with its menu access
         json(put("/api/employees/" + id), owner, """
                 {"name":"Anu Accounts","userId":"ut.anu","role":"EMPLOYEE","userTypeId":%d,"brandId":%d,"phone":"+91 98470 00000","joinedDate":"2026-01-05"}
                 """.formatted(employeeType, dw)).andExpect(status().isOk()).andExpect(jsonPath("$.userTypeName").value("Employee"));
+        // nobody has it now: it may change, then go
+        json(put("/api/user-types/" + accId), owner, "{\"name\":\"Senior accountant\",\"baseRole\":\"MANAGER\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Senior accountant")).andExpect(jsonPath("$.baseRole").value("MANAGER"));
         mockMvc.perform(delete("/api/user-types/" + accId).header("Authorization", auth(owner))).andExpect(status().isNoContent());
         mockMvc.perform(get("/api/menu-access").header("Authorization", auth(owner)))
                 .andExpect(jsonPath("$[?(@.subjectKey == 'ACCOUNTANT')]").isEmpty());
+    }
+
+    @Test
+    void aRoleCanBeForOneBrandOnly() throws Exception {
+        int other = JsonPath.read(body(json(post("/api/brands"), owner, "{\"code\":\"UTB\",\"name\":\"Roles Brand\"}")), "$.id");
+        // a role for DW, and one of the same name for the other brand
+        String dwRole = body(json(post("/api/user-types"), owner, "{\"name\":\"Site supervisor\",\"baseRole\":\"MANAGER\",\"brandId\":%d}".formatted(dw))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.brandId").value((int) dw)).andExpect(jsonPath("$.brandCode").isNotEmpty()));
+        int dwRoleId = JsonPath.read(dwRole, "$.id");
+        json(post("/api/user-types"), owner, "{\"name\":\"Site supervisor\",\"baseRole\":\"MANAGER\",\"brandId\":%d}".formatted(other))
+                .andExpect(status().isCreated());
+        json(post("/api/user-types"), owner, "{\"name\":\"site SUPERVISOR\",\"baseRole\":\"EMPLOYEE\",\"brandId\":%d}".formatted(dw))
+                .andExpect(status().isConflict());
+        // only that brand's people may have it
+        json(post("/api/employees"), owner, """
+                {"name":"Off Brand","userId":"ut.off","password":"ab@123","role":"MANAGER","userTypeId":%d,"brandId":%d,"phone":"+91 98470 00001","joinedDate":"2026-01-05"}
+                """.formatted(dwRoleId, other)).andExpect(status().isBadRequest());
+        json(post("/api/employees"), owner, """
+                {"name":"On Brand","userId":"ut.on","password":"ab@123","role":"MANAGER","userTypeId":%d,"brandId":%d,"phone":"+91 98470 00002","joinedDate":"2026-01-05"}
+                """.formatted(dwRoleId, dw)).andExpect(status().isCreated()).andExpect(jsonPath("$.userTypeName").value("Site supervisor"));
+        mockMvc.perform(get("/api/user-types").header("Authorization", auth(owner)))
+                .andExpect(jsonPath("$[?(@.id == " + dwRoleId + ")].employees", hasItem(1)));
+        // a brand's admin: their own brand's roles only, never the ones for every brand
+        String admin = idOf(json(post("/api/employees"), owner, """
+                {"name":"Brand Admin","userId":"ut.adm","password":"ab@123","role":"ADMIN","brandId":%d,"phone":"+91 98470 00003","joinedDate":"2026-01-05"}
+                """.formatted(other)).andExpect(status().isCreated()));
+        json(put("/api/menu-access/EMPLOYEE/" + admin), owner, "{\"checkpoints\":[\"9023\"]}").andExpect(status().isOk());
+        String adm = token(changePin(token(login("ut.adm", "ab@123")), "ab@123", "cd@456"));
+        json(post("/api/user-types"), adm, "{\"name\":\"Driver\",\"baseRole\":\"EMPLOYEE\",\"brandId\":%d}".formatted(other)).andExpect(status().isCreated());
+        json(post("/api/user-types"), adm, "{\"name\":\"Driver\",\"baseRole\":\"EMPLOYEE\"}").andExpect(status().isForbidden());
+        json(post("/api/user-types"), adm, "{\"name\":\"Driver\",\"baseRole\":\"EMPLOYEE\",\"brandId\":%d}".formatted(dw)).andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/user-types/" + dwRoleId).header("Authorization", auth(adm))).andExpect(status().isForbidden());
     }
 
     @Test

@@ -16,9 +16,17 @@ public interface UserTypeRepository extends JpaRepository<UserType, Long> {
 
     boolean existsByCode(String code);
 
-    boolean existsByNameIgnoreCase(String name);
+    /** Another type of the same brand (brandId null = the ones for every brand) with this name. */
+    @org.springframework.data.jpa.repository.Query("select count(t) > 0 from UserType t left join t.brand b where lower(t.name) = lower(:name)"
+            + " and ((:brandId is null and b.id is null) or b.id = :brandId) and t.id <> :exceptId")
+    boolean nameTaken(@org.springframework.data.repository.query.Param("name") String name,
+                      @org.springframework.data.repository.query.Param("brandId") Long brandId,
+                      @org.springframework.data.repository.query.Param("exceptId") Long exceptId);
 
-    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
+    /** With their brands: built-in first, then those for every brand, then each brand's, by name. */
+    @org.springframework.data.jpa.repository.Query("select t from UserType t left join fetch t.brand b order by t.builtIn desc,"
+            + " case when b.id is null then 0 else 1 end, b.name, t.name")
+    List<UserType> listWithBrands();
 
     List<UserType> findAllByOrderByBuiltInDescNameAsc();
 }

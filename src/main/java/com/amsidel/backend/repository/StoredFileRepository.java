@@ -48,6 +48,12 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long>, J
     @Query("select s.location, count(s), coalesce(sum(s.sizeBytes), 0) from StoredFile s group by s.location")
     List<Object[]> byLocation();
 
+    /** For the storage snapshot: by category, type, brand and place, with those uploaded since the date given. */
+    @Query("select s.category, s.fileType, b.id, b.code, s.location, count(s), coalesce(sum(s.sizeBytes), 0),"
+            + " sum(case when s.uploadedAt >= :since then 1 else 0 end), coalesce(sum(case when s.uploadedAt >= :since then s.sizeBytes else 0 end), 0)"
+            + " from StoredFile s left join s.brand b group by s.category, s.fileType, b.id, b.code, s.location")
+    List<Object[]> breakdown(@Param("since") Instant since);
+
     /** {files, bytes} uploaded since then. */
     @Query("select count(s), coalesce(sum(s.sizeBytes), 0) from StoredFile s where s.uploadedAt >= :since and (:brandId is null or s.brand.id = :brandId)")
     List<Object[]> since(@Param("since") Instant since, @Param("brandId") Long brandId);

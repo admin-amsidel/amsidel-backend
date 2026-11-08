@@ -46,7 +46,8 @@ public class JobScheduler {
     private final Map<Job, Armed> armed = new EnumMap<>(Job.class);
 
     public JobScheduler(TaskScheduler scheduler, SchedulerSwitch schedulers, ConfigValues config, ProductCountScheduler productCount, SessionExpiryScheduler sessionCheck,
-                        LeaveExpiryNotifier leaveExpiry, ChatCleanup chatCleanup, ChatSignals chatSignals, @Value("${app.schedulers.auto-start:true}") boolean autoStart) {
+                        LeaveExpiryNotifier leaveExpiry, ChatCleanup chatCleanup, ChatSignals chatSignals,
+                        com.amsidel.backend.service.StorageService storage, @Value("${app.schedulers.auto-start:true}") boolean autoStart) {
         this.scheduler = scheduler;
         this.schedulers = schedulers;
         this.config = config;
@@ -56,6 +57,7 @@ public class JobScheduler {
         work.put(Job.LEAVE_EXPIRY, leaveExpiry::run);
         work.put(Job.CHAT_CLEANUP, chatCleanup::clean);
         work.put(Job.CHAT_REPORT, chatSignals::report);
+        work.put(Job.STORAGE, storage::scheduledSnapshot);
     }
 
     /** After the rows are made, so that they are what is read. */

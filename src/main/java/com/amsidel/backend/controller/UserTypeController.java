@@ -25,21 +25,27 @@ public class UserTypeController {
         return service.list();
     }
 
+    @com.amsidel.backend.security.Checkpoint({com.amsidel.backend.security.Menus.USER_TYPES})
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public UserTypeService.View create(@Valid @RequestBody UserTypeService.Body body) {
-        return service.create(body);
+    public UserTypeService.View create(@org.springframework.security.core.annotation.AuthenticationPrincipal com.amsidel.backend.security.AuthUser me,
+                                       @Valid @RequestBody UserTypeService.Body body) {
+        return service.create(me, body);
     }
 
+    /** Only one nobody has. */
+    @com.amsidel.backend.security.Checkpoint({com.amsidel.backend.security.Menus.USER_TYPES})
     @PutMapping("/{id}")
-    public UserTypeService.View update(@PathVariable Long id, @Valid @RequestBody UserTypeService.Body body) {
-        return service.update(id, body);
+    public UserTypeService.View update(@org.springframework.security.core.annotation.AuthenticationPrincipal com.amsidel.backend.security.AuthUser me,
+                                       @PathVariable Long id, @Valid @RequestBody UserTypeService.Body body) {
+        return service.update(me, id, body);
     }
 
     /** Only one nobody has, and not a built-in one. */
+    @com.amsidel.backend.security.Checkpoint({com.amsidel.backend.security.Menus.USER_TYPES})
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable Long id) {
-        service.delete(id);
+    public void delete(@org.springframework.security.core.annotation.AuthenticationPrincipal com.amsidel.backend.security.AuthUser me, @PathVariable Long id) {
+        service.delete(me, id);
     }
 }
