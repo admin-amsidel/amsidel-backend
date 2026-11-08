@@ -32,9 +32,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * First start of the product portal: the Doors & Windows brand (DW) gets its product types (more are added on screen).
+ * First start of the product portal: the Doors & Windows brand (the first brand, app.bootstrap.brand.code, now AD) gets its product types (more are added on screen).
  * Every start: an item whose unit is not a word (a number typed there) gets "piece"; customer and supplier phone
- * numbers are put in the one form (+91 98470 12345). Once: DW gets the shop's UPI QR on its invoices.
+ * numbers are put in the one form (+91 98470 12345). Once: that brand gets the shop's UPI QR on its invoices.
  */
 @Slf4j
 @Component
@@ -68,10 +68,14 @@ public class TradeBootstrap implements ApplicationRunner {
     /** Kept in doc_sequences so it is done once: an owner's later change or removal stays. */
     private static final String DW_UPI_QR_DONE = "SETUP-DW-UPI-QR";
 
+    /** The Doors & Windows brand's code (AD; DW before it was renamed). */
+    @org.springframework.beans.factory.annotation.Value("${app.bootstrap.brand.code}")
+    private String doorsAndWindows;
+
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        brandRepository.findAll().stream().filter(b -> "DW".equalsIgnoreCase(b.getCode())).findFirst().ifPresent(dw -> {
+        brandRepository.findAll().stream().filter(b -> doorsAndWindows.equalsIgnoreCase(b.getCode())).findFirst().ifPresent(dw -> {
             seed(dw);
             dwUpiQr(dw);
         });
@@ -117,7 +121,7 @@ public class TradeBootstrap implements ApplicationRunner {
         try (InputStream in = new ClassPathResource(DW_UPI_QR).getInputStream()) {
             bytes = in.readAllBytes();
         } catch (IOException e) {
-            log.warn("DW's UPI QR could not be read: {}", e.getMessage());
+            log.warn("The Doors & Windows UPI QR could not be read: {}", e.getMessage());
             return;
         }
         String payload = UpiQr.read(bytes);

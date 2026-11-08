@@ -34,7 +34,7 @@ public class Customer {
     @JoinColumn(name = "brand_id", nullable = false)
     private Brand brand;
 
-    /** Customer number, e.g. DWC-0012. */
+    /** Customer number, e.g. ADC-0012. */
     @Column(nullable = false, length = 20)
     private String code;
 

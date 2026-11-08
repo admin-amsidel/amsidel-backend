@@ -22,7 +22,7 @@ public class EmployeeRequest {
     @Size(max = 150)
     private String name;
 
-    /** Leave empty to generate one from the brand code, e.g. DW0007. */
+    /** Leave empty to generate one from the brand code, e.g. AD0007. */
     @Size(max = 30)
     @Pattern(regexp = "^[A-Za-z0-9-]*$", message = "Employee number may only use letters, numbers and dash")
     private String empNumber;

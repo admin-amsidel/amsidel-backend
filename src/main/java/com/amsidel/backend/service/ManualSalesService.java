@@ -267,10 +267,10 @@ public class ManualSalesService {
 
     private static void apply(ManualSalesTask info, TaskBody body) {
         info.setCustomerName(clean(body.getCustomerName()));
-        info.setCustomerPhone(clean(body.getCustomerPhone()));
+        info.setCustomerPhone(Phones.normalize(body.getCustomerPhone(), "Customer phone"));
         info.setProjectName(clean(body.getProjectName()));
         info.setAgentName(clean(body.getAgentName()));
-        info.setAgentPhone(clean(body.getAgentPhone()));
+        info.setAgentPhone(Phones.normalize(body.getAgentPhone(), "Agent phone"));
     }
 
     private static TaskView taskView(WorkTask t, ManualSalesTask info, List<ManualSalesEntry> list, Map<String, String> stageNames, ZoneId zone, boolean narrowed, Columns c) {

@@ -38,7 +38,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Offer letters: drafts change freely; issuing checks the letter is complete, gives it a number (DW/OL/2026/0001) and
+ * Offer letters: drafts change freely; issuing checks the letter is complete, gives it a number (AD/OL/2026/0001) and
  * keeps its PDF as it is. After that it is locked: changing needs the Change issued offer letter tick (the PDF is made
  * again and the change is recorded), deleting the Delete one. Someone with a brand sees only that brand's letters.
  */
@@ -197,7 +197,7 @@ public class OfferLetterService {
         o.setWeeklyHours(b.getWeeklyHours());
         o.setAnnualPackage(b.getAnnualPackage());
         o.setMonthlySalary(b.getMonthlySalary());
-        o.setContactNumber(clean(b.getContactNumber()));
+        o.setContactNumber(Phones.normalize(b.getContactNumber(), "Contact number"));
         o.setContactEmail(clean(b.getContactEmail()));
         o.setClauses(clean(b.getClauses()));
         o.setIssuedByName(clean(b.getIssuedByName()));

@@ -19,7 +19,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * A brand (business line) of the Amsidel group, e.g. "DW" = Amsidel Doors & Windows, with its business details.
+ * A brand (business line) of the Amsidel group, e.g. "AD" = Amsidel Doors & Windows, with its business details.
  * Payslips of its people show its name, address, GST number and logo. The logo itself is in brand_logos.
  */
 @Entity

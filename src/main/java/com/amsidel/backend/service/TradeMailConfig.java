@@ -69,7 +69,7 @@ public class TradeMailConfig extends MailLimitsService<TradeMailBrandConfig, Tra
 
     @Override
     protected String configPage() {
-        return "Customer portal > Email > Email config";
+        return "Project portal > Email > Email config";
     }
 
     @Override

@@ -138,6 +138,10 @@ public class Employee {
     @Column(name = "auto_approve_reports")
     private Boolean autoApproveReports;
 
+    /** Travel allowance per km, in the brand's currency (set on Allowance rates); null = not set, no travel claims. */
+    @Column(precision = 10, scale = 2)
+    private java.math.BigDecimal travelRatePerKm;
+
     /** Documents that may be uploaded for this person in a month; null = the company default (app.documents.monthly-upload-limit). */
     private Integer documentUploadLimit;
 

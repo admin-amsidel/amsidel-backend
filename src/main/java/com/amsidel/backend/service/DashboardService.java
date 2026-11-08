@@ -172,7 +172,8 @@ public class DashboardService {
         long target = working ? cal.targetMinutes() : 0;
         // a check-in on a day with no hours expected still shows as attended
         boolean present = now != null && now.counted();
-        Integer percent = target > 0 ? (int) Math.min(100, minutes * 100 / target)
+        // boxed on purpose: a plain int here would unbox the null of a day off and fail
+        Integer percent = target > 0 ? Integer.valueOf((int) Math.min(100, minutes * 100 / target))
                 : present ? Integer.valueOf(100) : working ? Integer.valueOf(0) : null;
         // only days with approved time count as attended
         Set<LocalDate> attended = days.values().stream().filter(AttendanceDaySummary::counted).map(AttendanceDaySummary::workDate).collect(Collectors.toSet());

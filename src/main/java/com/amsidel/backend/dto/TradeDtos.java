@@ -229,7 +229,7 @@ public final class TradeDtos {
     public static class SupplierBody {
         private Long brandId;
 
-        /** Empty = the next free one, e.g. DWS-001. */
+        /** Empty = the next free one, e.g. ADS-001. */
         @Pattern(regexp = "^$|" + CODE, message = "Code: letters, numbers, - or _ (up to 20)")
         @Size(max = 20)
         private String code;

@@ -42,7 +42,7 @@ public class OfferLetter {
     @Column(nullable = false, length = 10)
     private Status status = Status.DRAFT;
 
-    /** DW/OL/2026/0001, given when issued. */
+    /** AD/OL/2026/0001, given when issued. */
     @Column(name = "letter_number", length = 40)
     private String letterNumber;
 

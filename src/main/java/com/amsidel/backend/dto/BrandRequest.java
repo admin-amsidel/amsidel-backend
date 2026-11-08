@@ -15,7 +15,7 @@ import java.time.LocalDate;
 public class BrandRequest {
 
     @NotBlank
-    @Pattern(regexp = "^[A-Za-z0-9]{2,10}$", message = "Code must be 2-10 letters or numbers, e.g. DW")
+    @Pattern(regexp = "^[A-Za-z0-9]{2,10}$", message = "Code must be 2-10 letters or numbers, e.g. AD")
     private String code;
 
     @NotBlank

@@ -94,6 +94,11 @@ public class EnquiryService {
             log.info("Website enquiry dropped: bot field filled ({})", ip);
             return;
         }
+        // the number in the one form, or 400 saying what is wrong (after the bot check, which answers bots as if all went well)
+        r.setPhone(Phones.normalize(r.getPhone(), "Phone"));
+        if (r.getPhone() == null) {
+            throw ApiException.badRequest("Give your phone number");
+        }
         allow(ip);
         if (!mailService.ready() || !StringUtils.hasText(to)) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Mail is not set up on the server");

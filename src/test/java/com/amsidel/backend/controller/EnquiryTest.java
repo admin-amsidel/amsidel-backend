@@ -100,9 +100,15 @@ class EnquiryTest {
     }
 
     @Test
+    void aWrongPhoneNumberIsRefused() throws Exception {
+        enquiry("10.0.0.9", """
+                {"kind":"CHAT","name":"Ravi","phone":"12","details":[{"label":"Query","value":"Price"}]}""").andExpect(status().isBadRequest());
+    }
+
+    @Test
     void botsAreDroppedAndOneAddressIsLimited() throws Exception {
         String body = """
-                {"kind":"SITE_VISIT","headline":"Mon, 26 Oct 2026, 10:00 AM","name":"Bot","phone":"1","website":"%s"}""";
+                {"kind":"SITE_VISIT","headline":"Mon, 26 Oct 2026, 10:00 AM","name":"Bot","phone":"9847012345","website":"%s"}""";
         enquiry("10.0.0.3", body.formatted("http://spam")).andExpect(status().isOk());
         assertThat(mail.sent).isEmpty();
 

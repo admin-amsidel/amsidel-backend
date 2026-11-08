@@ -429,7 +429,7 @@ public class EmployeeService {
         return boss;
     }
 
-    /** Next free number for the brand, e.g. DW0001, DW0002 ... (GRP0001 for group-level people). */
+    /** Next free number for the brand, e.g. AD0001, AD0002 ... (GRP0001 for group-level people). */
     private String nextEmpNumber(Brand brand) {
         String prefix = brand == null ? GROUP_PREFIX : brand.getCode().toUpperCase(Locale.ROOT);
         int next = employeeRepository.findTopByEmpNumberStartingWithOrderByEmpNumberDesc(prefix)

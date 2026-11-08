@@ -15,7 +15,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.Instant;
 
 /**
- * A type of product a brand sells, e.g. uPVC Doors & Windows (UPVC) for Doors & Windows (DW).
+ * A type of product a brand sells, e.g. uPVC Doors & Windows (UPVC) for Doors & Windows (AD).
  */
 @Entity
 @Table(name = "product_types",

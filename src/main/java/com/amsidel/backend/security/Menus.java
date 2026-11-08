@@ -167,6 +167,16 @@ public final class Menus {
     public static final String CONFIGURATIONS = "CONFIGURATIONS";
     /** The Export to Excel buttons, on every screen that has one (a page's own tick does not give it). */
     public static final String EXPORT_EXCEL = "EXPORT_EXCEL";
+    /** Travel allowance: my claims, the team's claims, the rates per km, and the ticks for how a claim may be made and settled. */
+    public static final String TA_MY = "TA_MY";
+    public static final String TA_TEAM = "TA_TEAM";
+    public static final String TA_RATES = "TA_RATES";
+    public static final String TA_MANUAL = "TA_MANUAL";
+    public static final String TA_GPS = "TA_GPS";
+    public static final String TA_CHANGE_DISTANCE = "TA_CHANGE_DISTANCE";
+    public static final String TA_SETTLE = "TA_SETTLE";
+    public static final String TA_EDIT_STOPS = "TA_EDIT_STOPS";
+    public static final String OVERVIEW_TRAVEL = "OVERVIEW_TRAVEL";
     /** The employee portal's Overview page. */
     public static final String OVERVIEW = "OVERVIEW";
     /** Not pages: sections of the Overview, each with its own tick. */
@@ -179,7 +189,7 @@ public final class Menus {
     public static final String MANUAL_SALES_DETAILS = "MANUAL_SALES_DETAILS";
     public static final String PERF_TYPE_MANUAL_SALES = "PERF_TYPE_MANUAL_SALES";
     /** Sub-menus that a tick on their parent menu does not give: each needs its own tick. */
-    public static final java.util.Set<String> OWN_TICK = java.util.Set.of(EXPORT_EXCEL, SALES_COL_QUOTATIONS, SALES_COL_ORDERS, SALES_COL_INVOICES, EMP_DELETE, EMP_GENERATOR, CONFIGURATIONS, OVERVIEW_STORAGE, OVERVIEW_SALES, OVERVIEW_ACTIVE_USERS, MANUAL_SALES_LOG, MANUAL_SALES_TASKS, MANUAL_SALES_DETAILS, PERF_TYPE_MANUAL_SALES, STORAGE_USAGE, STORAGE_DELETE, PROD_STOCK_APPROVE, ATT_NO_PHOTO, CUST_NEW_QUOTE, CUST_NEW_INVOICE,
+    public static final java.util.Set<String> OWN_TICK = java.util.Set.of(EXPORT_EXCEL, TA_EDIT_STOPS, TA_MANUAL, TA_GPS, TA_CHANGE_DISTANCE, TA_SETTLE, OVERVIEW_TRAVEL, SALES_COL_QUOTATIONS, SALES_COL_ORDERS, SALES_COL_INVOICES, EMP_DELETE, EMP_GENERATOR, CONFIGURATIONS, OVERVIEW_STORAGE, OVERVIEW_SALES, OVERVIEW_ACTIVE_USERS, MANUAL_SALES_LOG, MANUAL_SALES_TASKS, MANUAL_SALES_DETAILS, PERF_TYPE_MANUAL_SALES, STORAGE_USAGE, STORAGE_DELETE, PROD_STOCK_APPROVE, ATT_NO_PHOTO, CUST_NEW_QUOTE, CUST_NEW_INVOICE,
             CUST_ADD, CUST_EDIT, CUST_DELETE, MAIL_EMAIL, MAIL_WHATSAPP, MAIL_ALL, MAIL_PICK, MAIL_PICTURE, MAIL_ATTACH, MAIL_CONFIG,
             PERF_TYPE_GENERAL, PERF_TYPE_SALES, PERF_TYPE_ORDERS, PERF_TYPE_WORKLOG, PAY_TAX_REGIME,
             CHAT_GROUP_CREATE, CHAT_GROUP_ADD, TMAIL_CONFIG, TMAIL_EMAIL, TMAIL_WHATSAPP, TMAIL_ALL_CUSTOMERS, TMAIL_ALL_SUPPLIERS,
@@ -198,6 +208,7 @@ public final class Menus {
             new Def(OVERVIEW_STORAGE, "Overview: Storage section", "On the Overview: how much space is used and what takes it. Giving the Overview does not give this", 401, OVERVIEW, null, "pi-database"),
             new Def(OVERVIEW_SALES, "Overview: My sales section", "On the Overview: Manual Sales worklog figures by week, month and year. The team's also needs Sales, invoice & quotation details. Giving the Overview does not give this", 402, OVERVIEW, null, "pi-receipt"),
             new Def(OVERVIEW_ACTIVE_USERS, "Overview: Active users section", "On the Overview: how many people are signed in now, and who. Owners and admins with every menu have it; anyone else only if given this. Giving the Overview does not give this", 403, OVERVIEW, null, "pi-users"),
+            new Def(OVERVIEW_TRAVEL, "Overview: Travel allowance section", "On the Overview: travel allowance allocated and settled, month by month (the team's in the Team view, which also needs Team travel claims). Giving the Overview does not give this", 404, OVERVIEW, null, "pi-car"),
             // the dashboard itself is for everyone, like My profile; only adding meetings needs a tick
             new Def(MEETING_ADD, "Add meetings", "On the Overview's calendar: add meetings, and change or delete the ones you added. Everyone sees the meetings they are in without this", 500, null, null, "pi-calendar-plus"),
             new Def(NOTIFICATIONS, "Notifications", "The bell by the chat button: meetings about to start or under way, and meetings that have closed. Without this tick there is no bell, and no calls to check for notifications", 600, null, null, "pi-bell"),
@@ -221,6 +232,15 @@ public final class Menus {
             new Def(ATT_HOURS_CHECK, "Check attendance against work log", "For the person given this: the calendar highlights a day with fewer hours checked in than logged, and Half and Full Day Leave follow checked-in time against the work hour rule instead of logged hours; its own tick", 3005, "WORKLOG", null, "pi-exclamation-triangle"),
             new Def(MANUAL_SALES_LOG, "Manual Sales worklog", "For brands without the product portal: log Manual Sales tasks in the work log, with the status and the quotation, sales order or invoice details. Its own tick", 3006, "WORKLOG", null, "pi-receipt"),
             new Def(MANUAL_SALES_TASKS, "Manual sales tasks", "Create Manual Sales worklog tasks (customer, project and agent typed by hand) and assign them. Its own tick", 3007, "WORKLOG", "/portal/manual-sales/tasks", "pi-list-check"),
+            new Def("TRAVEL", "Travel allowance", "Travel claims per km with food and other expenses: made, approved and settled", 5200, null, null, "pi-car"),
+            new Def(TA_MY, "My travel claims", "Own travel claims, typed in or tracked as a GPS trip, with their approval and settlement; shows the rate per km", 5201, "TRAVEL", "/portal/travel", "pi-car"),
+            new Def(TA_TEAM, "Team travel claims", "The travel claims of the people below you: approve or reject (the approver, or an owner), change the amount with remarks, and follow settlement", 5202, "TRAVEL", "/portal/travel/team", "pi-users"),
+            new Def(TA_RATES, "Allowance rates", "Set each employee's travel allowance per km, in their brand's currency", 5203, "TRAVEL", "/portal/travel/rates", "pi-sliders-h"),
+            new Def(TA_MANUAL, "Travel: manual entry", "On My travel claims: type in a trip (customer, date, from, to, meeting point, km, food and other expenses). Its own tick", 5204, "TRAVEL", null, "pi-pencil"),
+            new Def(TA_GPS, "Travel: GPS trip", "On My travel claims: start a trip with the GPS location, add stops, complete it back at the office; the distance comes from the route. Its own tick", 5205, "TRAVEL", null, "pi-map-marker"),
+            new Def(TA_CHANGE_DISTANCE, "Travel: change GPS distance", "On a GPS trip: change the distance worked out from the route before sending it. Its own tick", 5206, "TRAVEL", null, "pi-sliders-v"),
+            new Def(TA_EDIT_STOPS, "Travel: change stop locations", "On a GPS trip: change the coordinates of its start, stops and end (one's own before it is decided; an approver's while it waits for them). The GPS location is kept and shown; the distance and amount are worked out again. Its own tick", 5208, "TRAVEL", null, "pi-map"),
+            new Def(TA_SETTLE, "Settle travel claims", "On Team travel claims: move approved claims to Waiting for settlement and mark them Settled with the transaction, date and amount. Its own tick", 5207, "TRAVEL", null, "pi-wallet"),
 
             new Def("EMPLOYEES", "Employees", "Employee records and the organisation", 4000, null, null, "pi-users"),
             new Def(EMP_LIST, "All employees", "Employee list; adding and changing records needs the Admin user type", 4001, "EMPLOYEES", "/portal/employees", "pi-id-card"),
@@ -292,9 +312,9 @@ public final class Menus {
             new Def(PROD_QUOTES, "Quotations", "Quotations to customers (PDF), made into invoices", 11302, "PROD_SELLING", "/portal/products/quotations", "pi-file-edit"),
             new Def(PROD_ORDERS, "Sales orders", "The customer's confirmed order (from a quotation, items removed or changed), before the invoice; confirming it sets the project to Confirmed", 11304, "PROD_SELLING", "/portal/products/sales-orders", "pi-check-square"),
             new Def(PROD_INVOICES, "Invoices", "Final bills (PDF), stock out and customer payments", 11303, "PROD_SELLING", "/portal/products/invoices", "pi-receipt"),
-            new Def("PROD_PROJECTS_GRP", "Projects", "Customer projects, and their status updates for the customer", 11550, null, null, "pi-briefcase"),
-            new Def(PROD_PROJECTS, "Projects", "Customer projects: team, tasks, quotations, invoices and payments in one place", 11500, "PROD_PROJECTS_GRP", "/portal/products/projects", "pi-briefcase"),
-            new Def(PROD_PROJECT_STATUS, "Project status", "Post status updates with photos for a project's customer, and share the customer's status link (no sign-in)", 11501, "PROD_PROJECTS_GRP", "/portal/products/project-status", "pi-images"),
+            new Def("PROD_PROJECTS_GRP", "Projects", "Project portal: customer projects with their employees, agents and status updates for the customer", 11550, null, null, "pi-briefcase"),
+            new Def(PROD_PROJECTS, "Projects", "Customer projects: team, tasks, quotations, invoices and payments in one place", 11500, "PROD_PROJECTS_GRP", "/portal/customers/projects", "pi-briefcase"),
+            new Def(PROD_PROJECT_STATUS, "Project status", "Post status updates with photos for a project's customer, and share the customer's status link (no sign-in)", 11501, "PROD_PROJECTS_GRP", "/portal/customers/project-status", "pi-images"),
             new Def("PROD_ACCOUNTS", "Accounts", "Other income and expenses, bank statements and the P&L reconciler", 11600, null, null, "pi-wallet"),
             new Def(PROD_LEDGER, "Income & expenses", "Investment, loans, capital and other income; transport, fixing, discounts and other expenses, by bill and project", 11601, "PROD_ACCOUNTS", "/portal/products/ledger", "pi-arrow-right-arrow-left"),
             new Def(PROD_RECONCILE, "P&L reconciler", "Profit and loss by week, month or year; bank statements tallied with the portal; invoices paid short", 11602, "PROD_ACCOUNTS", "/portal/products/reconciler", "pi-calculator"),

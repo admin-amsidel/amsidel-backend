@@ -149,7 +149,7 @@ class OfferLetterTest {
         String id = issued("Fay Frozen");
         String text = text(pdf(hr, id));
         assertThat(text).contains("OFFER OF EMPLOYMENT", "Fay Frozen", "Software Engineer", "Amsidel Doors & Windows", "Kakkanad, Kochi",
-                "16 November 2026", "48 hours a week", "6,00,000", "50,000", "Basic", "Special allowance", "9847012345", "hr@amsidel.com",
+                "16 November 2026", "48 hours a week", "6,00,000", "50,000", "Basic", "Special allowance", "+91 98470 12345", "hr@amsidel.com",
                 "Report on your joining date", "Hema HR", "HR Manager", "DW/OL/2026/");
         // a later change to the brand does not touch a letter already issued
         Brand b = brands.findById(dw).orElseThrow();
